@@ -1,7 +1,7 @@
 import { AdminShell } from "../../../../components/admin-shell";
 import { ConfigAdminNav } from "../../../../components/config-admin-nav";
 import { ConfigCenterPanels } from "../../../../components/config-center-panels";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,9 @@ export default async function ConfigOverviewPage({ searchParams }) {
   if (deviceId) previewQuery.set("deviceId", deviceId);
   if (licenseId) previewQuery.set("licenseId", licenseId);
   const [data, health, preview] = await Promise.all([
-    safeApiGet("/api/admin/config-profiles", { profiles: [] }),
-    safeApiGet("/api/admin/health", { checks: [], runtime: {}, status: "unknown" }),
-    safeApiGet(`/api/admin/config-profiles/effective-preview${previewQuery.size ? `?${previewQuery.toString()}` : ""}`, null),
+    loadAdmin("/api/admin/config-profiles", { profiles: [] }),
+    loadAdmin("/api/admin/health", { checks: [], runtime: {}, status: "unknown" }),
+    loadAdmin(`/api/admin/config-profiles/effective-preview${previewQuery.size ? `?${previewQuery.toString()}` : ""}`, null),
   ]);
 
   return (

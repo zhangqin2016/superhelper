@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { artifactErrorResponse, checkReleaseArtifact } from "../../services/release-artifact-check.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -47,6 +48,10 @@ export function registerAdminReleaseRoutes(app, { audit }) {
     },
     async (request, reply) => {
     const input = createReleaseSchema.parse(request.body);
+    // A release row promises a file. Refuse only a definite "not there" — a host
+    // that guards or cannot answer HEAD must never block a release.
+    const artifact = await checkReleaseArtifact(input.url);
+    if (!artifact.ok) return reply.code(400).send(artifactErrorResponse(artifact));
     const id = publicId("rel");
     await db
       .insertInto("releases")

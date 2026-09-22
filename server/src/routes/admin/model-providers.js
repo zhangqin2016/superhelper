@@ -10,6 +10,8 @@ import {
 } from "../../services/model-gateway/providers.js";
 import { listBuiltinMediaProviderRows } from "../../services/model-gateway/builtin-media-providers.js";
 import { normalizeProviderForProtocol } from "../../services/model-gateway/model-aliases.js";
+import { mediaProviderStatus } from "../../services/media-provider-catalog.js";
+import { configuredLilyMediaKinds } from "../../services/client-config.js";
 
 // Operator-managed model gateway providers. The API key is stored encrypted and
 // never returned to the browser; the /llm gateway uses it server-side and the
@@ -33,6 +35,26 @@ const providerSchema = z.object({
 });
 
 export function registerAdminModelProviderRoutes(app, { audit }) {
+  app.get(
+    "/api/admin/media-providers",
+    {
+      schema: {
+        tags: ["admin:model-providers"],
+        summary: "Media generation providers and whether each is usable",
+        description: "Every media provider the platform knows, whether its credential exists (provider row or server env), and the provider id to create when it does not. The config rule form renders this list, so what an operator can tick is what delivery can serve.",
+        response: { 200: okResponse({ mediaProviders: { type: "array", items: { type: "object", additionalProperties: true } } }) },
+      },
+    },
+    async () => ({
+      ok: true,
+      mediaProviders: mediaProviderStatus({
+        providers: listModelGatewayProviders(),
+        serverConfig: config,
+        lilyKinds: configuredLilyMediaKinds(config),
+      }),
+    }),
+  );
+
   app.get(
     "/api/admin/model-providers",
     {

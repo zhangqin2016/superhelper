@@ -2,7 +2,7 @@ import ActionForm from "../../../../components/action-form";
 import Link from "next/link";
 import IssuedCredentials from "../../../../components/issued-credentials";
 import { AdminShell } from "../../../../components/admin-shell";
-import { apiGet, safeApiGet } from "../../../../lib/api";
+import { apiGet, loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 import { adjustOrgGrantAction, toggleOrgStatusAction, reissueOwnerInitialPasswordAction } from "../actions";
 
@@ -21,7 +21,7 @@ export default async function AdminOrgDetailPage({ params }) {
   const org = data?.organization;
   if (!org?.id) return <AdminShell title="Enterprise">
       <IssuedCredentials /><p className="text-sm text-slate-500">Organization not found.</p></AdminShell>;
-  const usage = await safeApiGet(`/api/admin/enterprise/organizations/${id}/usage?days=30`, { usage: { byMember: [], byModel: [] } });
+  const usage = await loadAdmin(`/api/admin/enterprise/organizations/${id}/usage?days=30`, { usage: { byMember: [], byModel: [] } });
   const byMember = usage?.usage?.byMember || [];
   return (
     <AdminShell title={org.name} subtitle={`状态：${org.status === "active" ? "正常" : "已停用"}`}>

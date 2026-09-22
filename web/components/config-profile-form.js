@@ -5,6 +5,8 @@ import { createConfigProfileAction } from "../app/admin/actions";
 import { CheckboxField, SubmitButton } from "./admin-forms";
 import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
+import { labels, localeLabels } from "./config-profile-copy.js";
+import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds } from "./config-profile-config-builder.js";
 
 const initialState = { ok: null, message: "" };
 
@@ -48,168 +50,6 @@ function providersToTemplates(providers) {
     });
 }
 
-const labels = {
-  zh: {
-    quickTitle: "配置要下发给谁",
-    quickDesc: "全局默认适合所有设备；设备组/授权/设备配置会按优先级覆盖全局。",
-    scopeGlobal: "所有客户端",
-    scopeGroup: "某个设备组",
-    scopeLicense: "某个授权",
-    scopeDevice: "某台设备",
-    targetHelp: "全局配置不需要目标 ID；设备组填组 ID，设备填设备 ID。授权可以直接填发给客户的授权码，保存时自动换成内部 ID；填错或对不上任何对象会被拒绝保存，不会出现「保存成功却不生效」。",
-    modelTitle: "模型下发",
-    modelDesc: "这里不配置密钥和真实接口，只决定这条规则下客户端能看到哪些模型供应商，以及默认打开哪一个。",
-    providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
-    defaultProviderTitle: "默认打开的供应商（单选）",
-    defaultProviderDesc: "客户端首次打开会使用这个供应商。具体模型名在「模型供应商」里维护。",
-    defaultBadge: "默认",
-    allowedProvidersTitle: "客户端可选供应商（多选）",
-    allowedProvidersDesc: "这些供应商会出现在客户端模型下拉菜单里。默认供应商会自动包含，不能取消。",
-    menuActive: "保存后客户端会收到这组可选供应商。",
-    mediaTitle: "图片 / 视频 / 语音生成",
-    mediaDesc: "为本范围勾选可用的生成供应商（可多选），并设一个默认。留空＝沿用今天的行为（所有已配置的、服务器默认）。服务器只会下发实际配置了服务或密钥的那些。",
-    mediaImage: "图片生成",
-    mediaVideo: "视频生成",
-    mediaSpeech: "语音生成",
-    mediaDefault: "默认：",
-    agentsTitle: "可用智能体",
-    agentsDesc: "为本范围勾选客户端可以使用的已发布智能体（可多选），并可指定一个默认智能体（新对话自动套用）。留空＝沿用今天的行为（注册表里的全部可用、无默认）。服务器只会下发本范围实际能收到的那些。",
-    agentsDefault: "默认智能体（单选）",
-    agentsNoDefault: "不设默认",
-    agentsEmpty: "还没有发布任何智能体。先去「智能体」页面发布一个。",
-    agentsPreview: "可用智能体",
-    providerModels: "已选供应商的模型",
-    providerModelsHelp: "只读预览。每个已选供应商都会下发自己的模型列表；要改模型列表或默认模型，请去「模型供应商」页面配置。",
-    toolsTitle: "技能包和客户端策略",
-    toolsDesc: "这里控制技能包 registry、默认权限和最低客户端版本。",
-    registry: "技能包 registry",
-    pluginIds: "默认启用技能包",
-    pluginIdsHelp: "多个技能包 ID 用英文逗号分隔。",
-    permissionMode: "权限模式",
-    minVersion: "最低客户端版本",
-    timeout: "请求超时",
-    visionModel: "图片识别模型",
-    previewTitle: "即将下发",
-    previewDesc: "保存后，客户端启动或刷新授权时会拉取这份签名配置。",
-    defaultProvider: "默认供应商",
-    deliveredMenu: "客户端可选菜单",
-    route: "网关路线",
-    securityOk: "短期 token",
-    advanced: "高级：查看/编辑 JSON",
-    advancedDesc: "正常不用改。手写 JSON 会覆盖上面的安全表单；不要在这里写 API Key、供应商真实地址或直连 preset。",
-    jsonInvalid: "JSON 格式不正确，保存前需要修复。",
-    defaultName: "团队默认配置",
-    gatewayName: "网关配置",
-  },
-  en: {
-    quickTitle: "Who receives this config",
-    quickDesc: "Global applies to every client. Device-group/license/device configs override it by priority.",
-    scopeGlobal: "All clients",
-    scopeGroup: "A device group",
-    scopeLicense: "A license",
-    scopeDevice: "A device",
-    targetHelp: "Global needs no target ID. A device group takes a group ID, a device its id. For a license, paste the license key you gave the customer — it is resolved to the internal id on save, and a target that matches nothing is refused rather than saved dead.",
-    modelTitle: "Model delivery",
-    modelDesc: "This rule does not store keys or upstream URLs. It only controls which model providers the client can see and which one opens by default.",
-    providerEmpty: "Add a provider above in “Model providers” first.",
-    defaultProviderTitle: "Default provider (single choice)",
-    defaultProviderDesc: "The client opens with this provider. Model names are maintained under “Model providers”.",
-    defaultBadge: "Default",
-    allowedProvidersTitle: "Client model menu (multi-select)",
-    allowedProvidersDesc: "These providers appear in the client model picker. The default provider is always included and cannot be removed here.",
-    menuActive: "After save, clients will receive this selectable provider menu.",
-    mediaTitle: "Image / video / speech generation",
-    mediaDesc: "Pick which generation providers this scope may use (multi-select) and one default. Empty = today's behavior (all configured, server default). The server only delivers the ones that actually have a service or key.",
-    mediaImage: "Image generation",
-    mediaVideo: "Video generation",
-    mediaSpeech: "Speech generation",
-    mediaDefault: "Default:",
-    agentsTitle: "Available agents",
-    agentsDesc: "Pick which published agents clients in this scope may use (multi-select) and optionally one default (applied to new conversations). Empty = today's behavior (everything in the registry, no default). The server only delivers the ones this scope can actually receive.",
-    agentsDefault: "Default agent (single choice)",
-    agentsNoDefault: "No default",
-    agentsEmpty: "No agents published yet. Publish one on the Agents page first.",
-    agentsPreview: "Available agents",
-    providerModels: "Models from selected providers",
-    providerModelsHelp: "Read-only preview. Every selected provider delivers its own model list. Edit model names and provider defaults under “Model providers”.",
-    toolsTitle: "Skill packages and client policy",
-    toolsDesc: "Control skill registry, default permissions, and minimum client version.",
-    registry: "Skill registry",
-    pluginIds: "Default enabled skill packages",
-    pluginIdsHelp: "Separate multiple skill package IDs with commas.",
-    permissionMode: "Permission mode",
-    minVersion: "Minimum app version",
-    timeout: "Request timeout",
-    visionModel: "Vision model",
-    previewTitle: "Delivery preview",
-    previewDesc: "After saving, clients fetch this signed config on startup or license refresh.",
-    defaultProvider: "Default provider",
-    deliveredMenu: "Client model menu",
-    route: "Gateway route",
-    securityOk: "Short-lived token",
-    advanced: "Advanced: view/edit JSON",
-    advancedDesc: "Normally leave this alone. Manual JSON overrides the safe form above; do not type API keys, upstream URLs, or direct presets here.",
-    jsonInvalid: "Invalid JSON. Fix it before saving.",
-    defaultName: "Team default config",
-    gatewayName: "gateway config",
-  },
-  ar: {
-    quickTitle: "من يستلم هذا الإعداد",
-    quickDesc: "الإعداد العام لكل العملاء. إعداد المجموعة/الترخيص/الجهاز يغطيه حسب الأولوية.",
-    scopeGlobal: "كل العملاء",
-    scopeGroup: "مجموعة فئة",
-    scopeLicense: "ترخيص محدد",
-    scopeDevice: "جهاز محدد",
-    targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّفها والجهاز معرّفه. أما الترخيص فيمكن لصق مفتاح الترخيص نفسه، ويُحوَّل إلى المعرّف الداخلي عند الحفظ؛ وأي هدف لا يطابق شيئاً يُرفض بدل أن يُحفظ بلا أثر.",
-    modelTitle: "إرسال النماذج",
-    modelDesc: "هذه القاعدة لا تخزن المفاتيح أو عناوين المزوّدين. هي تحدد فقط المزوّدين الذين يراهم العميل والمزوّد الافتراضي.",
-    providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
-    defaultProviderTitle: "المزوّد الافتراضي (اختيار واحد)",
-    defaultProviderDesc: "يفتح العميل بهذا المزوّد. أسماء النماذج تُدار في صفحة «مزوّدو النماذج».",
-    defaultBadge: "افتراضي",
-    allowedProvidersTitle: "قائمة نماذج العميل (اختيار متعدد)",
-    allowedProvidersDesc: "تظهر هذه المزوّدات في قائمة النماذج داخل العميل. المزوّد الافتراضي مضاف دائماً ولا يمكن حذفه هنا.",
-    menuActive: "بعد الحفظ سيستلم العملاء قائمة المزوّدين القابلة للاختيار.",
-    mediaTitle: "توليد الصور / الفيديو / الصوت",
-    mediaDesc: "اختر مزوّدي التوليد المسموح بهم لهذا النطاق (اختيار متعدد) ومزوّداً افتراضياً. فارغ = سلوك اليوم (كل المُهيأ، الافتراضي من الخادم). يرسل الخادم فقط ما له خدمة أو مفتاح فعلاً.",
-    mediaImage: "توليد الصور",
-    mediaVideo: "توليد الفيديو",
-    mediaSpeech: "توليد الصوت",
-    mediaDefault: "الافتراضي:",
-    agentsTitle: "الوكلاء المتاحون",
-    agentsDesc: "اختر الوكلاء المنشورين المسموح بهم لهذا النطاق (اختيار متعدد) ووكيلاً افتراضياً اختيارياً (يُطبق على المحادثات الجديدة). فارغ = سلوك اليوم (كل ما في السجل، بلا افتراضي). يرسل الخادم فقط ما يمكن لهذا النطاق استلامه فعلاً.",
-    agentsDefault: "الوكيل الافتراضي (اختيار واحد)",
-    agentsNoDefault: "بلا افتراضي",
-    agentsEmpty: "لم يُنشر أي وكيل بعد. انشر واحداً من صفحة الوكلاء أولاً.",
-    agentsPreview: "الوكلاء المتاحون",
-    providerModels: "نماذج المزوّدين المحددين",
-    providerModelsHelp: "معاينة فقط. كل مزوّد محدد يرسل قائمة نماذجه. عدّل أسماء النماذج والافتراضي من صفحة «مزوّدو النماذج».",
-    toolsTitle: "حزم المهارات وسياسة العميل",
-    toolsDesc: "تحكم بسجل حزم المهارات والصلاحيات الافتراضية والحد الأدنى للإصدار.",
-    registry: "سجل حزم المهارات",
-    pluginIds: "حزم المهارات المفعلة افتراضياً",
-    pluginIdsHelp: "افصل معرفات حزم المهارات بفواصل إنجليزية.",
-    permissionMode: "وضع الصلاحيات",
-    minVersion: "أقل إصدار للتطبيق",
-    timeout: "مهلة الطلب",
-    visionModel: "نموذج الصور",
-    previewTitle: "معاينة الإرسال",
-    previewDesc: "بعد الحفظ يجلب العميل هذا الإعداد الموقع عند التشغيل أو تحديث الترخيص.",
-    defaultProvider: "المزوّد الافتراضي",
-    deliveredMenu: "قائمة نماذج العميل",
-    route: "مسار البوابة",
-    securityOk: "رمز قصير",
-    advanced: "متقدم: عرض/تحرير JSON",
-    advancedDesc: "اتركه كما هو غالباً. JSON اليدوي يتجاوز النموذج الآمن؛ لا تكتب مفاتيح API أو عناوين أصلية أو presets مباشرة هنا.",
-    jsonInvalid: "JSON غير صالح. أصلحه قبل الحفظ.",
-    defaultName: "إعداد الفريق الافتراضي",
-    gatewayName: "إعداد البوابة",
-  },
-};
-
-function localeLabels(locale) {
-  return labels[locale] || labels.zh;
-}
 
 function fieldClass() {
   return "w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
@@ -267,93 +107,6 @@ function splitCsv(text) {
 // Media-generation providers offered for distribution. The server gates each by whether
 // its key exists (resolveMediaSelection), so listing all here is safe — unavailable ones
 // are dropped at delivery.
-const MEDIA_PROVIDERS = [
-  { id: "lily", label: "Lily 自有 GPU" },
-  { id: "dashscope", label: "阿里百炼 DashScope" },
-  { id: "volcengine", label: "火山方舟 Volcengine" },
-  { id: "kling", label: "可灵 Kling" },
-  { id: "minimax", label: "MiniMax" },
-  { id: "zhipu", label: "智谱 Zhipu" },
-];
-const MEDIA_PROVIDER_IDS = new Set(MEDIA_PROVIDERS.map((p) => p.id));
-
-// Build the per-scope media-generation selection (multi-select + one default), or null
-// when nothing is selected (→ omitted from config → old behavior, never breaks clients).
-function buildMedia(draft) {
-  const pick = (providers, def) => {
-    const list = (Array.isArray(providers) ? providers : []).filter((p) => MEDIA_PROVIDER_IDS.has(p));
-    if (!list.length) return null;
-    return { providers: list, default: list.includes(def) ? def : list[0] };
-  };
-  const image = pick(draft.imageProviders, draft.imageDefault);
-  const video = pick(draft.videoProviders, draft.videoDefault);
-  const speech = pick(draft.speechProviders, draft.speechDefault);
-  if (!image && !video && !speech) return null;
-  return { ...(image ? { image } : {}), ...(video ? { video } : {}), ...(speech ? { speech } : {}) };
-}
-
-// Build the per-scope agent selection (`config.agents = { available, default? }`), or null
-// when nothing is selected (→ omitted from config → old behavior). The server intersects
-// `available` with what this scope can actually receive (resolveAgentSelection) and drops
-// a default that is not in the intersection, so listing ids here is always safe.
-function buildAgents(draft) {
-  const available = [...new Set((Array.isArray(draft.agentIds) ? draft.agentIds : []).map((id) => String(id || "").trim()).filter(Boolean))];
-  if (!available.length) return null;
-  const def = String(draft.agentDefault || "").trim();
-  return available.includes(def) ? { available, default: def } : { available };
-}
-
-function deliveryProviderIds(draft, template) {
-  const menu = Array.isArray(draft.menuProviders) ? draft.menuProviders.filter(Boolean) : [];
-  const defaultProvider = draft.selectedTemplateId || template.provider || template.id || "";
-  return Array.from(new Set([defaultProvider, ...menu].filter(Boolean)));
-}
-
-function buildConfig(draft, template) {
-  const tools = {
-    pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
-    enabledPluginIds: splitCsv(draft.enabledPluginIds),
-  };
-  const policy = {
-    permissionMode: String(draft.permissionMode || "default").trim(),
-    minAppVersion: String(draft.minAppVersion || "").trim(),
-  };
-  const runtime = {
-    env: {
-      API_TIMEOUT_MS: String(draft.requestTimeoutMs || "300000").trim(),
-      VISION_MODEL: String(draft.visionModel || "qwen3.7-plus").trim(),
-    },
-  };
-  const media = buildMedia(draft);
-  const mediaPart = media ? { media } : {};
-  const agents = buildAgents(draft);
-  const agentsPart = agents ? { agents } : {};
-
-  // Delivery rules record only a provider directive. The server expands it into
-  // a signed gateway model menu at client-config time, so profiles never carry
-  // upstream URLs or provider keys.
-  const providers = deliveryProviderIds(draft, template);
-  const activeProvider = providers.includes(draft.selectedTemplateId) ? draft.selectedTemplateId : providers[0] || "";
-  const capabilities = Object.fromEntries(
-    providers
-      .filter((providerId) => Boolean(draft.providerCapabilities?.[providerId]?.vision))
-      .map((providerId) => [providerId, { vision: true }]),
-  );
-  return {
-    schemaVersion: 1,
-    models: {
-      source: "service",
-      providers,
-      activeProvider,
-      capabilities,
-    },
-    tools,
-    policy,
-    runtime,
-    ...mediaPart,
-    ...agentsPart,
-  };
-}
 
 function scopeLabel(scope, copy) {
   if (scope === "group") return copy.scopeGroup;
@@ -372,12 +125,15 @@ function ConfigField({ label, children, help }) {
   );
 }
 
-export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [] }) {
+export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [], mediaProviders = [] }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
   const { locale, t } = useI18n();
   const adminCopy = t.admin.configProfiles;
   const copy = localeLabels(locale);
   const templates = useMemo(() => providersToTemplates(providers), [providers]);
+  // The server's catalog when it answered, the packaged list when it did not —
+  // an unreachable admin API must not empty the picker.
+  const mediaCatalog = mediaProviders.length ? mediaProviders : MEDIA_PROVIDERS;
   const [draft, setDraft] = useState(() => defaultDraft(copy, templates));
   const [jsonOverride, setJsonOverride] = useState("");
 
@@ -660,16 +416,26 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                 <div key={modality} className="mb-4 rounded-xl border border-slate-200 bg-white p-4 last:mb-0">
                   <div className="text-sm font-semibold text-slate-800">{label}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {MEDIA_PROVIDERS.map((p) => {
+                    {mediaCatalog
+                      .filter((p) => !Array.isArray(p.kinds) || p.kinds.includes(modality))
+                      .map((p) => {
                       const on = selected.includes(p.id);
+                      // A provider with no credential cannot be delivered. Ticking
+                      // it used to save and silently do nothing, so it is offered
+                      // as unavailable with the id an operator must create.
+                      const ready = p.configured !== false;
                       return (
                         <button
                           key={p.id}
                           type="button"
                           aria-pressed={on}
+                          disabled={!ready}
+                          title={ready ? undefined : `${copy.mediaUnconfigured}${p.credentialProviderId ? `: ${p.credentialProviderId}` : ""}`}
                           onClick={() => toggleMediaProvider(modality, p.id)}
                           className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                            on ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            !ready
+                              ? "cursor-not-allowed bg-slate-50 text-slate-400 line-through"
+                              : on ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                           }`}
                         >
                           {p.label}
@@ -687,7 +453,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                       >
                         {selected.map((id) => (
                           <option key={id} value={id}>
-                            {MEDIA_PROVIDERS.find((p) => p.id === id)?.label || id}
+                            {mediaCatalog.find((p) => p.id === id)?.label || id}
                           </option>
                         ))}
                       </select>

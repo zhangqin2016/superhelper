@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { Badge } from "../../../components/ui/badge";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function AdminWishesPage({ searchParams }) {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
   if (params?.category) query.set("category", params.category);
-  const data = await safeApiGet(`/api/admin/wishes${query.size ? `?${query}` : ""}`, { wishes: [] });
+  const data = await loadAdmin(`/api/admin/wishes${query.size ? `?${query}` : ""}`, { wishes: [] });
   const wishes = data.wishes || [];
 
   return (

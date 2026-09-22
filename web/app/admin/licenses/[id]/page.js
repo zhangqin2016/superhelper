@@ -4,7 +4,7 @@ import { AdminEmpty } from "../../../../components/admin-empty";
 import { AdminPageActions } from "../../../../components/admin-page-actions";
 import { Badge } from "../../../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ function featureText(features) {
 export default async function LicenseDetailPage({ params }) {
   const { id } = await params;
   const { t } = await getI18n();
-  const data = await safeApiGet(`/api/admin/licenses/${id}`, null);
+  const data = await loadAdmin(`/api/admin/licenses/${id}`, null);
   if (!data?.license) {
     return (
       <AdminShell title="License not found" subtitle={id}>

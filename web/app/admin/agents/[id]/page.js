@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminShell } from "../../../../components/admin-shell";
 import { AdminEmpty } from "../../../../components/admin-empty";
 import { AgentPackageForm } from "../../../../components/agent-package-form";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export default async function EditAgentPackagePage({ params }) {
   const { locale, t } = await getI18n();
   const zh = locale === "zh";
   const page = t.admin.pages.agents || ["Agents", ""];
-  const data = await safeApiGet(`/api/admin/agent-packages/${id}`, null);
+  const data = await loadAdmin(`/api/admin/agent-packages/${id}`, null);
   const row = data?.agentPackage || null;
 
   if (!row) {

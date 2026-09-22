@@ -1,7 +1,7 @@
 import ActionForm from "../../../components/action-form";
 import Link from "next/link";
 import { AdminShell } from "../../../components/admin-shell";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 import { toggleOrgStatusAction, createOrganizationAction } from "./actions";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminEnterprisePage() {
   const { t } = await getI18n();
-  const data = await safeApiGet("/api/admin/enterprise/organizations", { organizations: [] });
+  const data = await loadAdmin("/api/admin/enterprise/organizations", { organizations: [] });
   const orgs = Array.isArray(data?.organizations) ? data.organizations : [];
   return (
     <AdminShell title={t.admin.pages.enterprise?.[0] || "Enterprise"} subtitle={t.admin.pages.enterprise?.[1] || "Manage organizations, quotas, and usage"}>

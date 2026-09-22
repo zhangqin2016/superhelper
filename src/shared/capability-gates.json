@@ -2103,6 +2103,24 @@
         "scripts/test-config-scope-precedence.mjs",
         "scripts/test-config-delivery-provenance.mjs"
       ]
+    },
+    {
+      "id": "admin-console-honesty",
+      "protects": "The admin console distinguishes 'could not read' from 'nothing configured', and a release cannot be published against an artifact that is definitely absent.",
+      "baseline": "A failed read still returns its fallback, so every page keeps rendering; a release URL that merely cannot be probed is still publishable, exactly as before.",
+      "failureFallback": "Reporting never blocks a page: a missing ledger, a non-Error reason and an unreachable artifact host all degrade to today's behaviour.",
+      "tests": [
+        "scripts/test-admin-console-honesty.mjs"
+      ]
+    },
+    {
+      "id": "media-provider-manageability",
+      "protects": "A media provider an operator can tick in the console is one the server can actually deliver, and the console says where each credential is configured.",
+      "baseline": "Delivery still offers exactly the providers whose credential exists, from a provider row or a server env var; an unreachable admin API leaves the packaged provider list in the picker.",
+      "failureFallback": "An unconfigured provider is shown as unavailable instead of silently dropped at delivery; a provider the catalog does not know is simply not offered.",
+      "tests": [
+        "scripts/test-media-provider-manageability.mjs"
+      ]
     }
   ]
 }

@@ -3,7 +3,7 @@ import { AdminShell } from "../../../../components/admin-shell";
 import { AdminEmpty } from "../../../../components/admin-empty";
 import { Badge } from "../../../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ function sum(rows, key) {
 
 export default async function DeviceDetailPage({ params }) {
   const { id } = await params;
-  const data = await safeApiGet(`/api/admin/devices/${id}`, null);
+  const data = await loadAdmin(`/api/admin/devices/${id}`, null);
   if (!data?.device) {
     return (
       <AdminShell title="Device not found" subtitle={id}>

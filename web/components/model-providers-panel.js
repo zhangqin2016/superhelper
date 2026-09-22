@@ -173,7 +173,12 @@ function draftFromProvider(provider) {
   };
 }
 
-export function ModelProvidersPanel({ providers = [], initialProvider = null, showForm = true, showList = true }) {
+export function ModelProvidersPanel({ providers = [], initialProvider = null, showForm = true, showList = true, mediaProviders = [] }) {
+  // Which credential rows the media pickers are waiting for, named so an
+  // operator never has to guess "volcengine-media" from a chip reading 火山方舟.
+  const mediaCredentialIds = mediaProviders
+    .filter((entry) => entry?.credentialProviderId)
+    .map((entry) => ({ id: entry.credentialProviderId, label: `${entry.label}${entry.configured ? "" : " · 未配置"}` }));
   const { locale } = useI18n();
   const copy = labels[locale] || labels.zh;
   const [state, action, pending] = useActionState(createModelProviderAction, initialState);
@@ -225,7 +230,14 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
           <SectionTitle title={copy.providerSection} />
         </div>
         <Field label={copy.id} help={copy.idHelp}>
-          <input className={fieldClass()} name="id" required value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" />
+          <input className={fieldClass()} name="id" required value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" list="known-provider-ids" />
+          {/* The media credential ids are not guessable — the picker in the config
+              rule form offers "火山方舟", the key it needs is "volcengine-media". */}
+          <datalist id="known-provider-ids">
+            {mediaCredentialIds.map((entry) => (
+              <option key={entry.id} value={entry.id}>{entry.label}</option>
+            ))}
+          </datalist>
         </Field>
         <Field label={copy.label}>
           <input className={fieldClass()} name="label" value={draft.label} onChange={(e) => set("label", e.target.value)} placeholder="DeepSeek" />

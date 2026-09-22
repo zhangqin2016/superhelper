@@ -1,12 +1,12 @@
 import { AdminShell } from "../../../../components/admin-shell";
 import { AdminPageActions } from "../../../../components/admin-page-actions";
 import { PricingRulesTable } from "../../../../components/billing-admin-panels";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
 export default async function PricingRulesPage() {
-  const { rules } = await safeApiGet("/api/admin/billing/pricing-rules", { rules: [] });
+  const { rules } = await loadAdmin("/api/admin/billing/pricing-rules", { rules: [] });
 
   return (
     <AdminShell title="能力计价" subtitle="管理模型、图片、视频的单次消耗、免费次数、每日上限和并发限制。">

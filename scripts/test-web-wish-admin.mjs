@@ -11,7 +11,7 @@ const actions = read("../web/app/admin/actions.js");
 const shell = read("../web/components/admin-shell.js");
 const nav = read("../web/components/admin-nav.js");
 
-assert.match(listPage, /safeApiGet\(`\/api\/admin\/wishes/);
+assert.match(listPage, /loadAdmin\(`\/api\/admin\/wishes/);
 assert.match(detailPage, /api\/admin\/workspace-apps/);
 assert.match(detailPage, /api\/admin\/skill-packages/);
 assert.match(detailPage, /WishAdminForm/);

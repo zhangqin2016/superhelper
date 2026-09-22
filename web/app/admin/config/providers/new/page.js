@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../../components/admin-shell";
 import { ModelProvidersPanel } from "../../../../../components/model-providers-panel";
-import { safeApiGet } from "../../../../../lib/api";
+import { loadAdmin } from "../../../../../lib/api";
 import { getI18n } from "../../../../../lib/i18n.mjs";
 
 export default async function NewModelProviderPage({ searchParams }) {
   const { t } = await getI18n();
   const params = await searchParams;
   const editId = typeof params?.id === "string" ? params.id : "";
-  const data = editId ? await safeApiGet("/api/admin/model-providers", { providers: [] }) : { providers: [] };
+  const data = editId ? await loadAdmin("/api/admin/model-providers", { providers: [] }) : { providers: [] };
   const initialProvider = editId
     ? (data.providers || []).find((provider) => provider.id === editId) || null
     : null;

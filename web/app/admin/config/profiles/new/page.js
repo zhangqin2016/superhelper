@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../../components/admin-shell";
 import { ConfigProfileForm } from "../../../../../components/config-profile-form";
-import { safeApiGet } from "../../../../../lib/api";
+import { loadAdmin } from "../../../../../lib/api";
 import { getI18n } from "../../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewConfigProfilePage() {
   const { t } = await getI18n();
-  const [providersData, skillsData, agentsData] = await Promise.all([
-    safeApiGet("/api/admin/model-providers", { providers: [] }),
-    safeApiGet("/api/admin/skill-packages", { skillPackages: [] }),
-    safeApiGet("/api/admin/agent-packages", { agentPackages: [] }),
+  const [providersData, skillsData, agentsData, mediaData] = await Promise.all([
+    loadAdmin("/api/admin/model-providers", { providers: [] }),
+    loadAdmin("/api/admin/skill-packages", { skillPackages: [] }),
+    loadAdmin("/api/admin/agent-packages", { agentPackages: [] }),
+    loadAdmin("/api/admin/media-providers", { mediaProviders: [] }),
   ]);
   const skillPackageOptions = [
     ...new Map((skillsData.skillPackages || []).map((s) => [String(s.skill_id || ""), { id: String(s.skill_id || ""), label: String(s.name || s.skill_id || "") }])).values(),
@@ -33,7 +34,7 @@ export default async function NewConfigProfilePage() {
       <div className="mb-5">
         <Link href="/admin/config/profiles" className="text-sm font-semibold text-brand">返回下发规则</Link>
       </div>
-      <ConfigProfileForm providers={providersData.gateway || []} skillPackageOptions={skillPackageOptions} agentPackageOptions={agentPackageOptions} />
+      <ConfigProfileForm providers={providersData.gateway || []} skillPackageOptions={skillPackageOptions} agentPackageOptions={agentPackageOptions} mediaProviders={mediaData.mediaProviders || []} />
     </AdminShell>
   );
 }

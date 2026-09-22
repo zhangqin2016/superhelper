@@ -2,13 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminShell } from "../../../../../components/admin-shell";
 import { LicenseEditForm } from "../../../../../components/license-edit-form";
-import { safeApiGet } from "../../../../../lib/api";
+import { loadAdmin } from "../../../../../lib/api";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditLicensePage({ params }) {
   const { id } = await params;
-  const data = await safeApiGet(`/api/admin/licenses/${id}`, null);
+  const data = await loadAdmin(`/api/admin/licenses/${id}`, null);
   if (!data?.license) notFound();
 
   return (

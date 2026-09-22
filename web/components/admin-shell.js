@@ -3,9 +3,14 @@ import { logoutAction } from "../app/admin/actions";
 import { LanguageSwitcher } from "./language-switcher";
 import { AdminNav } from "./admin-nav";
 import { getI18n } from "../lib/i18n.mjs";
+import { adminLoadFailures } from "../lib/admin-load-ledger.js";
 
 export async function AdminShell({ children, title, subtitle }) {
   const { locale, t } = await getI18n();
+  // Every read that failed during THIS request. The page still renders with its
+  // fallbacks — half a console beats a stack trace — but it no longer passes an
+  // outage off as "nothing configured".
+  const failures = adminLoadFailures();
   const nav = t.admin.nav;
   // Task-based grouping for non-technical operators. Routes here are the
   // existing ones; later phases merge overlapping pages and update this map.
@@ -75,6 +80,17 @@ export async function AdminShell({ children, title, subtitle }) {
           <h1 className="text-3xl font-semibold text-slate-950">{title}</h1>
           {subtitle ? <p className="mt-2 text-slate-500">{subtitle}</p> : null}
         </div>
+        {failures.length ? (
+          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert">
+            <div className="text-sm font-semibold text-amber-900">{t.admin.dataUnavailable.title}</div>
+            <p className="mt-1 text-sm text-amber-800">{t.admin.dataUnavailable.body}</p>
+            <ul className="mt-2 space-y-1">
+              {failures.map((failure) => (
+                <li key={failure.path} className="font-mono text-xs text-amber-900/80">{failure.path} — {failure.message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {children}
       </main>
     </div>

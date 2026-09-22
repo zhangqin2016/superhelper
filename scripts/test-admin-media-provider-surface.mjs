@@ -45,10 +45,13 @@ const repoRoot = join(__dirname, "..");
 }
 
 {
+  // The form was split on 2026-09-22: the provider list and what a draft means
+  // as stored config live in the builder, the labels in the copy module.
   const formSource = readFileSync(join(repoRoot, "web/components/config-profile-form.js"), "utf8");
-  assert.match(formSource, /id:\s*"lily"/, "config profiles should offer Lily as a media provider");
+  const builderSource = readFileSync(join(repoRoot, "web/components/config-profile-config-builder.js"), "utf8");
+  assert.match(builderSource, /id:\s*"lily"/, "config profiles should offer Lily as a media provider");
   assert.match(formSource, /\["speech",\s*copy\.mediaSpeech\]/, "config profiles should render speech generation controls");
-  assert.match(formSource, /draft\.speechProviders/, "config profiles should include speech selection in generated config.media");
+  assert.match(builderSource, /draft\.speechProviders/, "config profiles should include speech selection in generated config.media");
 }
 
 console.log("admin media provider surface tests passed");

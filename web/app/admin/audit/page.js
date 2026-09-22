@@ -1,7 +1,7 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { Badge } from "../../../components/ui/badge";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ function metaText(value) {
 export default async function AuditPage() {
   const { t } = await getI18n();
   const c = t.admin.audit;
-  const data = await safeApiGet("/api/admin/audit-logs", { logs: [] });
+  const data = await loadAdmin("/api/admin/audit-logs", { logs: [] });
   const rows = data.logs || [];
   return (
     <AdminShell title={t.admin.pages.audit[0]} subtitle={t.admin.pages.audit[1]}>

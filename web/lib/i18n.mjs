@@ -185,6 +185,10 @@ export const dictionaries = {
       success: "已收到，我们会在后台查看并跟进。",
     },
     admin: {
+      dataUnavailable: {
+        title: "部分数据没能读取",
+        body: "下面这些接口这次没有返回，页面显示的是空位，不是真实情况。请刷新，或检查服务端。",
+      },
       brand: "Lily 管理后台",
       subtitle: "控制台",
       signOut: "退出登录",
@@ -403,6 +407,10 @@ export const dictionaries = {
     },
     contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
+      dataUnavailable: {
+        title: "Some data could not be read",
+        body: "These endpoints did not answer, so what you see is a placeholder rather than the real state. Refresh, or check the server.",
+      },
       brand: "Lily Admin", subtitle: "Control console", signOut: "Sign out", nav: { dashboard: "Dashboard", users: "Users", licenses: "Licenses", devices: "Devices", usage: "Usage", enterprise: "Enterprise", contacts: "Contacts", wishes: "Wish pool", releases: "Releases", runtimePacks: "Runtime packs", skillPackages: "Skill packages", agents: "Agents", apps: "App store", plugins: "Plugins", config: "Config center", health: "Health", diagnostics: "Diagnostics", settings: "Settings", audit: "Audit" },
       navGroups: { operations: "Operations", distribution: "Distribution", configuration: "Configuration", monitoring: "Monitoring" },
       configCenter: { title: "Config center", subtitle: "One place: basics, model providers, delivery rules, and device groups." },
@@ -495,6 +503,10 @@ if (!dictionaries.ar.admin) {
   dictionaries.ar.admin = {
     ...dictionaries.en.admin,
     nav: { ...dictionaries.en.admin.nav, wishes: "مجموعة الأمنيات" },
+    dataUnavailable: {
+      title: "تعذّرت قراءة بعض البيانات",
+      body: "لم تستجب هذه الواجهات، لذا ما تراه عنصر نائب وليس الحالة الحقيقية. حدّث الصفحة أو افحص الخادم.",
+    },
     wishes: {
       ...dictionaries.en.admin.wishes,
       title: "مجموعة الأمنيات",

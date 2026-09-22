@@ -1,6 +1,6 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ function severityClass(value) {
 export default async function DiagnosticsPage({ searchParams }) {
   const { t } = await getI18n();
   const filters = await searchParams;
-  const data = await safeApiGet(`/api/admin/diagnostics?${queryString(filters)}`, {
+  const data = await loadAdmin(`/api/admin/diagnostics?${queryString(filters)}`, {
     diagnostics: [],
     byKind: [],
   });

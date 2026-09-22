@@ -18,6 +18,7 @@ import {
   appVersionAtLeast,
 } from "./character-worlds-policy.js";
 import { DEFAULT_COLLABORATION_POLICY, resolveServerCollaborationPolicy } from "./collaboration/policy.js";
+import { availableMediaProviders, mediaProviderStatus } from "./media-provider-catalog.js";
 
 export const DEFAULT_EFFECTIVE_CONFIG = {
   schemaVersion: 1,
@@ -126,7 +127,7 @@ export function resolveMediaSelection(configCopy, availability) {
   return configCopy;
 }
 
-function configuredLilyMediaKinds(serverConfig = config) {
+export function configuredLilyMediaKinds(serverConfig = config) {
   const shared = Boolean(serverConfig.lilyMediaBaseUrl);
   return {
     image: shared || Boolean(serverConfig.lilyMediaImageEndpoint || serverConfig.lilyMediaImageBaseUrl),
@@ -881,25 +882,16 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
 
   // Per-scope media-generation selection (multi-select + default), gated by which media
   // providers actually have a key server-side. Additive + fail-open (see helper).
-  const availableImageVideoProviders = [
-    visionKey ? "dashscope" : null,
-    volcengineKey ? "volcengine" : null,
-    klingAccessKey ? "kling" : null,
-    minimaxKey ? "minimax" : null,
-    zhipuKey ? "zhipu" : null,
-  ];
-  const availableImageProviders = [...availableImageVideoProviders];
-  const availableVideoProviders = [...availableImageVideoProviders];
-  if (lilyKinds.image) availableImageProviders.push("lily");
-  if (lilyKinds.video) availableVideoProviders.push("lily");
-  const availableSpeechProviders = visionKey ? ["dashscope"] : [];
-  if (lilyKinds.speech) availableSpeechProviders.push("lily");
-  const availableMediaProviders = {
-    image: availableImageProviders,
-    video: availableVideoProviders,
-    speech: availableSpeechProviders,
-  };
-  resolveMediaSelection(configCopy, availableMediaProviders);
+  // Availability comes from the one catalog the admin reports and the form
+  // renders, so "offered in the console" and "delivered to a client" cannot
+  // drift apart again. visionKey carries DashScope's credential.
+  const mediaStatus = mediaProviderStatus({
+    providers: { ...gatewayProviders, vision: { apiKey: visionKey } },
+    serverConfig: { ...config, volcengineApiKey: volcengineKey, klingAccessKey, minimaxApiKey: minimaxKey, zhipuApiKey: zhipuKey },
+    lilyKinds,
+  });
+  const mediaAvailability = availableMediaProviders(mediaStatus);
+  resolveMediaSelection(configCopy, mediaAvailability);
   if (configCopy.media && typeof configCopy.media === "object") {
     configCopy.media.contracts = options.mediaContracts || buildMediaProviderContracts({
       selected: {
@@ -907,7 +899,7 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
         video: configCopy.media.video?.default || "",
         speech: configCopy.media.speech?.default || "",
       },
-      available: availableMediaProviders,
+      available: mediaAvailability,
     });
   }
 

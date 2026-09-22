@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export default async function AdminUsersPage({ searchParams }) {
   const { locale, t } = await getI18n();
   const c = t.admin.usersView;
   const filters = await searchParams;
-  const data = await safeApiGet(`/api/admin/users?${queryString(filters)}`, { users: [], stats: {} });
+  const data = await loadAdmin(`/api/admin/users?${queryString(filters)}`, { users: [], stats: {} });
   const users = data.users || [];
   const stats = data.stats || {};
 

@@ -1,3 +1,4 @@
+import { adminLoadFailures, recordAdminLoadFailure } from "./admin-load-ledger.js";
 import { cookies } from "next/headers";
 import { adminCredentialHeaders } from "./admin-auth-shared.mjs";
 
@@ -92,12 +93,26 @@ export async function apiDelete(path) {
   return json;
 }
 
-export async function safeApiGet(path, fallback) {
+/**
+ * Admin reads that must never lie about failure.
+ *
+ * `loadAdmin` swallowed the error and returned an empty fallback, so a console
+ * whose API was down looked exactly like a console with nothing configured —
+ * 30 of the 81 read sites rendered "no data" for "could not ask". The fallback
+ * still keeps a page rendering (half a console beats a stack trace), but the
+ * failure is recorded in a per-request ledger that AdminShell shows on every
+ * page. React's `cache` gives that ledger request scope, so one operator's
+ * outage never bleeds into another's page.
+ */
+export async function loadAdmin(path, fallback) {
   try {
     return await apiGet(path);
-  } catch {
+  } catch (error) {
+    recordAdminLoadFailure(adminLoadFailures(), path, error);
     return fallback;
   }
 }
+
+export { adminLoadFailures };
 
 export { API_BASE };

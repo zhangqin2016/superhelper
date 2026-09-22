@@ -1,7 +1,7 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminContactAttachments } from "../../../components/admin-contact-attachments";
 import { AdminEmpty } from "../../../components/admin-empty";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ function formatTime(value, locale) {
 
 export default async function ContactsPage() {
   const { locale, t } = await getI18n();
-  const data = await safeApiGet("/api/admin/contact-requests", { contacts: [] });
+  const data = await loadAdmin("/api/admin/contact-requests", { contacts: [] });
   const contacts = data.contacts || [];
   const copy = t.admin.contacts;
   return (

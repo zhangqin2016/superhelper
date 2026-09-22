@@ -1,5 +1,7 @@
 "use server";
 
+import { adminMessage } from "../../lib/admin-messages.mjs";
+
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -34,7 +36,7 @@ export async function createLicenseAction(_previousState, formData) {
   try {
     const expiresAt = new Date(text(formData, "expiresAt"));
     if (Number.isNaN(expiresAt.getTime())) {
-      return { ok: false, message: "Invalid expiration date." };
+      return { ok: false, message: await adminMessage("licenseInvalidExpiry") };
     }
 
     const result = await apiPost("/api/admin/licenses", {
@@ -50,12 +52,12 @@ export async function createLicenseAction(_previousState, formData) {
     revalidatePath("/admin/licenses");
     return {
       ok: true,
-      message: "License created. Copy it now; the plain key is shown only once.",
+      message: await adminMessage("licenseCreated"),
       licenseId: result.licenseId,
       licenseKey: result.licenseKey,
     };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to create license." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("licenseFailed") };
   }
 }
 
@@ -72,9 +74,9 @@ export async function createReleaseAction(formData) {
       enabled: !bool(formData, "disabled"),
     });
     revalidatePath("/admin/releases");
-    return { ok: true, message: `Release ${result.id} created.` };
+    return { ok: true, message: await adminMessage("releaseCreated", { id: result.id }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to create release." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("releaseFailed") };
   }
 }
 
@@ -105,9 +107,9 @@ export async function createSkillPackageAction(_previousState, formData) {
     if (artifact) uploadForm.set("artifact", artifact);
     const result = await apiPostForm("/api/admin/skill-packages/upload", uploadForm);
     revalidatePath("/admin/skill-packages");
-    return { ok: true, message: `Skill package ${result.skillId} uploaded.` };
+    return { ok: true, message: await adminMessage("skillUploaded", { id: result.skillId }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to upload skill package." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("skillFailed") };
   }
 }
 
@@ -144,9 +146,9 @@ export async function createWorkspaceAppAction(_previousState, formData) {
     if (artifact) uploadForm.set("artifact", artifact);
     const result = await apiPostForm("/api/admin/workspace-apps/upload", uploadForm);
     revalidatePath("/admin/apps");
-    return { ok: true, message: `Workspace app ${result.appId} uploaded.` };
+    return { ok: true, message: await adminMessage("appUploaded", { id: result.appId }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to upload workspace app." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("appFailed") };
   }
 }
 
@@ -158,7 +160,7 @@ export async function createConfigProfileAction(_previousState, formData) {
     if (configText) {
       parsedConfig = JSON.parse(configText);
       if (!parsedConfig || Array.isArray(parsedConfig) || typeof parsedConfig !== "object") {
-        return { ok: false, message: "Config must be a JSON object." };
+        return { ok: false, message: await adminMessage("configNotObject") };
       }
     }
     const scope = text(formData, "scope") || "global";
@@ -174,9 +176,9 @@ export async function createConfigProfileAction(_previousState, formData) {
     });
     revalidatePath("/admin/config");
     revalidatePath("/admin/config/profiles");
-    return { ok: true, message: `Config profile ${result.id} saved.` };
+    return { ok: true, message: await adminMessage("configProfileSaved", { id: result.id }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to save config profile." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("configProfileFailed") };
   }
 }
 
@@ -205,9 +207,9 @@ export async function createModelProviderAction(_previousState, formData) {
     });
     revalidatePath("/admin/config");
     revalidatePath("/admin/config/providers");
-    return { ok: true, message: `Provider ${result.id} saved.` };
+    return { ok: true, message: await adminMessage("providerSaved", { id: result.id }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to save provider." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("providerFailed") };
   }
 }
 
@@ -226,9 +228,9 @@ export async function createConfigGroupAction(_previousState, formData) {
     });
     revalidatePath("/admin/config");
     revalidatePath("/admin/config/groups");
-    return { ok: true, message: `Group ${result.id} saved.` };
+    return { ok: true, message: await adminMessage("groupSaved", { id: result.id }) };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to save group." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("groupFailed") };
   }
 }
 
@@ -242,9 +244,9 @@ export async function assignConfigGroupAction(_previousState, formData) {
     });
     revalidatePath("/admin/config");
     revalidatePath("/admin/config/groups");
-    return { ok: true, message: "Membership updated." };
+    return { ok: true, message: await adminMessage("membershipUpdated") };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to update membership." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("membershipFailed") };
   }
 }
 
@@ -323,7 +325,7 @@ export async function saveAgentPackageAction(_previousState, formData) {
   try {
     const definition = parseJson("definition", "Definition");
     if (definition.error) return { ok: false, message: definition.error, field: "definition", issues: [] };
-    if (!definition.value) return { ok: false, message: "Definition JSON is required.", field: "definition", issues: [] };
+    if (!definition.value) return { ok: false, message: await adminMessage("agentDefinitionRequired"), field: "definition", issues: [] };
     const roleCard = parseJson("roleCard", "Role card");
     if (roleCard.error) return { ok: false, message: roleCard.error, field: "roleCard", issues: [] };
     const scopeType = text(formData, "scopeType") || "global";
@@ -352,9 +354,9 @@ export async function saveAgentPackageAction(_previousState, formData) {
       };
     }
     revalidatePath("/admin/agents");
-    return { ok: true, message: `Agent package ${result.json.agentId} ${result.json.created ? "published" : "updated"}.`, id: result.json.id, issues: [] };
+    return { ok: true, message: await adminMessage("agentSaved", { id: result.json.agentId, action: result.json.created ? "published" : "updated" }), id: result.json.id, issues: [] };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to save agent package.", issues: [] };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("agentFailed"), issues: [] };
   }
 }
 
@@ -392,9 +394,9 @@ export async function updateWishAction(_previousState, formData) {
     });
     revalidatePath("/admin/wishes");
     revalidatePath(`/admin/wishes/${id}`);
-    return { ok: true, message: "Wish updated." };
+    return { ok: true, message: await adminMessage("wishUpdated") };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to update wish." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("wishFailed") };
   }
 }
 
@@ -405,9 +407,9 @@ export async function mergeWishAction(_previousState, formData) {
     await apiPost(`/api/admin/wishes/${id}/merge`, { targetWishId: text(formData, "targetWishId") });
     revalidatePath("/admin/wishes");
     revalidatePath(`/admin/wishes/${id}`);
-    return { ok: true, message: "Wish merged." };
+    return { ok: true, message: await adminMessage("wishMerged") };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Failed to merge wish." };
+    return { ok: false, message: error instanceof Error ? error.message : await adminMessage("wishMergeFailed") };
   }
 }
 
@@ -495,7 +497,7 @@ export async function loginAction(_previousState, formData) {
   formData = actionFormData(_previousState, formData);
   const email = text(formData, "email");
   const password = text(formData, "password");
-  if (!email || !password) return { ok: false, message: "Email and password are required." };
+  if (!email || !password) return { ok: false, message: await adminMessage("loginMissingCredentials") };
   const response = await fetch(`${API_BASE}/api/admin/login`, {
     method: "POST",
     cache: "no-store",
@@ -503,13 +505,13 @@ export async function loginAction(_previousState, formData) {
     body: JSON.stringify({ email, password }),
   }).catch(() => null);
   if (!response?.ok) {
-    return { ok: false, message: "Login failed. Check the email and password." };
+    return { ok: false, message: await adminMessage("loginRejected") };
   }
 
   const sessionCookie = response.headers
     .get("set-cookie")
     ?.match(/(?:^|,?\s*)lily_admin_session=([^;]+)/)?.[1];
-  if (!sessionCookie) return { ok: false, message: "Login succeeded but no admin session was returned." };
+  if (!sessionCookie) return { ok: false, message: await adminMessage("loginNoSession") };
 
   const store = await cookies();
   store.delete("lily_admin_token");

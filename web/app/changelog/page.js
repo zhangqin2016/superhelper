@@ -1,13 +1,13 @@
 import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
-import { safeApiGet } from "../../lib/api";
+import { loadAdmin } from "../../lib/api";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChangelogPage() {
   const { locale, t } = await getI18n();
-  const data = await safeApiGet("/api/releases", { releases: [] });
+  const data = await loadAdmin("/api/releases", { releases: [] });
   const releases = data.releases || [];
   return (
     <>

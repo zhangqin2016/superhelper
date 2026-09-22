@@ -1,6 +1,6 @@
 import { AdminShell } from "../../components/admin-shell";
 import { AdminDashboardCharts } from "../../components/admin-dashboard-charts";
-import { safeApiGet } from "../../lib/api";
+import { loadAdmin } from "../../lib/api";
 import { getI18n } from "../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ function fmt(value) {
 
 export default async function AdminDashboard() {
   const { t } = await getI18n();
-  const summary = await safeApiGet("/api/admin/summary", {
+  const summary = await loadAdmin("/api/admin/summary", {
     licenses: 0,
     activeLicenses: 0,
     devices: 0,

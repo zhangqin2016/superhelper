@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../components/admin-shell";
 import { WorkspaceAppCreateForm } from "../../../../components/workspace-app-create-form";
-import { safeApiGet } from "../../../../lib/api";
+import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +19,8 @@ function dedupeOptions(rows, idKey, labelKey) {
 export default async function NewAppPage() {
   const { t } = await getI18n();
   const [skillsData, runtimeData] = await Promise.all([
-    safeApiGet("/api/admin/skill-packages", { skillPackages: [] }),
-    safeApiGet("/api/admin/runtime-packs", { runtimePacks: [] }),
+    loadAdmin("/api/admin/skill-packages", { skillPackages: [] }),
+    loadAdmin("/api/admin/runtime-packs", { runtimePacks: [] }),
   ]);
   const skillPackageOptions = dedupeOptions(skillsData.skillPackages || [], "skill_id", "name");
   const runtimePackOptions = dedupeOptions(runtimeData.runtimePacks || [], "pack_id", "pack_id");

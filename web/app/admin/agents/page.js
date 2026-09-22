@@ -2,7 +2,7 @@ import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { AdminPageActions } from "../../../components/admin-page-actions";
 import { AgentPackagesTable } from "../../../components/agent-packages-table";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // re-enable an older version if needed.
 export default async function AgentPackagesPage() {
   const { locale, t } = await getI18n();
-  const data = await safeApiGet("/api/admin/agent-packages", { agentPackages: [] });
+  const data = await loadAdmin("/api/admin/agent-packages", { agentPackages: [] });
   const rows = data.agentPackages || [];
   const page = t.admin.pages.agents || ["Agents", ""];
   const newLabel = locale === "zh" ? "发布智能体" : "Publish agent";

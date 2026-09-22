@@ -27,9 +27,10 @@ async function load(relative, overrides = {}) {
     if (id.endsWith('/issued-credentials')) return () => React.createElement('aside', null, 'ISSUED_CREDENTIALS');
     if (id.endsWith('/action-form')) return ({ children }) => React.createElement('form', null, children);
     if (id.endsWith('/i18n.mjs')) return { getI18n: async () => ({ t: {} }) };
+    if (id.endsWith('/admin-load-ledger.js')) return { adminLoadFailures: () => [], recordAdminLoadFailure: () => null };
     if (id.endsWith('/api') || id.endsWith('/user-api') || id.endsWith('/enterprise-page')) return {
       apiGet: async () => ({ ok: true, organization: org }),
-      safeApiGet: async (url) => url.includes('/usage') ? { usage: { byMember: [], byModel: [] } } : { ok: true, organization: org },
+      loadAdmin: async (url) => url.includes('/usage') ? { usage: { byMember: [], byModel: [] } } : { ok: true, organization: org },
       userApiGet: async () => ({ ok: true, organization: org }),
       requireEnterpriseOrganization: async () => org,
     };

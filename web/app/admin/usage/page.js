@@ -1,6 +1,6 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
-import { safeApiGet } from "../../../lib/api";
+import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ function queryString(searchParams = {}) {
 export default async function UsagePage({ searchParams }) {
   const { t } = await getI18n();
   const filters = await searchParams;
-  const data = await safeApiGet(`/api/admin/usage?${queryString(filters)}`, { usage: [] });
+  const data = await loadAdmin(`/api/admin/usage?${queryString(filters)}`, { usage: [] });
   const rows = data.usage || [];
   const c = t.admin.usageView;
   return (
