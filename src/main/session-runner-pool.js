@@ -220,7 +220,7 @@ class SessionRunnerPool {
       /* guard keeps its own conservative default */
     }
 
-    profile.report(`runner ensure profile session=${sessionId}`);
+    profile.mark("guidance+budget");
     runner.ensureProcess(cwd, {
       agentCommand,
       permissionMode,
@@ -257,6 +257,8 @@ class SessionRunnerPool {
       // instead of starting blank — otherwise reopened conversations lose context.
       resumeSessionId: extra.resumeSessionId || null,
     }, { lazy: Boolean(callOpts.lazy) });
+    profile.mark("ensureProcess");
+    profile.report(`runner ensure profile session=${sessionId}`);
 
     return runner;
   }

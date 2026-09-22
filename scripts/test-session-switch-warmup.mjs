@@ -165,16 +165,39 @@ try {
     const loop = state.slice(state.indexOf("function ensureSkillsStateDefaults"), state.indexOf("function isSkillEnabled"));
     assert.ok(!loop.includes("readBundledManifest("), "the per-call reconciliation reads no bundled manifest");
     assert.match(loop, /bundledVersionOf\(skillId\)/);
-    // The stage profile every hot path uses is one module, off by default.
+    // The stage profile every hot path uses is one module. A field report of a
+    // slow switch arrives AFTER the slow switch, so waiting for someone to set a
+    // flag first can never explain it: the stages are always measured and the
+    // line prints itself when the path was slow.
     const profile = require(path.join(ROOT, "src/main/stage-profile.js"));
     delete process.env.LILY_PROFILE_RUNNER_ENSURE;
-    const off = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE");
-    off.mark("x"); off.report("never printed");
+    const clock = (step) => { let at = 0; return () => { at += step; return at; }; };
+    const quiet = [];
+    const fast = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE", { info: (l) => quiet.push(l), warn: (l) => quiet.push(l) }, { now: clock(5) });
+    fast.mark("a"); fast.mark("b");
+    assert.equal(fast.report("never printed"), null, "a fast path says nothing");
+    assert.deepEqual(quiet, []);
+    const slowLines = [];
+    const slow = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE", { info: (l) => slowLines.push(l), warn: (l) => slowLines.push(l) }, { now: clock(3000) });
+    slow.mark("a"); slow.mark("b"); slow.report("p");
+    assert.match(slowLines[0], /^p: total=\d+ms a=\d+ms b=\d+ms$/, "a slow path names every stage without being asked");
+    // Not every host that loads main-process modules has a global `performance`
+    // (a test fixture did not, and an always-on profiler that throws where it
+    // used to be a no-op is worse than the slowness it measures).
+    const savedPerformance = globalThis.performance;
+    try {
+      delete globalThis.performance;
+      const bare = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE", { info: () => {}, warn: () => {} });
+      bare.mark("a");
+      bare.report("p");
+    } finally {
+      if (savedPerformance !== undefined) globalThis.performance = savedPerformance;
+    }
     process.env.LILY_PROFILE_RUNNER_ENSURE = "1";
     const lines = [];
-    const on = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE", { info: (line) => lines.push(line) });
+    const on = profile.stageProfile("LILY_PROFILE_RUNNER_ENSURE", { info: (line) => lines.push(line) }, { now: clock(5) });
     on.mark("a"); on.mark("b"); on.report("p");
-    assert.match(lines[0], /^p: a=\d+ms b=\d+ms$/);
+    assert.match(lines[0], /^p: total=\d+ms a=\d+ms b=\d+ms$/, "the flag still forces the breakdown on a fast path");
     delete process.env.LILY_PROFILE_RUNNER_ENSURE;
     for (const file of ["src/main/ipc-utils.js", "src/main/session-runner-pool.js"]) {
       const text = fs.readFileSync(path.join(ROOT, file), "utf8");
