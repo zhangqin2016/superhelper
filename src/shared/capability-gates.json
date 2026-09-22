@@ -2093,6 +2093,16 @@
       "tests": [
         "scripts/test-config-profile-license-target.mjs"
       ]
+    },
+    {
+      "id": "config-delivery-explainability",
+      "protects": "A client's delivered config is decided by one selection and one merge, and every rule that did not apply or was undone by a later stage is reported.",
+      "baseline": "Merge semantics are unchanged (objects deep-merge, arrays replace); the signed payload is unchanged; a client that ignores the receipt behaves exactly as before.",
+      "failureFallback": "The receipt is bounded and additive: losing it costs explanation, never delivery. A scope this build does not know never matches, and never outranks an explicit device rule.",
+      "tests": [
+        "scripts/test-config-scope-precedence.mjs",
+        "scripts/test-config-delivery-provenance.mjs"
+      ]
     }
   ]
 }

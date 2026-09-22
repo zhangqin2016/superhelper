@@ -7,7 +7,6 @@ import {
   DEFAULT_EFFECTIVE_CONFIG,
   clearConfigProfileDeleted,
   configProfileWasDeleted,
-  deepMerge,
   decideConfigProfileUpsert,
   expandModelProviderMenu,
   isGatewayBaseUrl,
@@ -19,6 +18,9 @@ import {
 } from "../../services/client-config.js";
 import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-settings.js";
 import { resolveConfigProfileTarget, targetErrorResponse } from "../../services/config-profile-target.js";
+import { compareProfilesForMerge, selectProfilesForTarget } from "../../services/config-profile-selection.js";
+import { createDeliveryTrace } from "../../services/config-delivery-trace.js";
+import { profileReach } from "../../services/config-profile-reach.js";
 import {
   finalizeAdminPreviewEffectiveConfig,
   invalidConfigProfile,
@@ -55,38 +57,38 @@ const effectivePreviewSchema = z.object({
 });
 
 async function resolveEffectivePreview(input, request) {
-  const profiles = await db
-    .selectFrom("config_profiles")
-    .selectAll()
-    .where("enabled", "=", true)
-    .orderBy("priority", "asc")
-    .orderBy("updated_at", "asc")
-    .execute();
-
-  const matching = profiles.filter((profile) => {
-    if (input.deviceId && !rolloutAllows(profile, input.deviceId)) return false;
-    if (profile.scope === "global") return !profile.target_id;
-    if (profile.scope === "group") return input.groupId && profile.target_id === input.groupId;
-    if (profile.scope === "license") return input.licenseId && profile.target_id === input.licenseId;
-    if (profile.scope === "device") return input.deviceId && profile.target_id === input.deviceId;
-    return false;
+  const profiles = await db.selectFrom("config_profiles").selectAll().where("enabled", "=", true).execute();
+  // The preview runs the production selection, order and merge — it used to
+  // carry its own copy, which had already drifted (it knew nothing about user-
+  // or organization-scoped rules). A preview that does not run delivery's code
+  // is a second opinion, not a preview.
+  const target = {
+    deviceId: input.deviceId || "",
+    licenseId: input.licenseId || "",
+    groupId: input.groupId || "",
+    userId: input.userId || "",
+    organizationIds: input.organizationIds || (input.organizationId ? [input.organizationId] : []),
+  };
+  const { applied, skipped } = selectProfilesForTarget(profiles, target, {
+    rolloutAllows: input.deviceId ? rolloutAllows : () => true,
   });
-  const mergedConfig = matching.reduce(
-    (acc, profile) => deepMerge(acc, profile.config),
-    DEFAULT_EFFECTIVE_CONFIG,
-  );
+  const trace = createDeliveryTrace();
+  trace.skipped(skipped);
+  const mergedConfig = trace.merge(applied, DEFAULT_EFFECTIVE_CONFIG);
   const effectiveConfig = await finalizeAdminPreviewEffectiveConfig({
     effectiveConfig: mergedConfig,
     input,
     request,
+    trace,
   });
+  const receipt = trace.receipt();
   return {
     target: {
       deviceId: input.deviceId || "",
       licenseId: input.licenseId || "",
       groupId: input.groupId || "",
     },
-    appliedProfiles: matching.map((profile) => ({
+    appliedProfiles: applied.map((profile) => ({
       id: profile.id,
       name: profile.name,
       scope: profile.scope,
@@ -95,6 +97,8 @@ async function resolveEffectivePreview(input, request) {
       rolloutPercent: profile.rollout_percent,
     })),
     effectiveConfig,
+    provenance: receipt.provenance,
+    decisions: receipt.decisions,
     summary: summarizeEffectiveConfig(effectiveConfig),
   };
 }
@@ -132,16 +136,34 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         response: { 200: okResponse({ profiles: { type: "array", items: { type: "object" } } }) },
       },
     },
-    async () => ({
-    profiles: await db
-      .selectFrom("config_profiles")
-      .selectAll()
-      .orderBy("scope", "asc")
-      .orderBy("priority", "desc")
-      .orderBy("updated_at", "desc")
-      .limit(300)
-      .execute(),
-  }));
+    async () => {
+      // Listed in MERGE order — the order that decides who overrides whom. A
+      // list sorted any other way asks the reader to simulate the merge in
+      // their head, which is how a rule that never applied went unnoticed.
+      const rows = await db.selectFrom("config_profiles").selectAll().limit(300).execute();
+      return { profiles: rows.sort(compareProfilesForMerge) };
+    });
+
+  app.get(
+    "/api/admin/config-profiles/:id/reach",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "How many clients a rule currently reaches",
+        description: "Counts the devices/members a scoped rule applies to right now, so a rule that reaches nobody is visible before someone waits for it to take effect.",
+        response: { 200: okResponse({ reach: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async (request, reply) => {
+      const profile = await db
+        .selectFrom("config_profiles")
+        .selectAll()
+        .where("id", "=", request.params.id)
+        .executeTakeFirst();
+      if (!profile) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
+      return { ok: true, reach: await profileReach(profile) };
+    },
+  );
 
   app.get(
     "/api/admin/config-profiles/effective-preview",

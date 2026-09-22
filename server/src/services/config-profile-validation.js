@@ -155,13 +155,17 @@ export async function finalizeAdminPreviewEffectiveConfig({
   input = {},
   request = {},
   options = {},
+  trace = null,
 } = {}) {
   const modelDeliveryMode = options.modelDeliveryMode || await getModelDeliveryMode();
   const mediaDeliveryMode = options.mediaDeliveryMode || await getMediaDeliveryMode();
-  const scopedConfig = expandModelProviderMenu(effectiveConfig, {
+  // Same stage name as delivery, so a preview's receipt reads identically.
+  const receipt = trace || options.trace || null;
+  const runStage = (name, cfg, fn) => (receipt ? receipt.stage(name, cfg, fn) : fn(cfg));
+  const scopedConfig = runStage("modelMenu", effectiveConfig, (cfg) => expandModelProviderMenu(cfg, {
     deliveryMode: modelDeliveryMode,
     providers: options.providers,
-  });
+  }));
   const bootstrapPolicy = options.bootstrapPolicy || buildClientBootstrapPolicy(request);
   return withGatewayRuntimeConfig(scopedConfig, request, {
     deviceId: input.deviceId || "admin-preview",

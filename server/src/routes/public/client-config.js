@@ -9,7 +9,6 @@ import {
   buildEnvManagedClientConfig,
   DEFAULT_EFFECTIVE_CONFIG,
   clientConfigTtlMs,
-  deepMerge,
   expandModelProviderMenu,
   resolveAccountContextForClientConfig,
   rolloutAllows,
@@ -17,7 +16,6 @@ import {
 } from "../../services/client-config.js";
 import {
   applyCollaborationPolicyGate,
-  profileMatchesCollaborationContext,
 } from "../../services/collaboration/policy.js";
 import { discoverLilyMediaProviderContracts } from "../../services/media-provider-contracts.js";
 import {
@@ -30,6 +28,8 @@ import {
 import { registerDeviceSchema } from "./devices.js";
 import { listAvailableAgentIds, resolveAgentSelection } from "../../services/agent-packages.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { selectProfilesForTarget } from "../../services/config-profile-selection.js";
+import { createDeliveryTrace } from "../../services/config-delivery-trace.js";
 
 const clientConfigSchema = registerDeviceSchema.extend({
   licenseId: z.string().max(80).optional().nullable(),
@@ -83,30 +83,23 @@ async function resolveEffectiveConfig(input, options = {}) {
   // so a paid, non-expired license is not locked out by a changed deviceId.
   const licenseId = (await validLicenseScope(input)) || (await recoverLicenseScopeByFingerprint(input));
   const groupId = await resolveDeviceGroupId(input.deviceId, licenseId);
-  const profiles = await db
-    .selectFrom("config_profiles")
-    .selectAll()
-    .where("enabled", "=", true)
-    .orderBy("priority", "asc")
-    .orderBy("updated_at", "asc")
-    .execute();
+  const profiles = await db.selectFrom("config_profiles").selectAll().where("enabled", "=", true).execute();
 
-  const matching = profiles.filter((profile) => {
-    if (!rolloutAllows(profile, input.deviceId)) return false;
-    if (profile.scope === "global") return !profile.target_id;
-    if (profile.scope === "group") return groupId && profile.target_id === groupId;
-    if (profile.scope === "license") return licenseId && profile.target_id === licenseId;
-    if (profile.scope === "device") return profile.target_id === input.deviceId;
-    if (profileMatchesCollaborationContext(profile, options.accountContext)) return true;
-    return false;
-  });
-
+  // Selection, order and merge are the shared seam: the admin preview runs this
+  // exact code, so a preview cannot disagree with what a device receives.
+  const target = {
+    deviceId: input.deviceId || "",
+    licenseId: licenseId || "",
+    groupId: groupId || "",
+    userId: options.accountContext?.userId || "",
+    organizationIds: options.accountContext?.organizationIds || [],
+  };
+  const { applied, skipped } = selectProfilesForTarget(profiles, target, { rolloutAllows });
+  const trace = options.trace || createDeliveryTrace();
+  trace.skipped(skipped);
   const baseline = options.baselineEffectiveConfig || DEFAULT_EFFECTIVE_CONFIG;
-  const effectiveConfig = matching.reduce(
-    (acc, profile) => deepMerge(acc, profile.config),
-    baseline,
-  );
-  const latest = matching
+  const effectiveConfig = trace.merge(applied, baseline);
+  const latest = applied
     .map((profile) => new Date(profile.updated_at).getTime())
     .filter((value) => Number.isFinite(value))
     .sort((a, b) => b - a)[0];
@@ -114,11 +107,12 @@ async function resolveEffectiveConfig(input, options = {}) {
   return {
     effectiveConfig,
     configVersion: latest ? new Date(latest).toISOString() : "packaged",
-    appliedProfileIds: matching.map((profile) => profile.id),
+    appliedProfileIds: applied.map((profile) => profile.id),
     // Server-validated license scope (may be "" when the device has no valid
     // binding). Gateway tokens must be signed with THIS, not the raw
     // client-reported input.licenseId — see withGatewayRuntimeConfig.
     licenseScope: licenseId,
+    trace,
   };
 }
 
@@ -160,6 +154,8 @@ export function registerPublicClientConfigRoutes(app) {
           deviceId: { type: "string" },
           trial: { type: "object", additionalProperties: true },
           appliedProfileIds: { type: "array", items: { type: "string" } },
+          configProvenance: { type: "object", additionalProperties: true },
+          configDecisions: { type: "array", items: { type: "object", additionalProperties: true } },
           signature: { type: "string" },
         }),
       },
@@ -188,12 +184,12 @@ export function registerPublicClientConfigRoutes(app) {
     if (resolved.effectiveConfig?.agents) {
       try {
         const availableAgentIds = await listAvailableAgentIds(db, { organizationIds });
-        resolved.effectiveConfig = resolveAgentSelection(resolved.effectiveConfig, availableAgentIds);
+        resolved.effectiveConfig = resolved.trace.stage("agentSelection", resolved.effectiveConfig, (cfg) => resolveAgentSelection(cfg, availableAgentIds));
       } catch (error) {
         request.log.warn({ error }, "agent selection resolution skipped");
       }
     }
-    const collaborationGatedConfig = applyCollaborationPolicyGate(resolved.effectiveConfig, {
+    const collaborationGatedConfig = resolved.trace.stage("collaborationGate", resolved.effectiveConfig, (cfg) => applyCollaborationPolicyGate(cfg, {
       collaborationEnabled: config.collaborationEnabled,
       killSwitch: config.collaborationKillSwitch,
       organizationEligible,
@@ -204,12 +200,12 @@ export function registerPublicClientConfigRoutes(app) {
       taskGit: config.collaborationTaskGitEnabled,
       sharedPublication: config.collaborationSharedPublicationEnabled,
       aiTools: config.collaborationAiToolsEnabled,
-    });
+    }));
     // Expand any per-scope `models.providers` directive into its preset menu
     // before tokens are injected.
-    const scopedConfig = expandModelProviderMenu(collaborationGatedConfig, {
+    const scopedConfig = resolved.trace.stage("modelMenu", collaborationGatedConfig, (cfg) => expandModelProviderMenu(cfg, {
       deliveryMode: modelDeliveryMode,
-    });
+    }));
     const bootstrapPolicy = buildClientBootstrapPolicy(request);
     const mediaDeliveryMode = await getMediaDeliveryMode();
     const scopedPreview = withGatewayRuntimeConfig(scopedConfig, request, input, {
@@ -253,12 +249,19 @@ export function registerPublicClientConfigRoutes(app) {
       effectiveConfig,
     };
 
+    // The receipt travels with the config: which rule established each field,
+    // and which stage removed or rewrote one. It is outside the signed payload
+    // on purpose — it explains delivery, it is not part of it, and a client that
+    // ignores it behaves exactly as before.
+    const receipt = resolved.trace.receipt();
     return reply.send({
       ok: true,
       ...payload,
       deviceId: input.deviceId,
       trial: trialPayload(device),
       appliedProfileIds: resolved.appliedProfileIds,
+      configProvenance: receipt.provenance,
+      configDecisions: receipt.decisions,
       signature: signConfigPayload(payload),
     });
   });

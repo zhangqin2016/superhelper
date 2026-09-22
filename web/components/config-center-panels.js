@@ -31,6 +31,12 @@ const labelsByLocale = {
     deviceId: "设备 ID",
     licenseId: "授权 ID",
     preview: "预览",
+    whoDecided: "字段出处",
+    whoDecidedDesc: "每个字段最后由哪条规则定下；没列出的字段来自默认配置。",
+    droppedTitle: "下发时被改掉或丢掉的",
+    droppedDesc: "规则写了、但投放管线后续环节改写或移除的字段。空即表示规则原样送达。",
+    nothingDropped: "没有任何字段被改写或移除",
+    stageLabel: "环节",
     appliedProfiles: "命中的配置层",
     modelRoute: "模型请求路线",
     security: "安全状态",
@@ -74,6 +80,12 @@ const labelsByLocale = {
     deviceId: "Device ID",
     licenseId: "License ID",
     preview: "Preview",
+    whoDecided: "Field provenance",
+    whoDecidedDesc: "Which rule established each field. Fields not listed come from the packaged defaults.",
+    droppedTitle: "Changed or dropped on delivery",
+    droppedDesc: "Fields a rule set that a later stage rewrote or removed. Empty means every rule reached the client intact.",
+    nothingDropped: "Nothing was rewritten or removed",
+    stageLabel: "stage",
     appliedProfiles: "Applied layers",
     modelRoute: "Model route",
     security: "Security",
@@ -117,6 +129,12 @@ const labelsByLocale = {
     deviceId: "معرف الجهاز",
     licenseId: "معرف الترخيص",
     preview: "معاينة",
+    whoDecided: "مصدر كل حقل",
+    whoDecidedDesc: "أي قاعدة حدّدت كل حقل. الحقول غير المذكورة تأتي من الإعدادات الافتراضية.",
+    droppedTitle: "ما جرى تغييره أو حذفه عند التسليم",
+    droppedDesc: "حقول ضبطتها قاعدة ثم أعادت مرحلة لاحقة كتابتها أو أزالتها. الفراغ يعني وصول القواعد كما هي.",
+    nothingDropped: "لم يُحذف أو يُعدّل أي حقل",
+    stageLabel: "المرحلة",
     appliedProfiles: "الطبقات المطبقة",
     modelRoute: "مسار النموذج",
     security: "الأمان",
@@ -180,6 +198,10 @@ function statusBadge(ok, copy) {
 function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
   const summary = preview?.summary || {};
   const profiles = Array.isArray(preview?.appliedProfiles) ? preview.appliedProfiles : [];
+  // The delivery receipt: which rule set each field, and what a later stage did
+  // to it. Both come from the same pipeline the client is served by.
+  const provenanceRows = Object.entries(preview?.provenance || {}).sort(([a], [b]) => a.localeCompare(b));
+  const decisions = (Array.isArray(preview?.decisions) ? preview.decisions : []).filter((entry) => entry?.reason !== "added");
   const models = Array.isArray(summary.modelPresets) ? summary.modelPresets : [];
   const runtimeSecrets = Array.isArray(summary.runtimeSecretKeys) ? summary.runtimeSecretKeys : [];
   const riskOk = summary.riskLevel !== "warning";
@@ -261,6 +283,37 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
               <dd className="mt-1 font-mono text-slate-800">{runtimeSecrets.join(", ") || copy.noRuntimeSecrets}</dd>
             </div>
           </dl>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-950">{copy.whoDecided}</div>
+          <p className="mt-1 text-xs text-slate-500">{copy.whoDecidedDesc}</p>
+          <div className="mt-3 max-h-64 space-y-1 overflow-auto">
+            {provenanceRows.length ? provenanceRows.map(([field, source]) => (
+              <div key={field} className="flex items-baseline justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs">
+                <span className="font-mono text-slate-700">{field}</span>
+                <span className="shrink-0 text-slate-500">{source?.name || source?.id} · {source?.scope}</span>
+              </div>
+            )) : <p className="text-sm text-slate-500">{copy.noAppliedProfiles}</p>}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-950">{copy.droppedTitle}</div>
+          <p className="mt-1 text-xs text-slate-500">{copy.droppedDesc}</p>
+          <div className="mt-3 max-h-64 space-y-1 overflow-auto">
+            {decisions.length ? decisions.map((decision, index) => (
+              <div key={`${decision.stage}-${decision.field}-${index}`} className="rounded-lg bg-white px-3 py-2 text-xs">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-mono text-slate-700">{decision.field || decision.rule}</span>
+                  <Badge variant={decision.reason === "removed" ? "danger" : "warning"}>{decision.reason}</Badge>
+                </div>
+                <div className="mt-1 text-slate-500">{copy.stageLabel}: {decision.stage}{decision.detail ? ` · ${decision.detail}` : ""}</div>
+              </div>
+            )) : <p className="text-sm text-slate-500">{copy.nothingDropped}</p>}
+          </div>
         </div>
       </div>
 
