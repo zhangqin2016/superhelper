@@ -18,6 +18,14 @@ import {
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
 import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-settings.js";
+import { resolveConfigProfileTarget, targetErrorResponse } from "../../services/config-profile-target.js";
+import {
+  finalizeAdminPreviewEffectiveConfig,
+  invalidConfigProfile,
+  summarizeEffectiveConfig,
+  validateConfigProfileConfig,
+} from "../../services/config-profile-validation.js";
+export { finalizeAdminPreviewEffectiveConfig, validateConfigProfileConfig };
 
 const configProfileSchema = z.object({
   id: z.string().min(2).max(80),
@@ -45,166 +53,6 @@ const effectivePreviewSchema = z.object({
   licenseId: z.string().max(160).optional().default(""),
   groupId: z.string().max(160).optional().default(""),
 });
-
-function invalidConfigProfile(code, message, detail = {}) {
-  return { ok: false, code, message, detail };
-}
-
-function modelPresetEnv(preset) {
-  return preset?.env && typeof preset.env === "object" && !Array.isArray(preset.env) ? preset.env : {};
-}
-
-function isExplicitGatewayRoute(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  if (text === "/llm" || text.startsWith("/llm/")) return true;
-  try {
-    const url = new URL(text);
-    return url.pathname === "/llm" || url.pathname.startsWith("/llm/");
-  } catch {
-    return false;
-  }
-}
-
-export function validateConfigProfileConfig(config) {
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    return invalidConfigProfile("CONFIG_PROFILE_INVALID_CONFIG", "Config must be a JSON object.");
-  }
-
-  const models = config.models;
-  if (!models || typeof models !== "object" || Array.isArray(models)) return null;
-
-  const providers = Array.isArray(models.providers) ? models.providers.filter(Boolean) : [];
-  const presets = Array.isArray(models.presets) ? models.presets.filter(Boolean) : [];
-  const hasProviderDirective = providers.length > 0 || Boolean(models.activeProvider);
-  const hasPresetDirective = presets.length > 0 || Boolean(models.activePresetId);
-
-  if (hasProviderDirective && hasPresetDirective) {
-    return invalidConfigProfile(
-      "CONFIG_PROFILE_MIXED_MODEL_MODES",
-      "A delivery rule cannot mix models.providers with models.presets. Use the provider menu form, or keep a fully manual preset profile in a separate rule.",
-      {
-        providers,
-        activeProvider: models.activeProvider || "",
-        activePresetId: models.activePresetId || "",
-        presetCount: presets.length,
-      },
-    );
-  }
-
-  if (String(models.source || "") === "client-direct") {
-    return invalidConfigProfile(
-      "CONFIG_PROFILE_CLIENT_DIRECT_NOT_ALLOWED",
-      "Admin delivery rules cannot ship client-direct model presets. Configure model providers once, then deliver them by provider menu so keys stay server-side.",
-    );
-  }
-
-  for (const preset of presets) {
-    const env = modelPresetEnv(preset);
-    const presetId = String(preset?.id || "");
-    const apiKey = String(env.LILY_API_KEY || "").trim();
-    const baseUrl = String(env.LILY_API_BASE_URL || "").trim();
-    const gatewayProvider = String(env.LILY_GATEWAY_PROVIDER || "").trim();
-
-    if (apiKey === "$LILY_PROVIDER_KEY") {
-      return invalidConfigProfile(
-        "CONFIG_PROFILE_PROVIDER_KEY_PLACEHOLDER_NOT_ALLOWED",
-        "Admin delivery rules cannot contain $LILY_PROVIDER_KEY. Use models.providers so the server injects a short-lived gateway token at delivery time.",
-        { presetId },
-      );
-    }
-
-    if (gatewayProvider && baseUrl && !isExplicitGatewayRoute(baseUrl)) {
-      return invalidConfigProfile(
-        "CONFIG_PROFILE_MIXED_GATEWAY_AND_UPSTREAM_URL",
-        "A preset cannot set LILY_GATEWAY_PROVIDER while pointing LILY_API_BASE_URL at an upstream provider URL. Use /llm/<provider> or models.providers.",
-        { presetId, gatewayProvider, baseUrl },
-      );
-    }
-  }
-
-  return null;
-}
-
-function secretValueKind(value) {
-  const text = String(value || "").trim();
-  if (!text) return "missing";
-  if (text === "$LILY_GATEWAY_TOKEN" || text.startsWith("lilygw.")) return "short_lived_gateway_token";
-  if (/^(replace-|your-|example)/i.test(text)) return "placeholder";
-  return "long_lived_secret";
-}
-
-function summarizeEffectiveConfig(effectiveConfig) {
-  const presets = Array.isArray(effectiveConfig?.models?.presets)
-    ? effectiveConfig.models.presets
-    : [];
-  const runtimeEnv = effectiveConfig?.runtime?.env && typeof effectiveConfig.runtime.env === "object"
-    ? effectiveConfig.runtime.env
-    : {};
-  const modelPresets = presets.map((preset) => {
-    const env = preset?.env && typeof preset.env === "object" ? preset.env : {};
-    const baseUrl = String(env.LILY_API_BASE_URL || "");
-    const providerId = parseGatewayProvider(baseUrl, env);
-    const viaGateway = isGatewayBaseUrl(baseUrl, env);
-    const keyKind = secretValueKind(env.LILY_API_KEY);
-    return {
-      id: String(preset?.id || ""),
-      label: String(preset?.label || preset?.id || ""),
-      model: String(env.LILY_MODEL || env.LILY_MODEL_SONNET || ""),
-      baseUrl,
-      providerId,
-      delivery: viaGateway ? "server_gateway" : "direct",
-      keyKind,
-      exposesLongLivedSecret: keyKind === "long_lived_secret",
-    };
-  });
-  const runtimeSecretKeys = Object.keys(runtimeEnv).filter((key) => /(KEY|TOKEN|SECRET|PASSWORD)$/i.test(key));
-  const longLivedModelKeys = modelPresets.filter((preset) => preset.exposesLongLivedSecret).length;
-  return {
-    activePresetId: String(effectiveConfig?.models?.activePresetId || ""),
-    modelPresets,
-    pluginRegistryUrl: String(effectiveConfig?.tools?.pluginRegistryUrl || ""),
-    enabledPluginIds: Array.isArray(effectiveConfig?.tools?.enabledPluginIds)
-      ? effectiveConfig.tools.enabledPluginIds.map(String)
-      : [],
-    permissionMode: String(effectiveConfig?.policy?.permissionMode || ""),
-    minAppVersion: String(effectiveConfig?.policy?.minAppVersion || ""),
-    runtimeSecretKeys,
-    riskLevel: longLivedModelKeys || runtimeSecretKeys.length ? "warning" : "ok",
-    risks: {
-      directModelPresets: modelPresets.filter((preset) => preset.delivery === "direct").length,
-      longLivedModelKeys,
-      runtimeSecretKeys: runtimeSecretKeys.length,
-    },
-  };
-}
-
-export async function finalizeAdminPreviewEffectiveConfig({
-  effectiveConfig,
-  input = {},
-  request = {},
-  options = {},
-} = {}) {
-  const modelDeliveryMode = options.modelDeliveryMode || await getModelDeliveryMode();
-  const mediaDeliveryMode = options.mediaDeliveryMode || await getMediaDeliveryMode();
-  const scopedConfig = expandModelProviderMenu(effectiveConfig, {
-    deliveryMode: modelDeliveryMode,
-    providers: options.providers,
-  });
-  const bootstrapPolicy = options.bootstrapPolicy || buildClientBootstrapPolicy(request);
-  return withGatewayRuntimeConfig(scopedConfig, request, {
-    deviceId: input.deviceId || "admin-preview",
-    licenseId: input.licenseId || "",
-    appVersion: input.appVersion || "admin-preview",
-  }, {
-    publicBaseUrl: options.publicBaseUrl ?? config.publicBaseUrl,
-    policyBaseUrl: options.policyBaseUrl ?? bootstrapPolicy.apiBaseUrl,
-    mediaDeliveryMode,
-    modelDeliveryMode,
-    account: options.account || null,
-    mediaContracts: options.mediaContracts,
-  });
-}
 
 async function resolveEffectivePreview(input, request) {
   const profiles = await db
@@ -342,13 +190,17 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         message: "This config profile was deleted. Create a new rule with a new ID instead.",
       });
     }
+    // A scoped rule that points at nothing saves, lists, and never fires; the
+    // license case even looks right because the operator typed the key they own.
+    const resolvedTarget = await resolveConfigProfileTarget({ scope: input.scope, targetId: input.targetId });
+    if (!resolvedTarget.ok) return reply.code(400).send(targetErrorResponse(resolvedTarget));
     await db
       .insertInto("config_profiles")
       .values({
         id: input.id,
         name: input.name,
         scope: input.scope,
-        target_id: input.scope === "global" ? null : input.targetId || null,
+        target_id: resolvedTarget.targetId,
         priority: input.priority,
         rollout_percent: input.rolloutPercent,
         enabled: input.enabled,
@@ -359,7 +211,7 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         oc.column("id").doUpdateSet({
           name: input.name,
           scope: input.scope,
-          target_id: input.scope === "global" ? null : input.targetId || null,
+          target_id: resolvedTarget.targetId,
           priority: input.priority,
           rollout_percent: input.rolloutPercent,
           enabled: input.enabled,
@@ -371,7 +223,8 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     await clearConfigProfileDeleted(input.id);
     await audit(request, "config_profile.upsert", "config_profile", input.id, {
       scope: input.scope,
-      targetId: input.targetId || null,
+      targetId: resolvedTarget.targetId,
+      targetResolvedFrom: resolvedTarget.resolvedFrom,
       priority: input.priority,
       rolloutPercent: input.rolloutPercent,
       enabled: input.enabled,
@@ -404,10 +257,18 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       if (configError) return reply.code(400).send(configError);
     }
     const scope = input.scope || existing.scope;
+    // Re-resolve whenever either half of (scope, target) moves: a scope change
+    // alone can leave a target that no longer refers to anything.
+    let resolvedTarget = null;
+    if (input.targetId !== undefined || input.scope !== undefined) {
+      const targetId = input.targetId !== undefined ? input.targetId : existing.target_id;
+      resolvedTarget = await resolveConfigProfileTarget({ scope, targetId });
+      if (!resolvedTarget.ok) return reply.code(400).send(targetErrorResponse(resolvedTarget));
+    }
     const updates = {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.scope !== undefined ? { scope: input.scope } : {}),
-      ...(input.targetId !== undefined ? { target_id: scope === "global" ? null : input.targetId || null } : {}),
+      ...(resolvedTarget ? { target_id: resolvedTarget.targetId } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.rolloutPercent !== undefined ? { rollout_percent: input.rolloutPercent } : {}),
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),

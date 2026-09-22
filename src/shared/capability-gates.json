@@ -2084,6 +2084,15 @@
         "scripts/test-engine-exit-confirmation.mjs",
         "scripts/test-shared-server-exit-confirmation.mjs"
       ]
+    },
+    {
+      "id": "config-profile-target-identity",
+      "protects": "A server-side config rule scoped to a license, device, group, user or organization applies to what the operator meant.",
+      "baseline": "Delivery still matches internal ids only; global rules and already-correct scoped rules behave exactly as before.",
+      "failureFallback": "A target that resolves to nothing is refused at write time with the reason, instead of saving a rule that lists but never fires. A scope this seam does not know is stored unchanged.",
+      "tests": [
+        "scripts/test-config-profile-license-target.mjs"
+      ]
     }
   ]
 }

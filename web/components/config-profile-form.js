@@ -56,7 +56,7 @@ const labels = {
     scopeGroup: "某个设备组",
     scopeLicense: "某个授权",
     scopeDevice: "某台设备",
-    targetHelp: "全局配置不需要目标 ID；设备组填组 ID，授权/设备填对应 ID。",
+    targetHelp: "全局配置不需要目标 ID；设备组填组 ID，设备填设备 ID。授权可以直接填发给客户的授权码，保存时自动换成内部 ID；填错或对不上任何对象会被拒绝保存，不会出现「保存成功却不生效」。",
     modelTitle: "模型下发",
     modelDesc: "这里不配置密钥和真实接口，只决定这条规则下客户端能看到哪些模型供应商，以及默认打开哪一个。",
     providerEmpty: "请先在上方「模型供应商」里添加一个供应商。",
@@ -108,7 +108,7 @@ const labels = {
     scopeGroup: "A device group",
     scopeLicense: "A license",
     scopeDevice: "A device",
-    targetHelp: "Global needs no target ID. Device group takes a group ID; license/device take their IDs.",
+    targetHelp: "Global needs no target ID. A device group takes a group ID, a device its id. For a license, paste the license key you gave the customer — it is resolved to the internal id on save, and a target that matches nothing is refused rather than saved dead.",
     modelTitle: "Model delivery",
     modelDesc: "This rule does not store keys or upstream URLs. It only controls which model providers the client can see and which one opens by default.",
     providerEmpty: "Add a provider above in “Model providers” first.",
@@ -160,7 +160,7 @@ const labels = {
     scopeGroup: "مجموعة فئة",
     scopeLicense: "ترخيص محدد",
     scopeDevice: "جهاز محدد",
-    targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّف المجموعة؛ الترخيص/الجهاز يأخذ معرّفه.",
+    targetHelp: "الإعداد العام لا يحتاج هدفاً. المجموعة تأخذ معرّفها والجهاز معرّفه. أما الترخيص فيمكن لصق مفتاح الترخيص نفسه، ويُحوَّل إلى المعرّف الداخلي عند الحفظ؛ وأي هدف لا يطابق شيئاً يُرفض بدل أن يُحفظ بلا أثر.",
     modelTitle: "إرسال النماذج",
     modelDesc: "هذه القاعدة لا تخزن المفاتيح أو عناوين المزوّدين. هي تحدد فقط المزوّدين الذين يراهم العميل والمزوّد الافتراضي.",
     providerEmpty: "أضف مزوّداً أعلاه في «مزوّدو النماذج» أولاً.",
@@ -519,7 +519,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                   className={fieldClass()}
                   disabled={draft.scope === "global"}
                   name="targetId"
-                  placeholder="group / license / device id"
+                  placeholder="组 ID / 授权码或授权 ID / 设备 ID"
                   required={draft.scope !== "global"}
                   value={draft.targetId}
                   onChange={(event) => updateField("targetId", event.target.value)}
