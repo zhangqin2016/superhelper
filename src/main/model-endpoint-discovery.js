@@ -18,18 +18,27 @@ function authHeaders(protocol, apiKey) {
   return { authorization: `Bearer ${key}` };
 }
 
-// Pull model ids out of the several shapes compatible servers return:
+// Pull models out of the several shapes compatible servers return:
 // OpenAI { data:[{id}] }, Anthropic { data:[{id}] }, or a bare { models:[...] }.
-function extractIds(json) {
+//
+// Each row is also asked for its context window. Endpoints advertise it — the
+// relay this install talks to returns `context_window: 272000` — and keeping
+// only the id meant every budget fell back to a hardcoded 120,000, which is
+// dangerous in the direction that matters: assume a window larger than the
+// model's and compaction never triggers before the model overflows.
+function extractModels(json) {
   const rows = Array.isArray(json?.data) ? json.data
     : Array.isArray(json?.models) ? json.models
     : Array.isArray(json) ? json : [];
-  const ids = [];
+  const { readContextWindow } = require("./model-context-window");
+  const byId = new Map();
   for (const row of rows) {
     const id = typeof row === "string" ? row : (row?.id || row?.name || row?.model);
-    if (id && typeof id === "string") ids.push(id.trim());
+    if (!id || typeof id !== "string" || !id.trim()) continue;
+    const trimmed = id.trim();
+    if (!byId.has(trimmed)) byId.set(trimmed, readContextWindow(row));
   }
-  return [...new Set(ids.filter(Boolean))];
+  return byId;
 }
 
 async function discoverEndpointModels({ baseUrl, apiKey, protocol = "openai", timeoutMs = 15_000 } = {}) {
@@ -53,9 +62,19 @@ async function discoverEndpointModels({ baseUrl, apiKey, protocol = "openai", ti
   }
   let json;
   try { json = await res.json(); } catch { return { ok: false, error: "BAD_RESPONSE" }; }
-  const models = extractIds(json).slice(0, 500);
+  const discovered = extractModels(json);
+  const models = [...discovered.keys()].slice(0, 500);
   if (!models.length) return { ok: false, error: "NO_MODELS" };
-  return { ok: true, models };
+  // Remember what the endpoint said so a later budget can use a real number
+  // instead of the default. Purely additive: a listing that omits the field
+  // records nothing and leaves any earlier observation intact.
+  const { rememberContextWindow } = require("./model-context-window");
+  const contextWindows = {};
+  for (const id of models) {
+    const tokens = rememberContextWindow(base, id, discovered.get(id));
+    if (tokens) contextWindows[id] = tokens;
+  }
+  return { ok: true, models, contextWindows };
 }
 
 module.exports = { discoverEndpointModels };

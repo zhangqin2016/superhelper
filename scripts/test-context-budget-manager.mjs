@@ -3,6 +3,17 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
+/**
+ * A decision must SAY these things; it may also carry the budget it was
+ * measured against. Exact equality made every added diagnostic field look like
+ * a behaviour change, which is the opposite of what these assertions are for.
+ */
+function assertDecision(actual, expected, message) {
+  const subset = Object.fromEntries(Object.keys(expected).map((key) => [key, actual?.[key]]));
+  assert.deepEqual(subset, expected, message);
+}
+
+
 const require = createRequire(import.meta.url);
 const {
   decideBackgroundCompaction,
@@ -83,7 +94,7 @@ assert.equal(
   assert(largeWithHugeOutput.compactionTriggerTokens > 800_000, "huge max-output capability does not silently consume most input context");
 }
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     model: { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" },
@@ -95,7 +106,7 @@ assert.deepEqual(
   "long sessions on the distributed DeepSeek model now compact natively (no longer force-skipped)",
 );
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
@@ -106,7 +117,7 @@ assert.deepEqual(
   "ordinary short sessions stay fast",
 );
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: true },
@@ -117,7 +128,7 @@ assert.deepEqual(
   "background compaction never interrupts an active turn",
 );
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
@@ -128,7 +139,7 @@ assert.deepEqual(
   "recent compaction is rate-limited",
 );
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
@@ -227,7 +238,7 @@ assert.deepEqual(
   assert.deepEqual(fallback, { action: "skip", reason: "unsupported_runtime" }, "missing compaction capability fails open to current behavior");
 }
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
@@ -238,7 +249,7 @@ assert.deepEqual(
   "long idle sessions use native runtime compaction",
 );
 
-assert.deepEqual(
+assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: false, manualSummarize: false },
     runner: { alive: true, busy: false },

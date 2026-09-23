@@ -106,7 +106,8 @@
         "scripts/test-task-source-resolution.mjs",
         "scripts/test-task-summary-localization.mjs",
         "scripts/test-task-verification-shell.mjs",
-        "scripts/test-unfinished-tasks.mjs"
+        "scripts/test-unfinished-tasks.mjs",
+        "scripts/test-model-context-window.mjs"
       ]
     },
     {

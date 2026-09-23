@@ -195,7 +195,14 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
     if (id) models[id] = models[id] || (modelOptions ? { options: modelOptions } : {});
   }
   const profile = runtimeOptions.modelProfile;
-  const context = positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS);
+  // Operator configuration first, then whatever the endpoint itself advertised
+  // in its model listing, and only then the budget's hardcoded default. The
+  // middle source exists because the first is supplied by hand and usually is
+  // not: 573 of 595 real decisions on one install fell through to a 120,000
+  // guess, which is the dangerous direction — a window assumed larger than the
+  // model's means pressure never registers before the model overflows.
+  const context = positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS)
+    || require("../model-context-window").recallContextWindow(baseURL, modelId);
   const output = positiveInt(lilyEnv.LILY_MAX_OUTPUT_TOKENS);
   // The SDK turns `limit.output` into `max_tokens`. When the probe learned that
   // this endpoint refuses that field, the same number rides the request body
@@ -269,7 +276,7 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
     model: {
       providerID,
       modelID: modelId,
-      contextWindowTokens: positiveInt(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS),
+      contextWindowTokens: context,
       maxOutputTokens: positiveInt(lilyEnv.LILY_MAX_OUTPUT_TOKENS),
     },
     tiers,

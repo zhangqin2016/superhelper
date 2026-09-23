@@ -224,6 +224,31 @@ function retainedContextPressure(sessionSummary = {}) {
   };
 }
 
+/**
+ * Attach the budget a decision was measured against.
+ *
+ * Every decision taken AFTER the budget is resolved was measured against it, so
+ * every one of them should say so. Spelling the fields out at each return meant
+ * two of them — the two most frequent outcomes, as it turned out — simply did
+ * not, and a decision that cannot show its own arithmetic cannot be reviewed or
+ * tuned: a background compaction fired 89 times on turn count alone with no
+ * record of whether the context was anywhere near full, and the skip beside it
+ * gave no hint how close it had come. Adding a budget field here now reaches
+ * every decision at once instead of three places that can drift.
+ */
+function withBudget(decision, budget, tokenSource = "") {
+  return {
+    ...decision,
+    contextWindowTokens: budget.contextWindowTokens,
+    outputReserveTokens: budget.outputReserveTokens,
+    usableInputTokens: budget.usableInputTokens,
+    compactionTriggerTokens: budget.compactionTriggerTokens,
+    tokenPressureThreshold: budget.tokenPressureThreshold,
+    tokenSource: tokenSource || budget.tokenSource || "",
+    budgetSource: budget.budgetSource,
+  };
+}
+
 function decidePreTurnCompaction({
   capabilities = {},
   model = {},
@@ -255,36 +280,22 @@ function decidePreTurnCompaction({
   });
   const estimatedPromptTokens = previousPromptTokens + normalizedCurrentPromptTokens;
   if (estimatedPromptTokens > 0 && estimatedPromptTokens >= budget.compactionTriggerTokens) {
-    return {
+    return withBudget({
       action: "compact",
       reason: "pre_turn_token_pressure",
       mode: "native",
       estimatedPromptTokens,
       currentPromptTokens: normalizedCurrentPromptTokens,
       previousPromptTokens,
-      contextWindowTokens: budget.contextWindowTokens,
-      outputReserveTokens: budget.outputReserveTokens,
-      usableInputTokens: budget.usableInputTokens,
-      compactionTriggerTokens: budget.compactionTriggerTokens,
-      tokenPressureThreshold: budget.tokenPressureThreshold,
-      tokenSource,
-      budgetSource: budget.budgetSource,
-    };
+    }, budget, tokenSource);
   }
-  return {
+  return withBudget({
     action: "skip",
     reason: "below_token_pressure",
     estimatedPromptTokens,
     currentPromptTokens: normalizedCurrentPromptTokens,
     previousPromptTokens,
-    contextWindowTokens: budget.contextWindowTokens,
-    outputReserveTokens: budget.outputReserveTokens,
-    usableInputTokens: budget.usableInputTokens,
-    compactionTriggerTokens: budget.compactionTriggerTokens,
-    tokenPressureThreshold: budget.tokenPressureThreshold,
-    tokenSource,
-    budgetSource: budget.budgetSource,
-  };
+  }, budget, tokenSource);
 }
 
 function decideBackgroundCompaction({
@@ -295,8 +306,14 @@ function decideBackgroundCompaction({
   now = Date.now(),
   minTurnsBeforeCompact = DEFAULT_MIN_TURNS_BEFORE_COMPACT,
   minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS,
-  contextWindowTokens = DEFAULT_CONTEXT_WINDOW_TOKENS,
-  tokenPressureThreshold = DEFAULT_TOKEN_PRESSURE_THRESHOLD,
+  // Deliberately undefaulted, unlike the pre-turn path beside it. Defaulting
+  // here shadowed better sources: an explicit 120,000 outranks the model's own
+  // window inside resolveContextBudget, so background compaction ignored what
+  // the model said it could hold, and an explicit 0.72 outranks the tighter
+  // threshold that exact runtime usage earns. Left undefined, both fall through
+  // to the same resolution the pre-turn path already uses.
+  contextWindowTokens,
+  tokenPressureThreshold,
 } = {}) {
   const blocked = compactionBlockedDecision({ capabilities, model, runner });
   if (blocked) return blocked;
@@ -316,27 +333,22 @@ function decideBackgroundCompaction({
     estimatedPromptTokens > 0 &&
     estimatedPromptTokens >= budget.compactionTriggerTokens
   ) {
-    return {
+    return withBudget({
       action: "compact",
       reason: "token_pressure",
       mode: "native",
       estimatedPromptTokens,
-      contextWindowTokens: budget.contextWindowTokens,
-      outputReserveTokens: budget.outputReserveTokens,
-      usableInputTokens: budget.usableInputTokens,
-      compactionTriggerTokens: budget.compactionTriggerTokens,
-      tokenPressureThreshold: budget.tokenPressureThreshold,
-      tokenSource: retainedPressure.source,
-      budgetSource: budget.budgetSource,
-    };
+    }, budget, retainedPressure.source);
   }
 
+  // Below the pressure trigger. Both outcomes here were measured against the
+  // same budget, so both report it — without that, a compaction taken purely on
+  // turn count cannot be told apart from one that was genuinely needed.
   const turnCount = Number(sessionSummary.turnCount || 0);
   if (!Number.isFinite(turnCount) || turnCount < minTurnsBeforeCompact) {
-    return { action: "skip", reason: "below_threshold" };
+    return withBudget({ action: "skip", reason: "below_threshold", estimatedPromptTokens, turnCount }, budget, retainedPressure.source);
   }
-
-  return { action: "compact", reason: "long_session", mode: "native" };
+  return withBudget({ action: "compact", reason: "long_session", mode: "native", estimatedPromptTokens, turnCount }, budget, retainedPressure.source);
 }
 
 module.exports = {
