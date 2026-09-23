@@ -10,9 +10,30 @@ const MAX_OBJECTIVE_CHARS = 2_000;
 const MAX_HANDOFF_CHARS = 16_000;
 
 
+/** Identifiers and short labels: a single line, no control characters at all. */
 function bounded(value, name, max = 256) {
   const text = String(value || "").trim();
   if (!text || text.length > max || /[\u0000-\u001f\u007f]/.test(text)) {
+    throw codedError("AGENT_TASK_FIELD_INVALID", name);
+  }
+  return text;
+}
+
+/**
+ * Prose a person actually wrote, as opposed to an identifier.
+ *
+ * An objective is free text, and free text has line breaks in it. Validating it
+ * with the identifier rule above rejected every multi-line objective, and the
+ * caller projects the graph fail-open — so the graph silently was not built at
+ * all (2026-09-23: `AGENT_TASK_FIELD_INVALID: objective` in the field, twice in
+ * one session). Line breaks and tabs are content here and are kept, with line
+ * endings normalised so the same text hashes the same on every platform. Every
+ * other control character is still refused and the length bound is unchanged,
+ * so nothing this used to accept is now rejected.
+ */
+function freeText(value, name, max) {
+  const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+  if (!text || text.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
     throw codedError("AGENT_TASK_FIELD_INVALID", name);
   }
   return text;
@@ -71,7 +92,7 @@ function addAgentTask(graph, input = {}) {
   if (maxAttempts < 1 || maxAttempts > 10) throw codedError("AGENT_TASK_ATTEMPT_LIMIT_INVALID");
   const task = {
     id,
-    objective: bounded(input.objective, "objective", MAX_OBJECTIVE_CHARS),
+    objective: freeText(input.objective, "objective", MAX_OBJECTIVE_CHARS),
     agentId: bounded(input.agentId || id, "agentId"),
     depth,
     dependsOn,

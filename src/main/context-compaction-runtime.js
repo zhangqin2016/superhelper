@@ -13,11 +13,36 @@ const { markSessionCompactionFailed, readSessionSummary, writeSessionSummary } =
 
 const log = getLogger("context-compaction-runtime");
 
-function compactOptions(model, reason) {
+/**
+ * Compaction options, with the model reference checked against the engine that
+ * will receive them.
+ *
+ * Lily resolves the model continuously, but the engine reads its config once at
+ * boot, so the two can disagree — a config change detected while the engine is
+ * busy is applied only when it next goes idle. Naming a provider that engine
+ * never loaded fails the whole call, and a session that cannot compact grows
+ * until it deadlocks (2026-09-23: `lily/…` sent to a serve that only knew
+ * `lily-model-<hash>/…`). An unresolvable reference is therefore replaced by
+ * one that engine does declare, or dropped so it falls back to the session's
+ * own model — compaction proceeds either way.
+ */
+function compactOptions(model, reason, runner = null) {
+  const requested = model?.providerID && model?.modelID
+    ? { providerID: model.providerID, modelID: model.modelID }
+    : {};
+  const configContent = typeof runner?.activeEngineConfig === "function" ? runner.activeEngineConfig() : "";
+  const ref = require("./runtime/engine-config-facts").reconcileModelRef({ configContent, ...requested });
+  if (ref.reason === "substituted_default" || ref.reason === "omitted") {
+    log.warn(
+      "compaction model ref %s: requested=%s/%s using=%s",
+      ref.reason,
+      requested.providerID || "-",
+      requested.modelID || "-",
+      ref.providerID ? `${ref.providerID}/${ref.modelID}` : "the engine session's own model",
+    );
+  }
   return {
-    ...(model?.providerID && model?.modelID
-      ? { providerID: model.providerID, modelID: model.modelID }
-      : {}),
+    ...(ref.providerID && ref.modelID ? { providerID: ref.providerID, modelID: ref.modelID } : {}),
     auto: true,
     reason,
   };
@@ -116,7 +141,7 @@ function createContextCompactionRuntime(options = {}) {
       emit(sessionId, "engine.notice", {
         notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context before this turn." }),
       }, { turnId: null });
-      const compacted = await runner.compactContext(compactOptions(model, decision.reason));
+      const compacted = await runner.compactContext(compactOptions(model, decision.reason, runner));
       if (!compacted) {
         recordFalseCompaction(sessionId, sessionSummary, decision, model);
         emit(sessionId, "engine.notice", failureNotice(), { turnId: null });
@@ -184,7 +209,7 @@ function createContextCompactionRuntime(options = {}) {
       emit(sessionId, "engine.notice", {
         notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context." }),
       }, { turnId: null });
-      const compacted = await runner.compactContext(compactOptions(model, decision.reason));
+      const compacted = await runner.compactContext(compactOptions(model, decision.reason, runner));
       if (!compacted) {
         recordFalseCompaction(sessionId, sessionSummary, decision, model);
         emit(sessionId, "engine.notice", failureNotice(), { turnId: null });

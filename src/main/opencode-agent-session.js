@@ -252,28 +252,17 @@ class OpencodeAgentSession extends EventEmitter {
     }
     this.cwd = cwd;
     const previousOptions = this.spawnOptions || {};
-    const nextFingerprint = String(options.modelConfigFingerprint || "");
-    const activeFingerprint = String(this._activeModelConfigFingerprint || "");
-    const previousFingerprint = String(previousOptions.modelConfigFingerprint || "");
+    const freshness = require("./opencode-config-freshness");
+    const transition = freshness.modelConfigTransition(this, options, previousOptions);
     this.spawnOptions = options;
-    if (
-      this._server &&
-      !this.busy &&
-      nextFingerprint &&
-      activeFingerprint &&
-      nextFingerprint !== activeFingerprint
-    ) {
-      this._restartIdleEngineForModelConfigChange(activeFingerprint, nextFingerprint);
-    } else if (
-      this._server &&
-      !this.busy &&
-      nextFingerprint &&
-      previousFingerprint &&
-      nextFingerprint !== previousFingerprint &&
-      !activeFingerprint
-    ) {
-      this._restartIdleEngineForModelConfigChange(previousFingerprint, nextFingerprint);
-    } else if (require("./opencode-config-freshness").toolConfigChanged(this, options, previousOptions)) {
+    // A credential-only change still needs a serve built from the new config,
+    // but the conversation running on it is still valid — recycling moves the
+    // session across while keeping its resume id, where restarting discards it.
+    if (transition.action === "restart") {
+      this._restartIdleEngineForModelConfigChange(transition.from, transition.to);
+    } else if (transition.action === "recycle") {
+      this.recycleIdleEngine(transition.reason);
+    } else if (freshness.toolConfigChanged(this, options, previousOptions)) {
       this.recycleIdleEngine("tool_config_changed");
     }
     // Invalidation synchronously lets the host replace and terminate this runner.
@@ -353,6 +342,10 @@ class OpencodeAgentSession extends EventEmitter {
       this._server = server;
       this._engineSessionWasResumed = Boolean(server.wasResumed);
       this._activeModelConfigFingerprint = String(spawnOptions.modelConfigFingerprint || "");
+      this._activeRouteConfigFingerprint = String(spawnOptions.routeConfigFingerprint || "");
+      // What the LIVE engine was booted from — the only config whose providers
+      // it can actually resolve, which is not always the newest one Lily holds.
+      this._activeConfigContent = String(spawnOptions.opencodeConfig || "");
       this._activeToolConfigFingerprint = String(spawnOptions.toolConfigFingerprint || "");
       // Guidance is delivered with each prompt, not only with fresh sessions:
       // OpenCode resume history may predate the current Lily rules/skill set, and
@@ -619,6 +612,11 @@ class OpencodeAgentSession extends EventEmitter {
     } catch (err) {
       log.warn("compaction memory refresh failed: %s", err?.message || String(err));
     }
+  }
+
+  /** The config the running engine was booted from, "" when none is running. */
+  activeEngineConfig() {
+    return this._server ? String(this._activeConfigContent || "") : "";
   }
 
   async compactContext(body = {}) {
@@ -1706,6 +1704,10 @@ class OpencodeAgentSession extends EventEmitter {
       raw,
       payload: this._pendingPromptPayload || {},
       wasResumed: Boolean(this._engineSessionWasResumed || this._server?.wasResumed),
+      // The same evidence that gates a transient replay: a side-effecting tool
+      // may have run without reporting back, so the session's state is no
+      // longer accountable and the resume id cannot be trusted.
+      sessionStateIndeterminate: Boolean(this._sawUnsafeToolActivity || this._pendingPermissions.size || this._pendingQuestions.size),
     });
     if (!recoverable && !dropResume) return false;
 

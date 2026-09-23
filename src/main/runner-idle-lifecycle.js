@@ -89,6 +89,7 @@ function recycleIdleEngine(runner, reason = "") {
   }
   runner._starting = null;
   runner._activeModelConfigFingerprint = runner._activeToolConfigFingerprint = "";
+  runner._activeRouteConfigFingerprint = "";
   if (resumeId) runner.agentResumeId = resumeId;
   log.info("idle engine recycled (%s): next send gets fresh gateway connections", reason || "-");
   return true;
@@ -112,6 +113,7 @@ function restartIdleEngineForModelConfigChange(runner, previousFingerprint = "",
   runner.agentResumeId = null;
   runner._engineSessionWasResumed = false;
   runner._activeModelConfigFingerprint = "";
+  runner._activeRouteConfigFingerprint = "";
   runner.emit("engine-session-invalidated", {
     reason: "model_config_changed",
     errorCode: "",

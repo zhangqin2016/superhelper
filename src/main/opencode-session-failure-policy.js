@@ -169,11 +169,19 @@ function isLocalPermissionFailure(classified) {
   return classified?.code === "PERMISSION_DENIED";
 }
 
-function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false } = {}) {
+function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false, sessionStateIndeterminate = true } = {}) {
   if (classified?.code === "SESSION_INVALID") return true;
   if (isOversizedContextFailure(classified, raw)) return true;
   if (!isRecoverableModelConnectionFailure(classified, raw) && !isManagedGatewayAuthFailure(classified, raw)) return false;
-  if (wasResumed) return true;
+  // A resumed session whose turn died mid-flight may hold state nobody can
+  // account for — a side-effecting tool that never reported back — and only a
+  // fresh session rules that out. What that does NOT describe is a turn that
+  // merely asked a model and got a gateway error: nothing irreversible
+  // happened, the engine session is intact, and discarding the resume id there
+  // costs the conversation its whole context for a one-minute upstream outage
+  // (2026-09-23: repeated gateway timeouts each took a session's continuity).
+  // The caller supplies the evidence; absent it the strict rule stands.
+  if (wasResumed && sessionStateIndeterminate) return true;
   if (payload?.attachmentFallback) return true;
   return shouldIsolateAttachmentFallback(payload);
 }

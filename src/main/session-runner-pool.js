@@ -115,7 +115,7 @@ class SessionRunnerPool {
       this._sessions.set(sessionId, runner);
     }
     profile.mark("buildSharedBaseConfig");
-    const { modelConfigFingerprint, toolConfigFingerprint } = configFingerprints(cfg.configContent);
+    const { modelConfigFingerprint, routeConfigFingerprint, toolConfigFingerprint } = configFingerprints(cfg.configContent);
     const modelConfigDiagnostics = getModelConfigDiagnostics(cfg.configContent);
     const modelRouteAudit = cfg.diagnostics?.modelRoute || null;
     if (modelRouteAudit) {
@@ -227,6 +227,7 @@ class SessionRunnerPool {
       model: cfg.model,
       modelRouteAudit,
       modelConfigFingerprint,
+      routeConfigFingerprint,
       toolConfigFingerprint,
       env,
       opencodeConfig: cfg.configContent,

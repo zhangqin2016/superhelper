@@ -11,7 +11,9 @@
         "scripts/test-ensure-session-runner-resume-reset.mjs",
         "scripts/test-resume-continuity-guard.mjs",
         "scripts/test-opencode-version-alignment.mjs",
-        "scripts/test-opencode-upgrade-native.mjs"
+        "scripts/test-opencode-upgrade-native.mjs",
+        "scripts/test-engine-config-continuity.mjs",
+        "scripts/test-turn-continuity-policy.mjs"
       ]
     },
     {
