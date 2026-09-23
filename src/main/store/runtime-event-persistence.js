@@ -1,6 +1,7 @@
 "use strict";
 
 const { taskRunSchemaVersion: TASK_RUN_SCHEMA_VERSION } = require("../../shared/runtime-contract.json");
+const { answerBlockText } = require("../../shared/timeline-blocks.mjs");
 
 const DEFAULT_STRING_LIMIT = 2_000;
 const ASSISTANT_LIMIT = 16_000;
@@ -270,15 +271,10 @@ function compactTaskPayload(payload = {}) {
   };
 }
 
-/** The last text block a turn streamed — its answer, as opposed to the running
- * narration before it. Mirrors lastTimelineText in the renderer's narrative
- * policy, which is the rule the live view already uses. */
+/** The block a turn answered with, as opposed to the running narration before
+ * it — by the same rule the live view uses, from the one shared definition. */
 function lastTimelineText(record = {}) {
-  const timeline = Array.isArray(record.timeline) ? record.timeline : [];
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    if (timeline[index]?.kind === "text") return String(timeline[index].text || "").trim();
-  }
-  return "";
+  return answerBlockText(record.timeline) || "";
 }
 
 function compactRecord(record = {}, assistant = "") {

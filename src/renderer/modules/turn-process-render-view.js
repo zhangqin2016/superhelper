@@ -6,6 +6,7 @@ import {
 import {
   buildChildToolsMap,
   collectSubagentEntries,
+  hasProcessGroupSteps,
   isSubagentEntry,
 } from "./turn-process-view-model.js";
 import { isTodoTool } from "./turn-tool-model.js";
@@ -16,7 +17,7 @@ export function prepareProcessRenderView(liveTurn = {}, sealed = false, {
   sessionId = "",
 } = {}) {
   const timeline = timelineForProcessView(liveTurn, sealed);
-  const { thinking, notices, tools } = partitionTimeline(timeline);
+  const { thinking, notices, tools, texts } = partitionTimeline(timeline);
   const collapsed = shouldCollapseProcessGroups(liveTurn, sealed);
   const groupThinking = shouldGroupFinishedThinking(thinking, sealed);
   const childTools = buildChildToolsMap(tools);
@@ -24,6 +25,7 @@ export function prepareProcessRenderView(liveTurn = {}, sealed = false, {
   const processTools = tools.filter(
     (entry) => !isTodoTool(entry.name) && !childToolIds.has(entry.id) && !isSubagentEntry(entry),
   );
+  const foldNarration = collapsed && hasProcessGroupSteps({ processTools, notices });
   const latestTodoId = [...timeline].reverse()
     .find((entry) => entry.kind === "tool" && isTodoTool(entry.name))?.id || null;
   return {
@@ -36,6 +38,8 @@ export function prepareProcessRenderView(liveTurn = {}, sealed = false, {
     childTools,
     childToolIds,
     processTools,
+    foldNarration,
+    narration: foldNarration ? texts : [],
     latestTodoId,
     entryCtx: {
       latestTodoId,

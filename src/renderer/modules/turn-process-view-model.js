@@ -20,10 +20,19 @@ export function shouldSkipProcessTimelineEntry(entry = {}, { childToolIds = new 
   return entry.kind === "tool" && (childToolIds.has(entry.id) || isSubagentEntry(entry));
 }
 
-export function shouldRenderEntryInCollapsedProcess(entry = {}) {
+// Prose written between tools narrates the work while it runs. Once the turn
+// is sealed and its steps are folded, that narration is part of the process it
+// described — left in place, it reads as the assistant still talking above an
+// answer that already covers it. It folds with the steps; with no step group to
+// fold into, it keeps its place.
+export function shouldRenderEntryInCollapsedProcess(entry = {}, { foldNarration = false } = {}) {
+  if (entry.kind === "text") return !foldNarration;
   return entry.kind === "thinking" ||
-    entry.kind === "text" ||
     (entry.kind === "tool" && isTodoTool(entry.name));
+}
+
+export function hasProcessGroupSteps({ processTools = [], notices = [] } = {}) {
+  return processTools.length > 0 || notices.length > 0;
 }
 
 export function shouldRenderThinkingStackForEntry(entry = {}, { groupThinking = false } = {}) {
@@ -35,7 +44,7 @@ export function shouldAppendCollapsedProcessGroupFallback({
   processTools = [],
   notices = [],
 } = {}) {
-  return !groupInserted && (processTools.length > 0 || notices.length > 0);
+  return !groupInserted && hasProcessGroupSteps({ processTools, notices });
 }
 
 export function collectSubagentEntries(timeline = [], liveTurn = null) {

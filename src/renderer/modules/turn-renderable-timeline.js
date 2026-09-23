@@ -1,6 +1,7 @@
 import { t } from "../i18n/index.js";
 import { isTokenCountDetail } from "./turn-activity-policy.js";
 import { buildTimelineFromLegacy } from "./turn-legacy-timeline.js";
+import { answerBlockIndex, hasVisibleText } from "../../shared/timeline-blocks.mjs";
 
 export function resolveNoticeDetail(entry = {}) {
   const detail = String(entry.detail || "").trim();
@@ -17,18 +18,12 @@ export function resolveNoticeDetail(entry = {}) {
 }
 
 function filterRenderableTimeline(timeline = []) {
-  // The newest text block renders as the answer bubble; earlier text blocks
-  // stay in the timeline so prose written between tools keeps its place.
-  let lastTextIndex = -1;
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    if (timeline[index]?.kind === "text") {
-      lastTextIndex = index;
-      break;
-    }
-  }
+  // The answer block renders as the answer bubble; earlier text blocks stay
+  // in the timeline so prose written between tools keeps its place.
+  const answerIndex = answerBlockIndex(timeline);
   return timeline.filter((entry, index) => {
     if (entry.kind === "text") {
-      return index !== lastTextIndex && Boolean(String(entry.text || "").trim());
+      return index !== answerIndex && hasVisibleText(entry.text);
     }
     if (entry.kind !== "notice") return true;
     if (entry.code === "thinkingProgress") return false;

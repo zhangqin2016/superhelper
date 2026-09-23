@@ -1,3 +1,4 @@
+import { answerBlockText } from "../../shared/timeline-blocks.mjs";
 import { getRenderableTimeline } from "./turn-renderable-timeline.js";
 import { classifyToolCategory } from "./turn-tool-model.js";
 
@@ -43,11 +44,7 @@ export function textMatchesFileToolBody(text, liveTurn = {}) {
 
 /** Assistant text the CLI actually streamed or committed; no synthesis from tools. */
 export function lastTimelineText(liveTurn = {}) {
-  const timeline = Array.isArray(liveTurn.timeline) ? liveTurn.timeline : [];
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    if (timeline[index]?.kind === "text") return String(timeline[index].text || "").trim();
-  }
-  return null;
+  return answerBlockText(liveTurn.timeline);
 }
 
 export function resolveAssistantStreamText(liveTurn = {}) {

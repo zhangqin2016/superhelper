@@ -23,6 +23,10 @@ const real = new Set([
   "runtime/opencode-sdk-session", "runtime/opencode-config-builder",
   "runtime/opencode-model-config", "runtime/opencode-runtime-reducer",
   "runtime/opencode-event-ownership", "runtime/opencode-session-work",
+  // Pure decision tables. A stub here does not fail loudly — it answers `{}`,
+  // which silently makes every config "the same route" (A→B read as a
+  // credential rotation) and every unknown context window an object.
+  "runtime/engine-config-facts", "model-context-window",
 ]);
 const noop = () => {};
 const serviceStub = new Proxy({}, { get: () => () => ({}) });

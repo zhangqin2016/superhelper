@@ -93,9 +93,11 @@ function rememberContextWindow(baseUrl, modelId, tokens) {
   return value;
 }
 
-/** What this endpoint said, or 0 if it has never said anything. */
+/** What this endpoint said, or null if it has never said anything — the same
+ *  "unspecified" the model config uses for a window nobody configured, so an
+ *  unknown window stays unknown rather than becoming a claim of zero. */
 function recallContextWindow(baseUrl, modelId) {
-  return observed.get(key(baseUrl, modelId)) || 0;
+  return observed.get(key(baseUrl, modelId)) || null;
 }
 
 function resetObservedContextWindowsForTests() {

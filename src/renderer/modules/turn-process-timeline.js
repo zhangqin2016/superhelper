@@ -29,6 +29,8 @@ export function renderProcessTimeline(processView = {}, {
     childTools = new Map(),
     childToolIds = new Set(),
     processTools = [],
+    foldNarration = false,
+    narration = [],
     entryCtx = {},
     hasDiffs = false,
     diffEntries = [],
@@ -42,7 +44,7 @@ export function renderProcessTimeline(processView = {}, {
   }
 
   if (collapsed) {
-    const group = renderGroup({ processTools, notices, sealed, childTools, entryCtx });
+    const group = renderGroup({ processTools, notices, narration, sealed, childTools, entryCtx });
     let groupInserted = false;
     let thinkingInserted = false;
     for (const entry of timeline) {
@@ -54,7 +56,7 @@ export function renderProcessTimeline(processView = {}, {
         }
         continue;
       }
-      if (shouldRenderEntryInCollapsedProcess(entry)) {
+      if (shouldRenderEntryInCollapsedProcess(entry, { foldNarration })) {
         const node = renderEntry(entry, sealed, entryCtx);
         if (node) list.appendChild(node);
       } else if (!groupInserted) {

@@ -14,6 +14,7 @@ const modules={
   './main/app-icon':{loadAppIconImage:()=>null},
   './main/agent-command':{resolveOpencodeCommand:()=>'/temporary/engine'},
   './main/connector-bridge':{stopConnectorBridge:noop},
+  './main/diagnostics/main-log-file':{startMainLogFile:noop},
   './main/blob-protocol':{registerBlobScheme:noop,installBlobProtocol:noop},
   './main/local-media-protocol':{registerLocalMediaScheme:noop,installLocalMediaProtocol:noop},
   './main/database-recovery-service':{DatabaseRecoveryService:class{close(){}}},

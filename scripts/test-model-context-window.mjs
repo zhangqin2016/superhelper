@@ -52,12 +52,12 @@ const check = (label) => { checks += 1; console.log(`ok - ${label}`); };
 // --------------------------------------------------------- remembering it
 {
   cw.resetObservedContextWindowsForTests();
-  assert.equal(cw.recallContextWindow("https://api.example.com/v1", "m"), 0, "nothing is known before anything is seen");
+  assert.equal(cw.recallContextWindow("https://api.example.com/v1", "m"), null, "nothing is known before anything is seen");
   cw.rememberContextWindow("https://api.example.com/v1", "m", 32_768);
   assert.equal(cw.recallContextWindow("https://api.example.com/v1", "m"), 32_768);
   assert.equal(cw.recallContextWindow("https://api.example.com/v1/", "m"), 32_768, "a trailing slash is the same endpoint");
-  assert.equal(cw.recallContextWindow("https://other.example.com/v1", "m"), 0, "a window belongs to one endpoint, not to a model name");
-  assert.equal(cw.recallContextWindow("https://api.example.com/v1", "other"), 0);
+  assert.equal(cw.recallContextWindow("https://other.example.com/v1", "m"), null, "a window belongs to one endpoint, not to a model name");
+  assert.equal(cw.recallContextWindow("https://api.example.com/v1", "other"), null);
   check("an observed window is keyed to the endpoint that reported it");
 }
 
@@ -150,7 +150,7 @@ const budgetFor = (contextWindowTokens) => decidePreTurnCompaction({
 
   const before = resolveOpencodeModelConfig(env, {});
   assert.equal(before.ok, true);
-  assert.equal(before.model.contextWindowTokens, 0, "nothing observed, nothing claimed — the budget applies its own default");
+  assert.equal(before.model.contextWindowTokens, null, "nothing observed stays unspecified, as it was before observation existed");
 
   cw.rememberContextWindow("https://wired.example.com/v1", "small-ctx", 32_768);
   const after = resolveOpencodeModelConfig(env, {});
