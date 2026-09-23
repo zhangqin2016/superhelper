@@ -65,11 +65,17 @@ await check("the page itself does not scroll: each column scrolls on its own", (
   assert.match(rail, /overflow-y: auto/, "and scrolls on its own when it is taller than the screen");
   const main = css.slice(css.indexOf(".admin-main {"));
   assert.match(main, /overflow-y: auto/, "the content column scrolls on its own");
-  assert.match(main, /flex-direction: column/, "and its last card can take the height that is left");
+  // Cards are overflow:hidden; a clipping flex item's minimum height is 0, so a
+  // flex column squeezed every card to one screen and cut its content off.
+  const mainBlock = main.slice(0, main.indexOf("}"));
+  assert.match(css.slice(css.indexOf(".table-card {")), /overflow: hidden/, "(cards clip, which is why the column may not flex)");
+  assert.ok(!/display:\s*(flex|grid)/.test(mainBlock), "the content column is plain block flow, so a card is as tall as what it holds");
+  assert.ok(!/\.admin-main > [^{]*\{[^}]*flex:/.test(css), "and no card is given a flex share of the column");
   // A long table scrolls inside its card with the header pinned, so the columns
   // stay readable however far down the list the reader is.
   assert.match(main, /\.table-card \.overflow-x-auto,/, "the scroller is the wrapper every table card already has");
   assert.match(main, /position: sticky;\n  top: 0;/, "the header stays visible");
+  assert.match(main, /max-height: calc\(100vh - 220px\);/, "and a table is capped at a screen, never at a percentage of a parent that has no height");
   const narrow = css.slice(css.indexOf(".admin-layout { grid-template-columns: 1fr; }"));
   assert.ok(!/\.admin-sidebar \{ display: none; \}/.test(narrow), "a narrow window still has navigation");
   assert.match(narrow, /max-height: 220px/, "as a short scrollable strip");

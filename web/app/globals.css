@@ -988,32 +988,22 @@ a {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 18px 24px 24px;
-  /* The content column is a flex column so the last card can take the height
-     that is left instead of stopping short and leaving the screen half empty. */
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.admin-main > .table-card:last-child {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  /* Plain block flow, never a flex column: every card here is overflow:hidden
+     (rounded corners), and a flex item that clips has an automatic minimum
+     height of 0 — so the column squeezed every card to fit one screen and cut
+     its content off, with nothing left to scroll. The column scrolls; a card is
+     always as tall as what it holds. */
 }
 
 /* A table scrolls inside its card with the header pinned, so the columns stay
    readable no matter how far down the list the reader is. Applies to the
    horizontal-scroll wrapper every table card already has — no markup change,
-   and therefore no page that forgets it. */
+   and therefore no page that forgets it. The cap is one screen minus the page
+   header, so a long list never pushes the pager out of reach. */
 .table-card .overflow-x-auto,
 .table-scroll {
   overflow: auto;
-  /* Inside a card that fills the column, "as tall as there is room" beats any
-     fixed guess; the fallback covers cards that are not the last child. */
-  max-height: min(100%, calc(100vh - 220px));
-  flex: 1 1 auto;
-  min-height: 0;
+  max-height: calc(100vh - 220px);
 }
 
 .table-card .overflow-x-auto thead th,
