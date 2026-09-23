@@ -1,6 +1,7 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminContactAttachments } from "../../../components/admin-contact-attachments";
 import { AdminEmpty } from "../../../components/admin-empty";
+import { Pagination } from "../../../components/pagination";
 import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
@@ -18,9 +19,9 @@ function formatTime(value, locale) {
   }).format(new Date(value));
 }
 
-export default async function ContactsPage() {
+export default async function ContactsPage({ searchParams }) {
   const { locale, t } = await getI18n();
-  const data = await loadAdmin("/api/admin/contact-requests", { contacts: [] });
+  const data = await loadAdmin(`/api/admin/contact-requests${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { contacts: [], nextCursor: "", total: null });
   const contacts = data.contacts || [];
   const copy = t.admin.contacts;
   return (
@@ -59,6 +60,15 @@ export default async function ContactsPage() {
           <AdminEmpty title={copy.emptyTitle} description={copy.emptyDesc} />
         )}
       </div>
+          <Pagination
+        basePath="/admin/contacts"
+        searchParams={params || {}}
+        shown={rows.length}
+        total={data.total ?? null}
+        nextCursor={data.nextCursor || ""}
+        cursor={cursor}
+        copy={t.admin.paging}
+      />
     </AdminShell>
   );
 }

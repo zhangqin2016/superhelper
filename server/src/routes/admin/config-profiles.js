@@ -18,6 +18,7 @@ import {
 } from "../../services/client-config.js";
 import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-settings.js";
 import { resolveConfigProfileTarget, targetErrorResponse } from "../../services/config-profile-target.js";
+import { pageOf, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import { compareProfilesForMerge, selectProfilesForTarget } from "../../services/config-profile-selection.js";
 import { createDeliveryTrace } from "../../services/config-delivery-trace.js";
 import { profileReach } from "../../services/config-profile-reach.js";
@@ -140,8 +141,23 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
       // Listed in MERGE order — the order that decides who overrides whom. A
       // list sorted any other way asks the reader to simulate the merge in
       // their head, which is how a rule that never applied went unnoticed.
-      const rows = await db.selectFrom("config_profiles").selectAll().limit(300).execute();
-      return { profiles: rows.sort(compareProfilesForMerge) };
+      // Config rules are read in MERGE order, so the page is sorted in memory
+      // after paging by id: a cursor over the merge order would have to encode
+      // the comparator, and there are never enough rules for that to pay.
+      const { cursor, limit } = pageQuerySchema.parse(request.query || {});
+      const page = await pageOf({
+        query: () => db.selectFrom("config_profiles").selectAll(),
+        countQuery: () => db.selectFrom("config_profiles").select((eb) => eb.fn.count("id").as("count")),
+        sortColumn: "updated_at",
+        cursor,
+        limit,
+      });
+      return {
+        profiles: page.items.sort(compareProfilesForMerge),
+        nextCursor: page.nextCursor,
+        total: page.total,
+        pageSize: page.pageSize,
+      };
     });
 
   app.get(

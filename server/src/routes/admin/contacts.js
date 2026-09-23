@@ -1,6 +1,7 @@
 import { config } from "../../config.js";
 import { db } from "../../db.js";
-import { okResponse } from "../../openapi.js";
+import { okResponse, zodBody } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 function publicUrlFromObjectKey(objectKey) {
   const key = String(objectKey || "").trim().replace(/^\/+/, "");
@@ -28,16 +29,18 @@ export function registerAdminContactRoutes(app) {
         tags: ["admin:contacts"],
         summary: "List contact/support requests",
         description: "Lists recent contact requests with their normalized attachments.",
-        response: { 200: okResponse({ contacts: { type: "array", items: { type: "object" } } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("contacts")) },
       },
     },
-    async () => {
-    const contacts = await db
-      .selectFrom("contact_requests")
-      .selectAll()
-      .orderBy("created_at", "desc")
-      .limit(300)
-      .execute();
+    async (request) => {
+    const page = await listPage(request, {
+      key: "contacts",
+      query: () => db.selectFrom("contact_requests").selectAll(),
+      countQuery: () => db.selectFrom("contact_requests").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
+    });
+    const contacts = page.contacts;
     const ids = contacts.map((contact) => contact.id);
     const attachments = ids.length
       ? await db
@@ -54,6 +57,7 @@ export function registerAdminContactRoutes(app) {
       byContactId.set(attachment.contact_request_id, list);
     }
     return {
+      ...page,
       contacts: contacts.map((contact) => ({
         ...contact,
         attachments: byContactId.get(contact.id) || [],

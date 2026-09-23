@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 const createPackSchema = z.object({
   packId: z.string().min(1).max(60),
@@ -32,13 +33,11 @@ export function registerAdminRuntimePackRoutes(app, { audit }) {
         response: { 200: okResponse({ runtimePacks: { type: "array" } }) },
       },
     },
-    async () => ({
-      runtimePacks: await db
-        .selectFrom("runtime_packs")
-        .selectAll()
-        .orderBy("created_at", "desc")
-        .limit(200)
-        .execute(),
+    async (request) => listPage(request, {
+      key: "runtimePacks",
+      query: () => db.selectFrom("runtime_packs").selectAll(),
+      countQuery: () => db.selectFrom("runtime_packs").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
     }),
   );
 

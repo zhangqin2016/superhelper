@@ -1,5 +1,6 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
+import { UsageAnalyticsPanel } from "../../../components/usage-analytics-panel";
 import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
@@ -25,11 +26,15 @@ function queryString(searchParams = {}) {
 export default async function UsagePage({ searchParams }) {
   const { t } = await getI18n();
   const filters = await searchParams;
-  const data = await loadAdmin(`/api/admin/usage?${queryString(filters)}`, { usage: [] });
+  const [data, analyticsData] = await Promise.all([
+    loadAdmin(`/api/admin/usage?${queryString(filters)}`, { usage: [] }),
+    loadAdmin(`/api/admin/usage/analytics?days=${Number(filters?.days) || 30}`, { analytics: null }),
+  ]);
   const rows = data.usage || [];
   const c = t.admin.usageView;
   return (
     <AdminShell title={t.admin.pages.usage[0]} subtitle={t.admin.pages.usage[1]}>
+      <UsageAnalyticsPanel analytics={analyticsData.analytics} copy={t.admin.usageAnalytics} />
       <form className="table-card mb-6 grid gap-4 p-6 lg:grid-cols-5">
         <label className="grid gap-2 text-sm font-medium text-slate-600">
           {c.days}

@@ -3,6 +3,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { artifactErrorResponse, checkReleaseArtifact } from "../../services/release-artifact-check.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -27,11 +28,15 @@ export function registerAdminReleaseRoutes(app, { audit }) {
         tags: ["admin:releases"],
         summary: "List app releases",
         description: "Returns the most recent app releases ordered by creation time.",
-        response: { 200: okResponse({ releases: { type: "array" } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("releases")) },
       },
     },
-    async () => ({
-      releases: await db.selectFrom("releases").selectAll().orderBy("created_at", "desc").limit(200).execute(),
+    async (request) => listPage(request, {
+      key: "releases",
+      query: () => db.selectFrom("releases").selectAll(),
+      countQuery: () => db.selectFrom("releases").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
     }),
   );
 

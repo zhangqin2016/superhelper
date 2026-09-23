@@ -1,5 +1,6 @@
 import { db } from "../../db.js";
-import { okResponse } from "../../openapi.js";
+import { okResponse, zodBody } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 export function registerAdminAuditRoutes(app) {
   app.get(
@@ -7,13 +8,17 @@ export function registerAdminAuditRoutes(app) {
     {
       schema: {
         tags: ["admin:audit"],
-        summary: "List recent admin audit log entries",
-        description: "Returns the 300 most recent audit log entries, newest first.",
-        response: { 200: okResponse({ logs: { type: "array", items: { type: "object" } } }) },
+        summary: "List admin audit log entries",
+        description: "Returns one page of audit log entries, newest first, with an opaque cursor for the next page and the exact total.",
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("logs")) },
       },
     },
-    async () => ({
-      logs: await db.selectFrom("audit_logs").selectAll().orderBy("created_at", "desc").limit(300).execute(),
+    async (request) => listPage(request, {
+      key: "logs",
+      query: () => db.selectFrom("audit_logs").selectAll(),
+      countQuery: () => db.selectFrom("audit_logs").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
     }),
   );
 }

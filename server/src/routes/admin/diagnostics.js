@@ -1,5 +1,6 @@
 import { db } from "../../db.js";
-import { okResponse } from "../../openapi.js";
+import { okResponse, zodBody } from "../../openapi.js";
+import { pageOf, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 export function registerAdminDiagnosticsRoutes(app) {
   app.get(
@@ -9,25 +10,32 @@ export function registerAdminDiagnosticsRoutes(app) {
         tags: ["admin:diagnostics"],
         summary: "List runtime diagnostics with a breakdown by kind",
         description: "Returns recent runtime diagnostics over the requested window plus aggregate counts grouped by kind and severity.",
-        response: { 200: okResponse({ diagnostics: { type: "array" }, byKind: { type: "array" } }) },
+        querystring: zodBody(pageQuerySchema.passthrough()),
+        response: { 200: okResponse({ ...pageResponseSchema("diagnostics"), byKind: { type: "array", items: { type: "object", additionalProperties: true } } }) },
       },
     },
     async (request) => {
     const days = Math.min(Number(request.query?.days || 30), 120);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    let query = db
-      .selectFrom("runtime_diagnostics")
-      .selectAll()
-      .where("created_at", ">=", since)
-      .orderBy("created_at", "desc");
     const deviceId = String(request.query?.deviceId || "").trim();
     const kind = String(request.query?.kind || "").trim();
     const severity = String(request.query?.severity || "").trim();
-    if (deviceId) query = query.where("device_id", "=", deviceId);
-    if (kind) query = query.where("normalized_kind", "=", kind);
-    if (severity) query = query.where("severity", "=", severity);
+    // One filter definition for the page and its count, so the total belongs to
+    // what the reader filtered.
+    const filtered = (builder) => {
+      let q = builder.where("created_at", ">=", since);
+      if (deviceId) q = q.where("device_id", "=", deviceId);
+      if (kind) q = q.where("normalized_kind", "=", kind);
+      if (severity) q = q.where("severity", "=", severity);
+      return q;
+    };
     const [diagnostics, byKind] = await Promise.all([
-      query.limit(300).execute(),
+      pageOf({
+        query: () => filtered(db.selectFrom("runtime_diagnostics").selectAll()),
+        countQuery: () => filtered(db.selectFrom("runtime_diagnostics").select((eb) => eb.fn.count("id").as("count"))),
+        sortColumn: "created_at",
+        ...pageQuerySchema.parse(request.query || {}),
+      }),
       db
         .selectFrom("runtime_diagnostics")
         .select((eb) => [
@@ -42,7 +50,10 @@ export function registerAdminDiagnosticsRoutes(app) {
         .execute(),
     ]);
     return {
-      diagnostics,
+      diagnostics: diagnostics.items,
+      nextCursor: diagnostics.nextCursor,
+      total: diagnostics.total,
+      pageSize: diagnostics.pageSize,
       byKind: byKind.map((row) => ({
         kind: row.normalized_kind || "unknown",
         severity: row.severity || "warning",

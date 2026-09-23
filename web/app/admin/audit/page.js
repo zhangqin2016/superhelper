@@ -1,6 +1,7 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { Badge } from "../../../components/ui/badge";
+import { Pagination } from "../../../components/pagination";
 import { loadAdmin } from "../../../lib/api";
 import { getI18n } from "../../../lib/i18n.mjs";
 
@@ -17,10 +18,12 @@ function metaText(value) {
   return JSON.stringify(value, null, 2);
 }
 
-export default async function AuditPage() {
+export default async function AuditPage({ searchParams }) {
   const { t } = await getI18n();
   const c = t.admin.audit;
-  const data = await loadAdmin("/api/admin/audit-logs", { logs: [] });
+  const params = await searchParams;
+  const cursor = String(params?.cursor || "");
+  const data = await loadAdmin(`/api/admin/audit-logs${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, { logs: [], nextCursor: "", total: null });
   const rows = data.logs || [];
   return (
     <AdminShell title={t.admin.pages.audit[0]} subtitle={t.admin.pages.audit[1]}>
@@ -50,6 +53,15 @@ export default async function AuditPage() {
           </table>
         ) : <AdminEmpty title={t.admin.pages.audit[0]} description={t.admin.pages.audit[1]} />}
       </div>
+          <Pagination
+        basePath="/admin/audit"
+        searchParams={params || {}}
+        shown={rows.length}
+        total={data.total ?? null}
+        nextCursor={data.nextCursor || ""}
+        cursor={cursor}
+        copy={t.admin.paging}
+      />
     </AdminShell>
   );
 }

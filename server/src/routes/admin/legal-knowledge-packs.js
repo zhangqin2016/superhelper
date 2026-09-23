@@ -3,6 +3,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { LEGAL_KB_CHARACTER_ID, LEGAL_KB_PACK_ID } from "../../services/legal-knowledge-packs.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/i);
 const createSchema = z.object({
@@ -24,11 +25,14 @@ export function registerAdminLegalKnowledgePackRoutes(app, { audit }) {
     schema: {
       tags: ["admin:legal-knowledge-packs"],
       summary: "List legal knowledge pack releases",
-      response: { 200: okResponse({ legalKnowledgePacks: { type: "array" } }) },
+      querystring: zodBody(pageQuerySchema),
+      response: { 200: okResponse(pageResponseSchema("legalKnowledgePacks")) },
     },
-  }, async () => ({
-    legalKnowledgePacks: await db.selectFrom("legal_knowledge_packs")
-      .selectAll().orderBy("created_at", "desc").limit(200).execute(),
+  }, async (request) => listPage(request, {
+      key: "legalKnowledgePacks",
+      query: () => db.selectFrom("legal_knowledge_packs").selectAll(),
+      countQuery: () => db.selectFrom("legal_knowledge_packs").select((eb) => eb.fn.count("id").as("count")),
+    sortColumn: "created_at",
   }));
 
   app.post("/api/admin/legal-knowledge-packs", {

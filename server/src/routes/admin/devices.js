@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 const updateDeviceBindingSchema = z.object({
   status: z.enum(["active", "disabled"]),
@@ -14,31 +15,33 @@ export function registerAdminDeviceRoutes(app, { audit }) {
         tags: ["admin:devices"],
         summary: "List devices",
         description: "Returns up to 300 devices with their most recent license binding, newest first.",
-        response: { 200: okResponse({ devices: { type: "array" } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("devices")) },
       },
     },
-    async () => {
-    const devices = await db
-      .selectFrom("devices")
-      .leftJoin("license_devices", "license_devices.device_id", "devices.id")
-      .select([
-        "devices.id",
-        "devices.platform",
-        "devices.arch",
-        "devices.app_version",
-        "devices.group_id",
-        "devices.first_seen_at",
-        "devices.last_seen_at",
-        "devices.trial_ends_at",
-        "license_devices.id as license_device_id",
-        "license_devices.license_id",
-        "license_devices.status as license_status",
-      ])
-      .orderBy("devices.last_seen_at", "desc")
-      .limit(300)
-      .execute();
-    return { devices };
-  });
+    async (request) => listPage(request, {
+      key: "devices",
+      query: () => db
+        .selectFrom("devices")
+        .leftJoin("license_devices", "license_devices.device_id", "devices.id")
+        .select([
+          "devices.id",
+          "devices.platform",
+          "devices.arch",
+          "devices.app_version",
+          "devices.group_id",
+          "devices.first_seen_at",
+          "devices.last_seen_at",
+          "devices.trial_ends_at",
+          "license_devices.id as license_device_id",
+          "license_devices.license_id",
+          "license_devices.status as license_status",
+        ]),
+      countQuery: () => db.selectFrom("devices").select((eb) => eb.fn.count("devices.id").as("count")),
+      sortColumn: "devices.last_seen_at",
+      idColumn: "devices.id",
+    }),
+  );
 
   app.get(
     "/api/admin/devices/:id",

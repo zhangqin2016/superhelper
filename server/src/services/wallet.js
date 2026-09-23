@@ -371,6 +371,15 @@ export async function consumeEntitlement({
         spec_key: specKey || "default",
         resource_type: resourceType,
         billable_units: billableUnits,
+        // The token columns existed and were never written: 18,828 production
+        // events carried model, feature and cost but no token counts, so
+        // "how are tokens actually distributed" had no answer at this grain.
+        // Everything here is already known to this call — units ARE tokens when
+        // the resource is tokens, and the reconcile phase passes the real split
+        // in metadata. Nothing is inferred.
+        billable_tokens: resourceType === "token" ? billableUnits : 0,
+        input_tokens: Math.max(0, Math.trunc(Number(metadata?.inputTokens ?? 0))) || 0,
+        output_tokens: Math.max(0, Math.trunc(Number(metadata?.outputTokens ?? 0))) || 0,
         unit_cost: unitCost,
         status: "completed",
         idempotency_key: idempotencyKey || null,

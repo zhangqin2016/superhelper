@@ -3,6 +3,7 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { licenseKey, publicId } from "../../services/ids.js";
 import { hashLicenseKey } from "../../services/security.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 const createLicenseSchema = z.object({
   customerName: z.string().max(160).optional().nullable(),
@@ -28,15 +29,18 @@ export function registerAdminLicenseRoutes(app, { audit }) {
       schema: {
         tags: ["admin:licenses"],
         summary: "List licenses",
-        description: "Returns the 200 most recently created licenses.",
-        response: { 200: okResponse({ licenses: { type: "array" } }) },
+        description: "Returns one page of licenses, newest first, with a cursor for the next page and the exact total.",
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("licenses")) },
       },
     },
-    async () => {
-    return {
-      licenses: await db.selectFrom("licenses").selectAll().orderBy("created_at", "desc").limit(200).execute(),
-    };
-  });
+    async (request) => listPage(request, {
+      key: "licenses",
+      query: () => db.selectFrom("licenses").selectAll(),
+      countQuery: () => db.selectFrom("licenses").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
+    }),
+  );
 
   app.get(
     "/api/admin/licenses/:id",

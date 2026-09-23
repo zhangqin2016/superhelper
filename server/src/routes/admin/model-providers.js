@@ -10,6 +10,7 @@ import {
 } from "../../services/model-gateway/providers.js";
 import { normalizeProviderForProtocol } from "../../services/model-gateway/model-aliases.js";
 import { mediaProviderStatus } from "../../services/media-provider-catalog.js";
+import { pageQuerySchema } from "../../services/admin-pagination.js";
 
 // Operator-managed model gateway providers. The API key is stored encrypted and
 // never returned to the browser; the /llm gateway uses it server-side and the
@@ -68,7 +69,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
         },
       },
     },
-    async () => {
+    async (request) => {
     const rows = await db
       .selectFrom("model_gateway_providers")
       .select([
@@ -86,7 +87,7 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
         "secret_key_encrypted",
       ])
       .orderBy("id", "asc")
-      .limit(300)
+      .limit(pageQuerySchema.parse(request.query || {}).limit)
       .execute();
     const dbIds = new Set(rows.map((row) => String(row.id)));
     // The merged env+DB list the gateway can actually route — this is what the

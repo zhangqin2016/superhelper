@@ -5,6 +5,7 @@ import { publicId } from "../../services/ids.js";
 import { signWorkspaceApp } from "../../services/security.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import {
   evaluateWorkspaceAppQuality,
   inspectWorkspaceAppArtifact,
@@ -215,16 +216,15 @@ export function registerAdminWorkspaceAppRoutes(app, { audit }) {
         tags: ["admin:workspace-apps"],
         summary: "List workspace apps",
         description: "Returns the most recent workspace apps ordered by creation time.",
-        response: { 200: okResponse({ workspaceApps: { type: "array" } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("workspaceApps")) },
       },
     },
-    async () => ({
-      workspaceApps: await db
-        .selectFrom("workspace_apps")
-        .selectAll()
-        .orderBy("created_at", "desc")
-        .limit(300)
-        .execute(),
+    async (request) => listPage(request, {
+      key: "workspaceApps",
+      query: () => db.selectFrom("workspace_apps").selectAll(),
+      countQuery: () => db.selectFrom("workspace_apps").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
     }),
   );
 

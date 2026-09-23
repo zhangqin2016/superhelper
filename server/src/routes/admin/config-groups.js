@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { pageOf, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 
 // Tier/config groups. A group is just a named target for the existing config
 // profiles (scope: "group"), so a model preset / runtime env / policy can be
@@ -27,12 +28,19 @@ export function registerAdminConfigGroupRoutes(app, { audit }) {
         tags: ["admin:config-groups"],
         summary: "List config groups",
         description: "Lists config groups with their device and license member counts.",
-        response: { 200: okResponse({ groups: { type: "array", items: { type: "object" } } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("groups")) },
       },
     },
-    async () => {
+    async (request) => {
     const [groups, deviceCounts, licenseCounts] = await Promise.all([
-      db.selectFrom("config_groups").selectAll().orderBy("name", "asc").limit(300).execute(),
+      pageOf({
+        query: () => db.selectFrom("config_groups").selectAll(),
+        countQuery: () => db.selectFrom("config_groups").select((eb) => eb.fn.count("id").as("count")),
+        sortColumn: "name",
+        direction: "asc",
+        ...pageQuerySchema.parse(request.query || {}),
+      }),
       db
         .selectFrom("devices")
         .select(["group_id", (eb) => eb.fn.countAll().as("count")])
@@ -49,11 +57,14 @@ export function registerAdminConfigGroupRoutes(app, { audit }) {
     const deviceMap = new Map(deviceCounts.map((row) => [row.group_id, Number(row.count)]));
     const licenseMap = new Map(licenseCounts.map((row) => [row.group_id, Number(row.count)]));
     return {
-      groups: groups.map((group) => ({
+      groups: groups.items.map((group) => ({
         ...group,
         deviceCount: deviceMap.get(group.id) || 0,
         licenseCount: licenseMap.get(group.id) || 0,
       })),
+      nextCursor: groups.nextCursor,
+      total: groups.total,
+      pageSize: groups.pageSize,
     };
   });
 

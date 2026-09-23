@@ -4,6 +4,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import {
   isValidSkillArtifactUrl,
   isValidSkillSha256,
@@ -220,16 +221,15 @@ export function registerAdminSkillPackageRoutes(app, { audit }) {
         tags: ["admin:skill-packages"],
         summary: "List skill packages",
         description: "Returns the most recent skill packages ordered by creation time.",
-        response: { 200: okResponse({ skillPackages: { type: "array" } }) },
+        querystring: zodBody(pageQuerySchema),
+        response: { 200: okResponse(pageResponseSchema("skillPackages")) },
       },
     },
-    async () => ({
-      skillPackages: await db
-        .selectFrom("skill_packages")
-        .selectAll()
-        .orderBy("created_at", "desc")
-        .limit(300)
-        .execute(),
+    async (request) => listPage(request, {
+      key: "skillPackages",
+      query: () => db.selectFrom("skill_packages").selectAll(),
+      countQuery: () => db.selectFrom("skill_packages").select((eb) => eb.fn.count("id").as("count")),
+      sortColumn: "created_at",
     }),
   );
 
