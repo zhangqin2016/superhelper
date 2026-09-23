@@ -2164,6 +2164,25 @@
       "tests": [
         "scripts/test-admin-pages-render.mjs"
       ]
+    },
+    {
+      "id": "timeline-blocks-single-definition",
+      "protects": "A turn's text blocks are formed by one shared rule in both processes: a separator between tool calls opens no block, the answer is the last block with visible text, and once the turn is sealed its narration folds into the step group instead of standing above the answer.",
+      "baseline": "Whitespace inside an open block and the archived full answer are kept byte-for-byte; a live turn still shows its narration in place; a sealed turn with no step group keeps narration where it was.",
+      "failureFallback": "Timelines archived before the rule still render correctly: blank blocks are skipped at display and are never taken as the answer.",
+      "tests": [
+        "scripts/test-turn-streaming-blocks.mjs",
+        "scripts/test-turn-process-group.mjs"
+      ]
+    },
+    {
+      "id": "no-undeclared-identifiers",
+      "protects": "No file in the server, web console or desktop app reads a name it never declared — the defect that throws only when its line runs, past every build and import.",
+      "baseline": "Analysis only: no runtime code changes; a missing web dependency skips the gate and says so.",
+      "failureFallback": "A file that cannot be parsed fails the gate by name rather than being silently skipped.",
+      "tests": [
+        "scripts/test-no-undeclared-identifiers.mjs"
+      ]
     }
   ]
 }

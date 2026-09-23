@@ -137,7 +137,7 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         response: { 200: okResponse({ profiles: { type: "array", items: { type: "object" } } }) },
       },
     },
-    async () => {
+    async (request) => {
       // Listed in MERGE order — the order that decides who overrides whom. A
       // list sorted any other way asks the reader to simulate the merge in
       // their head, which is how a rule that never applied went unnoticed.
