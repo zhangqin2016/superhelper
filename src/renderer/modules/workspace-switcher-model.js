@@ -185,6 +185,25 @@ export function searchWorkspaceTargets(projects, query) {
   };
 }
 
+/** Compact "how long since last activity" parts for dense lists such as the
+ * sidebar: `{ unit: "now" }` for under a minute, otherwise `{ unit, count }`
+ * with unit in minute|hour|day|month|year. Direction is dropped on purpose —
+ * a session's last activity is always in the past, and a clock skewed a few
+ * seconds into the future must not read as "-1m". Returns null when the
+ * session carries no parseable timestamp so callers can keep their fallback. */
+export function compactElapsedParts(value, nowMs = Date.now()) {
+  const relative = relativeTimeValue(value, nowMs);
+  if (!relative) return null;
+  if (relative.unit === "second") return { unit: "now", count: 0 };
+  const count = Math.max(1, Math.abs(relative.value));
+  return { unit: relative.unit, count };
+}
+
+export function sessionElapsedParts(session, nowMs = Date.now()) {
+  const updated = compactElapsedParts(session?.updatedAt, nowMs);
+  return updated || compactElapsedParts(session?.createdAt, nowMs);
+}
+
 export function sessionRelativeValue(session, nowMs) {
   const updated = relativeTimeValue(session?.updatedAt, nowMs);
   return updated || relativeTimeValue(session?.createdAt, nowMs);

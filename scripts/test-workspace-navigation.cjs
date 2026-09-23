@@ -1371,6 +1371,21 @@ app.whenReady().then(async () => {
     };
   `);
   await captureEvidence("desktop-ltr");
+  // Session rows show elapsed time since last activity ("3m", "2h", "5d",
+  // "2mo", "1y"), never the old message count, and carry an absolute
+  // timestamp tooltip. Seeds are dated July 2026, so every row must render a
+  // month/year style label rather than a bare count.
+  const sessionMetaRows = await execute(`
+    return [...document.querySelectorAll(".session-item .session-meta")]
+      .map((meta) => ({ text: meta.textContent, title: meta.title }));
+  `);
+  assert(sessionMetaRows.length >= 9, `expected seeded session rows, saw ${sessionMetaRows.length}`);
+  console.log(`[workspace-navigation] session meta labels: ${sessionMetaRows.map((row) => row.text).join(" ")} · tooltip e.g. ${sessionMetaRows[0].title}`);
+  for (const row of sessionMetaRows) {
+    assert.match(row.text, /^(刚刚|\d+(m|h|d|mo|y))$/, `session meta must be elapsed time, got ${JSON.stringify(row.text)}`);
+    assert(!/条/.test(row.text), "session meta must not fall back to message count when a timestamp exists");
+    assert.match(row.title, /^最近活跃：/, `session meta must carry an absolute-time tooltip, got ${JSON.stringify(row.title)}`);
+  }
   assert(desktopLayout.mainWidth >= 80, `180px sidebar left only ${desktopLayout.mainWidth}px`);
   assert.equal(desktopLayout.handlePosition, "absolute");
   assert.equal(desktopLayout.actionsPosition, "absolute");

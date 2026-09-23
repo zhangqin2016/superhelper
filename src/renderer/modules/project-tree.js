@@ -4,7 +4,7 @@
 
 import store from "./state.js";
 import { $ } from "./dom.js";
-import { t } from "../i18n/index.js";
+import { t, getLocale } from "../i18n/index.js";
 import { refreshState, updateTopbarTitles, applySessionSwitch } from "./session-chrome.js";
 import { removeSessionMessages } from "./message.js";
 import { promptSessionName, promptProjectName } from "./name-prompt.js";
@@ -14,7 +14,7 @@ import { confirmWorkspacePackExport } from "./workspace-export-dialog.js";
 import { reviewWorkspacePackage } from "./workspace-package-review.js";
 import { reorderWorkspaceByCommand } from "./workspace-order.js";
 import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
-import { sortSessionsByRecency } from "./workspace-switcher-model.js";
+import { sortSessionsByRecency, sessionElapsedParts } from "./workspace-switcher-model.js";
 import { showWorkspaceVersionDialog } from "./workspace-version-dialog.js";
 import { openWorkspaceCollaboration } from "./workspace-collaboration-entry.js";
 
@@ -104,6 +104,7 @@ async function renameSessionById(sessionId, currentTitle) {
 }
 
 export function renderProjectTree() {
+  ensureMetaTicker();
   const el = container();
   if (!el) return;
   el.textContent = "";
@@ -220,7 +221,7 @@ export function renderProjectTree() {
 
         const meta = document.createElement("span");
         meta.className = "session-meta";
-        meta.textContent = s.messageCount ? t("sidebar.messageCount", { count: s.messageCount }) : "";
+        applySessionMeta(meta, s);
         item.appendChild(meta);
 
         item.addEventListener("click", async () => {
@@ -290,6 +291,65 @@ export function updateSessionRunningIndicators() {
   });
 }
 
+const ELAPSED_UNIT_KEYS = {
+  now: "sidebar.activeNow",
+  minute: "sidebar.activeMinutes",
+  hour: "sidebar.activeHours",
+  day: "sidebar.activeDays",
+  month: "sidebar.activeMonths",
+  year: "sidebar.activeYears",
+};
+
+/** Sidebar row meta: how long since the session was last active ("3m",
+ * "2h", "5d"). Sessions without any usable timestamp keep the old message
+ * count so the column never goes blank on legacy data. */
+function sessionMetaText(session, nowMs = Date.now()) {
+  const parts = sessionElapsedParts(session, nowMs);
+  if (parts) {
+    const key = ELAPSED_UNIT_KEYS[parts.unit];
+    if (key) return t(key, { n: parts.count });
+  }
+  return session?.messageCount ? t("sidebar.messageCount", { count: session.messageCount }) : "";
+}
+
+function sessionMetaTitle(session) {
+  const raw = session?.updatedAt || session?.createdAt;
+  const stamp = raw ? new Date(raw).getTime() : NaN;
+  if (!Number.isFinite(stamp)) return "";
+  try {
+    const time = new Intl.DateTimeFormat(getLocale(), { dateStyle: "medium", timeStyle: "short" }).format(stamp);
+    return t("sidebar.lastActiveAt", { time });
+  } catch {
+    return "";
+  }
+}
+
+function applySessionMeta(meta, session) {
+  const text = sessionMetaText(session);
+  if (meta.textContent !== text) meta.textContent = text;
+  const title = sessionMetaTitle(session);
+  if (title) meta.title = title;
+  else meta.removeAttribute("title");
+}
+
+// Relative labels go stale while the window sits open; re-derive them once a
+// minute without rebuilding the tree. Skipped while the document is hidden and
+// caught up on the next visibility change.
+const META_TICK_MS = 60_000;
+let metaTicker = null;
+function ensureMetaTicker() {
+  if (metaTicker || typeof setInterval !== "function") return;
+  metaTicker = setInterval(() => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    updateSessionMetaCounts();
+  }, META_TICK_MS);
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") updateSessionMetaCounts();
+    });
+  }
+}
+
 export function updateSessionMetaCounts() {
   const sessionById = new Map();
   for (const project of store.get("projects") || []) {
@@ -302,7 +362,7 @@ export function updateSessionMetaCounts() {
     const session = sessionById.get(item.dataset.sessionId);
     if (!session) return;
     const meta = item.querySelector(".session-meta");
-    if (meta) meta.textContent = session.messageCount ? t("sidebar.messageCount", { count: session.messageCount }) : "";
+    if (meta) applySessionMeta(meta, session);
   });
 }
 

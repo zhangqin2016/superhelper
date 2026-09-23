@@ -3,6 +3,8 @@ export {
   recentSessions,
   sortSessionsByRecency,
   relativeTimeValue,
+  compactElapsedParts,
+  sessionElapsedParts,
   searchWorkspaceTargets,
 } from "./workspace-switcher-model.js";
 export {

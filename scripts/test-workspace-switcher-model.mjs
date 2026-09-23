@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  compactElapsedParts,
   initWorkspaceSwitcher,
   latestSession,
   relativeTimeValue,
+  sessionElapsedParts,
   recentSessions,
   searchWorkspaceTargets,
   sortSessionsByRecency,
@@ -270,6 +272,26 @@ assert.deepEqual(
   ["first-a", "first-b", "second-a", "second-invalid"],
 );
 assert.deepEqual(projects, projectsSnapshot);
+
+// Sidebar "last active" compact parts: direction-less, floor at 1, null on
+// missing/invalid timestamps so the caller can keep its message-count fallback.
+{
+  const now = Date.parse("2026-09-23T12:00:00.000Z");
+  const at = (ms) => new Date(now - ms).toISOString();
+  assert.deepEqual(compactElapsedParts(at(20_000), now), { unit: "now", count: 0 });
+  assert.deepEqual(compactElapsedParts(at(-20_000), now), { unit: "now", count: 0 }, "slight future skew reads as now");
+  assert.deepEqual(compactElapsedParts(at(3 * 60_000), now), { unit: "minute", count: 3 });
+  assert.deepEqual(compactElapsedParts(at(59 * 60_000 + 40_000), now), { unit: "hour", count: 1 }, "rolls into next unit");
+  assert.deepEqual(compactElapsedParts(at(5 * 3_600_000), now), { unit: "hour", count: 5 });
+  assert.deepEqual(compactElapsedParts(at(2 * 86_400_000), now), { unit: "day", count: 2 });
+  assert.deepEqual(compactElapsedParts(at(45 * 86_400_000), now), { unit: "month", count: 2 });
+  assert.deepEqual(compactElapsedParts(at(400 * 86_400_000), now), { unit: "year", count: 1 });
+  assert.deepEqual(compactElapsedParts(at(-90_000), now), { unit: "minute", count: 2 }, "future skew never yields a negative count");
+  assert.equal(compactElapsedParts(undefined, now), null);
+  assert.equal(compactElapsedParts("invalid", now), null);
+  assert.deepEqual(sessionElapsedParts({ updatedAt: "invalid", createdAt: at(86_400_000) }, now), { unit: "day", count: 1 }, "falls back to createdAt");
+  assert.equal(sessionElapsedParts({ messageCount: 12 }, now), null, "no timestamp → caller keeps message count");
+}
 
 const controller = initWorkspaceSwitcher();
 assert.equal(typeof controller.dispose, "function");
