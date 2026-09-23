@@ -342,7 +342,10 @@ async function runSupportDiagnosticsPublic(options = {}) {
   checks.push(await deepChecks.environmentProcessesCheck(options));
   checks.push(longTaskDiagnosticCheck(options));
   // What has actually been failing here, as opposed to what is broken right now.
-  checks.push(require("./support-diagnostics-recent-failures").recentFailuresCheck(options));
+  const recentFailures = require("./support-diagnostics-recent-failures");
+  checks.push(recentFailures.recentFailuresCheck(options));
+  // A turn that failed is visible; a capability that quietly declined is not.
+  checks.push(recentFailures.degradedCapabilitiesCheck(options));
   // Where the log actually is. The report cannot carry it — it leaves the
   // machine and the log does not — but a user who is asked for it should not
   // have to be told a path over chat.

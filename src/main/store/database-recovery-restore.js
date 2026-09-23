@@ -18,7 +18,12 @@ function acknowledgeRecoveryReceipt(dbPath, id) {
     if (!receipt || receipt.id !== id) return { ok: false, reason: "invalid_receipt" };
     fs.unlinkSync(receiptPath(dbPath)); sync(path.dirname(dbPath), true);
     return { ok: true, reason: "acknowledged" };
-  } catch { return { ok: false, reason: "recovery_interrupted" }; }
+  } catch (error) {
+    // A restore that stops halfway is the highest-stakes failure the store has;
+    // losing WHY makes the next attempt a guess.
+    require("../diagnostics/swallowed-failure").recordSwallowedFailure("database restore", error);
+    return { ok: false, reason: "recovery_interrupted" };
+  }
 }
 function resumeRestore(dbPath) {
   const intentPath = dbPath + ".recovery-intent.json";

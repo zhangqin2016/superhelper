@@ -28,7 +28,10 @@ class DatabaseRecoveryService {
         stdio: ["ignore", "ignore", "ignore", "ipc"],
         windowsHide: true,
       });
-    } catch { return { ok: false, reason: "worker_unavailable" }; }
+    } catch (error) {
+      require("./diagnostics/swallowed-failure").recordSwallowedFailure("database recovery worker", error);
+      return { ok: false, reason: "worker_unavailable" };
+    }
     const operation = { child, reason: null };
     this.active = operation;
     const result = await new Promise(resolve => {

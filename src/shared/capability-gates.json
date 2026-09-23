@@ -62,7 +62,8 @@
         "scripts/test-message-store.mjs",
         "scripts/test-session-load-recovery.mjs",
         "scripts/test-support-diagnostics.mjs",
-        "scripts/test-diagnostic-log-bounds.mjs"
+        "scripts/test-diagnostic-log-bounds.mjs",
+        "scripts/test-swallowed-failure.mjs"
       ]
     },
     {

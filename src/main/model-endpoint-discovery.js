@@ -61,7 +61,10 @@ async function discoverEndpointModels({ baseUrl, apiKey, protocol = "openai", ti
     return { ok: false, error: `HTTP_${res.status}`, detail: detail.slice(0, 200) };
   }
   let json;
-  try { json = await res.json(); } catch { return { ok: false, error: "BAD_RESPONSE" }; }
+  try { json = await res.json(); } catch (error) {
+    require("./diagnostics/swallowed-failure").recordSwallowedFailure("model discovery", error, { endpoint: base });
+    return { ok: false, error: "BAD_RESPONSE" };
+  }
   const discovered = extractModels(json);
   const models = [...discovered.keys()].slice(0, 500);
   if (!models.length) return { ok: false, error: "NO_MODELS" };

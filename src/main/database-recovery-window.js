@@ -73,7 +73,12 @@ async function openDatabaseRecoveryWindow({ service, locale, allowRestore = true
         const { strings: _strings, ...metadata } = publicState();
         await fs.writeFile(result.filePath, JSON.stringify({ ...metadata, platform: process.platform, at: new Date().toISOString() }, null, 2), { flag: "w", mode: 0o600 });
         return { ok: true };
-      } catch { return { ok: false, reason: "export_failed" }; }
+      } catch (error) {
+        // Data the user may need back. "export_failed" alone cannot be acted
+        // on; the cause can.
+        require("./diagnostics/swallowed-failure").recordSwallowedFailure("database export", error);
+        return { ok: false, reason: "export_failed" };
+      }
     }
     await flow.act(action, id);
     return publicState();

@@ -62,4 +62,22 @@ function recentFailuresCheck(options = {}) {
   return check(status, ID, LABEL, `最近 7 天有 ${total} 次失败：${summary}。`);
 }
 
-module.exports = { RECURRENCE_THRESHOLD, recentFailuresCheck };
+/**
+ * Capabilities that stopped working without stopping the turn.
+ *
+ * A failed turn is visible; a capability that quietly declined is not. The turn
+ * still answers, only worse, and nothing in the report said so — which is the
+ * harder half of "why is it dumber than it was".
+ */
+function degradedCapabilitiesCheck(options = {}) {
+  const id = "capabilities.degraded";
+  const label = "静默降级";
+  const groups = options.degraded
+    || safeCall(() => require("./diagnostics/swallowed-failure").degradedCapabilities({ limit: 8 }), [])
+    || [];
+  if (!groups.length) return check("ok", id, label, "本次运行没有能力降级。");
+  const summary = groups.map((group) => `${group.site}×${group.count}（${group.cause}）`).join("；");
+  return check("warning", id, label, `本次运行有能力降级但回合仍照常完成：${summary}。`);
+}
+
+module.exports = { RECURRENCE_THRESHOLD, degradedCapabilitiesCheck, recentFailuresCheck };

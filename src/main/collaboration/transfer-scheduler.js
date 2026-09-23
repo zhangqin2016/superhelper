@@ -71,7 +71,10 @@ function createTransferScheduler({ manager, manifests, now = Date.now, onChange 
       }
       await Promise.all([...active.values()]);
       return stopped ? { ok: false, code: "COLLABORATION_STOPPED" } : { ok: true };
-    } catch { return { ok: false, code: "COLLAB_TRANSFER_UNAVAILABLE" }; }
+    } catch (error) {
+      require("../diagnostics/swallowed-failure").recordSwallowedFailure("collaboration transfer", error);
+      return { ok: false, code: "COLLAB_TRANSFER_UNAVAILABLE" };
+    }
   }
   return Object.freeze({
     tick,

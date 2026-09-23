@@ -72,7 +72,19 @@ async function assessObjectiveCoverage({ state = {}, post, resolveConnection, ob
       requirements.push({ title: item.requirementQuote.slice(0, 500), status: item.status, ...(item.status === "complete" ? { evidenceId: item.evidenceId, evidenceQuote: item.evidenceQuote.slice(0, 500) } : {}) });
     }
     return { status: requirements.some(item => item.status === "missing") ? "missing" : requirements.some(item => item.status === "unknown") ? "unknown" : "complete", requirements };
-  } catch { return unknown("judge_unavailable_or_invalid"); }
+  } catch (error) {
+    // The verdict stays "unknown" — the audit must never claim coverage it
+    // could not establish — but the CAUSE no longer dies here. This branch
+    // fired on every turn of a real session (2026-09-23) and the log said only
+    // that the judge was unavailable, so a timeout, a dead endpoint, a refused
+    // request and malformed JSON were one indistinguishable outcome.
+    require("./diagnostics/swallowed-failure").recordSwallowedFailure(
+      "objective coverage audit",
+      error,
+      { turn: state?.turnId || "", session: state?.sessionId || "" },
+    );
+    return unknown("judge_unavailable_or_invalid");
+  }
 }
 
 function applyObjectiveCoverage(verification, coverage) {
