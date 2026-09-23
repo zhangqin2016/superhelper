@@ -49,9 +49,17 @@ function unwrapEngineText(text) {
 }
 
 function userTexts(messages = []) {
+  const { isPlatformAuthoredPromptText } = require("./internal-prompt-marker");
   return (Array.isArray(messages) ? messages : [])
     .filter((message) => message?.role === "user")
     .map(messageText)
+    // Judged on the ORIGINAL text, before unwrapping: authorship is only
+    // unambiguous while the tag is still attached. A prompt the platform sent
+    // to itself reaches the engine as a user message but never appears in
+    // Lily's own history, so counting it here compares two different things —
+    // and a run of them pushes the real messages out of the comparison window
+    // entirely, which reads as a mismatch and costs the session its resume.
+    .filter((text) => !isPlatformAuthoredPromptText(text))
     .map(unwrapEngineText)
     .map(normalizedText)
     .filter(Boolean);

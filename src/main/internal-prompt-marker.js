@@ -125,8 +125,31 @@ function isSelfCheckPromptText(text) {
   );
 }
 
+/**
+ * True when this user message was written by the platform or the engine rather
+ * than typed by a person.
+ *
+ * Deliberately narrower than "was this injected". Engine-layered text is still
+ * the USER's message wearing a wrapper, and callers that unwrap it must keep
+ * counting it as theirs; this answers only "whose words are these", which is
+ * the question resume continuity has to ask.
+ *
+ * Both tagged kinds qualify. A recovery prompt's ANSWER is the user's
+ * deliverable and survives, but the question itself was never theirs, so it
+ * cannot stand in for their history either.
+ *
+ * (2026-09-23: the continuity guard compared the engine's last user messages
+ * against Lily's own, where these are hidden. A run of self-checks pushed the
+ * real messages out of the comparison window, the guard read a mismatch, and
+ * the conversation lost its resume for no reason.)
+ */
+function isPlatformAuthoredPromptText(text) {
+  return isMarkedInternalPrompt(text) || isSelfCheckPromptText(text);
+}
+
 module.exports = {
   INTERNAL_PROMPT_KINDS,
+  isPlatformAuthoredPromptText,
   MARKER_RE,
   internalPromptKind,
   isMarkedInternalPrompt,

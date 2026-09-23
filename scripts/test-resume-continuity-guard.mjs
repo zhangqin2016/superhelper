@@ -155,4 +155,75 @@ const {
   assert.equal(result.reason, "binding_resumeId_mismatch");
 }
 
+// --- prompts the platform sent to itself are not the user's history ----------
+// 2026-09-23 field case: the engine's recent user messages were a run of
+// self-checks, which exist only on its side. They pushed the real messages out
+// of the comparison window, the guard read a mismatch, and a healthy session
+// lost its resume for no reason.
+{
+  const user = (text) => ({ role: "user", content: text });
+  const real = "感觉我们平台还差很多才能生产实用啊";
+  const selfCheck = `<lily_internal_prompt kind="self_check"/>\ntask continuity check: the native todo list still has unfinished todo items. continuation attempt: 1/2.`;
+  const recovery = `<lily_internal_prompt kind="recovery"/>\nplease deliver the missing final result`;
+
+  const flooded = classifyResumeContinuity({
+    localMessages: [user(real)],
+    officialMessages: [user(real), ...Array.from({ length: 6 }, () => user(selfCheck))],
+  });
+  assert.equal(flooded.ok, true, "a run of self-checks must not read as a history mismatch");
+  assert.equal(flooded.reason, "recent_user_overlap");
+
+  assert.equal(
+    classifyResumeContinuity({
+      localMessages: [user(real)],
+      officialMessages: [user(real), user(recovery), user(recovery)],
+    }).ok,
+    true,
+    "a recovery prompt was not the user's either, even though its answer is theirs",
+  );
+
+  // Engine history made ENTIRELY of platform prompts carries no user history to
+  // disagree with, so there is nothing to reset over.
+  assert.equal(
+    classifyResumeContinuity({ localMessages: [user(real)], officialMessages: [user(selfCheck)] }).reason,
+    "official_history_empty",
+    "no real user history on the engine side is not a mismatch",
+  );
+}
+
+// A genuinely different conversation must STILL be caught — the whole point of
+// the guard is to refuse a resume that belongs to someone else's history.
+{
+  const user = (text) => ({ role: "user", content: text });
+  const mismatch = classifyResumeContinuity({
+    localMessages: [user("帮我看看这个 PDF")],
+    officialMessages: [user("write me a poem about rivers")],
+  });
+  assert.equal(mismatch.ok, false, "unrelated histories are still a mismatch");
+  assert.equal(mismatch.reason, "recent_user_history_mismatch");
+}
+
+// And a real user message must never be dropped by the new filter, including
+// one the engine wrapped in its own layers, or the guard would start inventing
+// mismatches instead of preventing them.
+{
+  const user = (text) => ({ role: "user", content: text });
+  const wrapped = `<lily_layer title="guidance">platform rules</lily_layer>\n帮我优化这段代码`;
+  // A user who QUOTES an internal prompt still owns their message: the tag is
+  // the test, not the prose. The REASON is asserted, not just the verdict —
+  // a filter that wrongly dropped this message would empty both sides and
+  // still answer "ok", which is the same answer for the opposite reason.
+  const quoted = classifyResumeContinuity({
+    localMessages: [user("为什么会出现 task continuity check 这种提示")],
+    officialMessages: [user("为什么会出现 task continuity check 这种提示")],
+  });
+  assert.equal(quoted.ok, true, "quoting an internal prompt does not make a message the platform's");
+  assert.equal(quoted.reason, "recent_user_overlap", "it matched because the message SURVIVED, not because both sides went empty");
+  const layered = classifyResumeContinuity({
+    localMessages: [user("帮我优化这段代码")],
+    officialMessages: [user(wrapped)],
+  });
+  assert.equal(layered.reason, "recent_user_overlap", "a layered message likewise survives rather than vanishing");
+}
+
 console.log("resume continuity guard tests passed");

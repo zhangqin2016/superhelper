@@ -1328,7 +1328,8 @@
         "scripts/test-internal-prompt-provenance.mjs",
         "scripts/test-opencode-conversation-source.mjs",
         "scripts/test-todo-progress-overlay.mjs",
-        "scripts/test-compaction-continuity-plugin.mjs"
+        "scripts/test-compaction-continuity-plugin.mjs",
+        "scripts/test-resume-continuity-guard.mjs"
       ]
     },
     {
