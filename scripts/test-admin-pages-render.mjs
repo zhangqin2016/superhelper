@@ -250,6 +250,30 @@ await check("users hide three always-zero billing figures until the first order 
   samples.clear();
 });
 
+await check("diagnostics: the list fits its card, ranks kinds by reach, and keeps traces on the record", async () => {
+  const device = "dev_5a2b5f4e-4b7a-4311-b447-2602b0cb1631";
+  samples.set("/api/admin/diagnostics", {
+    diagnostics: [{ id: "diag_1", created_at: new Date().toISOString(), severity: "error", normalized_kind: "EMPTY_ASSISTANT_COMPLETION", summary: "the model returned nothing", device_id: device, platform: "darwin", arch: "arm64", app_version: "0.1.183" }],
+    byKind: [{ kind: "EMPTY_ASSISTANT_COMPLETION", severity: "error", count: 108, devices: 23 }, { kind: "MODEL_NO_RESPONSE", severity: "warning", count: 29, devices: 4 }],
+    nextCursor: "next", total: 525,
+  });
+  requested.length = 0;
+  const html = await renderPage("app/admin/diagnostics/page.js");
+  const c = t.admin.diag;
+  assert.ok(requested[0].includes("days=7"), "opens on the last week");
+  assert.match(html, /class="overflow-x-auto"><table/, "the table scrolls sideways inside its card instead of being clipped by it");
+  assert.ok(!html.includes("<pre"), "no trace is inlined into the list");
+  assert.ok(html.includes('href="/admin/diagnostics/diag_1"'), "each row opens its record");
+  assert.ok(html.includes(c.onDevices.replace("{n}", "23")), "a kind says how many machines it reaches");
+  assert.ok(html.includes(`title="${device}"`) && !html.includes(`>${device}<`), "the long device id is shortened, full on hover");
+  assert.ok(!html.includes(c.claude), "the always-empty Claude version column is gone");
+  assert.ok(html.includes(t.admin.paging.next || "下一页"), "and the list can be walked past its first page");
+  samples.clear();
+  const api = fs.readFileSync(path.join(ROOT, "server/src/routes/admin/diagnostics.js"), "utf8");
+  assert.match(api, /select\(LIST_COLUMNS\)/, "the list query does not carry traces");
+  assert.ok(!/LIST_COLUMNS = \[[^\]]*"trace"/.test(api));
+});
+
 await check("no toggle is labelled with a state word", () => {
   const offenders = [];
   for (const dir of ["web/components", "web/app/admin"]) {

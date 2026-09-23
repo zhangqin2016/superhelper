@@ -1,6 +1,12 @@
+import { sql } from "kysely";
 import { db } from "../../db.js";
 import { okResponse, zodBody } from "../../openapi.js";
 import { pageOf, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
+
+const LIST_COLUMNS = [
+  "id", "created_at", "severity", "normalized_kind", "event_type", "event_subtype", "summary",
+  "device_id", "license_id", "platform", "arch", "app_version", "turn_phase", "session_state",
+];
 
 export function registerAdminDiagnosticsRoutes(app) {
   app.get(
@@ -31,7 +37,9 @@ export function registerAdminDiagnosticsRoutes(app) {
     };
     const [diagnostics, byKind] = await Promise.all([
       pageOf({
-        query: () => filtered(db.selectFrom("runtime_diagnostics").selectAll()),
+        // A trace runs to 40 KB; a page of 50 carried them all inline. The list
+        // is the summary; the trace is one click away on the record itself.
+        query: () => filtered(db.selectFrom("runtime_diagnostics").select(LIST_COLUMNS)),
         countQuery: () => filtered(db.selectFrom("runtime_diagnostics").select((eb) => eb.fn.count("id").as("count"))),
         sortColumn: "created_at",
         ...pageQuerySchema.parse(request.query || {}),
@@ -42,6 +50,9 @@ export function registerAdminDiagnosticsRoutes(app) {
           "normalized_kind",
           "severity",
           eb.fn.count("id").as("count"),
+          // How many machines a failure reaches says more than how often it fires:
+          // 108 empty replies on 23 devices is a platform problem, 29 on 4 is not.
+          sql`count(distinct device_id)`.as("devices"),
         ])
         .where("created_at", ">=", since)
         .groupBy(["normalized_kind", "severity"])
@@ -58,6 +69,7 @@ export function registerAdminDiagnosticsRoutes(app) {
         kind: row.normalized_kind || "unknown",
         severity: row.severity || "warning",
         count: Number(row.count || 0),
+        devices: Number(row.devices || 0),
       })),
     };
   });
