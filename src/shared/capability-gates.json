@@ -61,7 +61,8 @@
         "scripts/test-data-migration.mjs",
         "scripts/test-message-store.mjs",
         "scripts/test-session-load-recovery.mjs",
-        "scripts/test-support-diagnostics.mjs"
+        "scripts/test-support-diagnostics.mjs",
+        "scripts/test-diagnostic-log-bounds.mjs"
       ]
     },
     {

@@ -250,6 +250,30 @@ function engineCheck({ includeEngine }) {
   return check("ok", "engine.available", "AI 引擎", "内置 AI 引擎存在。");
 }
 
+/**
+ * Where this install's log is, and how much it can ever cost.
+ *
+ * Deliberately reports the path rather than the contents: the report is
+ * submitted off-machine and a log carries conversation text, file paths and
+ * model output. Naming it lets a user attach it deliberately; embedding it
+ * would exfiltrate it by default.
+ */
+function logFileCheck(options = {}) {
+  const id = "diagnostics.logFile";
+  const label = "运行日志";
+  const paths = options.logPaths || safeCall(() => require("./diagnostics/main-log-file").mainLogPaths(), []) || [];
+  if (!paths.length) return check("ok", id, label, "本次运行未写入日志文件。");
+  let bytes = 0;
+  let present = 0;
+  for (const file of paths) {
+    const size = safeCall(() => (fs.existsSync(file) ? fs.statSync(file).size : 0), 0) || 0;
+    if (size > 0) present += 1;
+    bytes += size;
+  }
+  const mb = (bytes / (1024 * 1024)).toFixed(1);
+  return check("ok", id, label, `日志位于 ${paths[0]}（当前 ${present} 个文件，共 ${mb} MB，上限固定不会无限增长）。需要时请手动附上该文件。`);
+}
+
 function longTaskDiagnosticCheck(options = {}) {
   const dbPath = options.dbPath || safeCall(() => require("./config").longTaskDbPath(), "");
   if (!dbPath || !fs.existsSync(dbPath)) {
@@ -319,6 +343,10 @@ async function runSupportDiagnosticsPublic(options = {}) {
   checks.push(longTaskDiagnosticCheck(options));
   // What has actually been failing here, as opposed to what is broken right now.
   checks.push(require("./support-diagnostics-recent-failures").recentFailuresCheck(options));
+  // Where the log actually is. The report cannot carry it — it leaves the
+  // machine and the log does not — but a user who is asked for it should not
+  // have to be told a path over chat.
+  checks.push(logFileCheck(options));
   if (license) {
     checks.push(check(
       license.valid || license.activated ? "ok" : "warning",

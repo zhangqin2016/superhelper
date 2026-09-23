@@ -68,6 +68,12 @@ require("./main/config").bindRuntimePaths({
   documents: app.getPath("documents"),
 });
 
+// Persist main-process output as soon as there is somewhere to persist it —
+// before anything else runs, so a crash during startup is still explicable. It
+// captures `console` too, since most call sites bypass the logger, and the
+// rotating sink bounds what it can ever cost on disk.
+require("./main/diagnostics/main-log-file").startMainLogFile();
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();

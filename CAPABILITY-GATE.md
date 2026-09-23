@@ -191,7 +191,7 @@ Existing `test-message-db-compaction.mjs`, `test-data-migration.mjs`,
 checks do not establish native Windows, physical power-loss or customer-database
 recovery acceptance. Existing damaged primary databases are never auto-replaced.
 
-Session database safety guards: `test-session-db-safety.mjs`, `test-message-db-compaction.mjs`, `test-data-migration.mjs`, `test-message-store.mjs`, `test-session-load-recovery.mjs`, and `test-support-diagnostics.mjs`. [gate: session-database-safety]
+Session database safety guards: `test-session-db-safety.mjs`, `test-message-db-compaction.mjs`, `test-data-migration.mjs`, `test-message-store.mjs`, `test-session-load-recovery.mjs`, and `test-support-diagnostics.mjs`. 2026-09-23 补：诊断产物必须可取回，且占盘有上限。`test-diagnostic-log-bounds.mjs` 钉住主进程日志真正落盘并带**日期**（此前只写 console，打包后用户关掉应用就再也拿不到；时间戳只有时分秒，跨天的文件无从判读），且**同时接管 console**——绝大多数调用点绕过 logger，只接 logger 会漏掉大半输出还显得已经修好；终端行为保持原样，文件是叠加的。同时钉住共享轮转沿：无论写入多少，磁盘占用恒不超过 单文件上限×(代数+1)，代数用尽即丢最旧一份，不保留历史时也仍是一个有界文件而非无界文件，轮转保留近期历史而不是一截了之；看门狗那份此前无轮转无上限、全仓无人读回（真实机器实测 86 天 47 MB、176711 行）现已纳入同一条规则。并钉住写日志永不成为故障源：磁盘满、目录被删、路径不可写、值在格式化时抛异常，一律降级为"这行没写下"，绝不向正在打日志的调用方抛错。 [gate: session-database-safety]
 
 Long-task boundary repair (2026-09-11): `test-task-long-progress.mjs` exercises
 3,200 successful receipts, bounded recent-fingerprint storage, repeated/failed

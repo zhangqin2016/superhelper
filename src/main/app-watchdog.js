@@ -2,7 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const os = require("node:os");
 const { ipcMain } = require("electron");
 const { getLogger } = require("./logger");
 const { userDataPath } = require("./config");
@@ -146,10 +145,23 @@ function createWatchdog(options = {}) {
   };
 }
 
+// Measured on a real install before this was bounded: 47 MB and 176,711 lines
+// across 86 days, growing about half a megabyte a day with nothing in the whole
+// repository reading it back. MAX_RECENT above bounds the in-memory ring the
+// diagnostics report actually samples; this bounds the file.
+const WATCHDOG_MAX_BYTES = 2 * 1024 * 1024;
+const WATCHDOG_MAX_FILES = 2;
+let watchdogSink = null;
+
 function appendJsonl(record) {
-  const dir = userDataPath("diagnostics");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(path.join(dir, "watchdog.jsonl"), `${JSON.stringify(record)}${os.EOL}`, "utf8");
+  if (!watchdogSink) {
+    watchdogSink = require("./diagnostics/rotating-file-sink").createRotatingFileSink({
+      filePath: path.join(userDataPath("diagnostics"), "watchdog.jsonl"),
+      maxBytes: WATCHDOG_MAX_BYTES,
+      maxFiles: WATCHDOG_MAX_FILES,
+    });
+  }
+  watchdogSink.write(JSON.stringify(record));
 }
 
 function startAppWatchdog(ctx = {}, options = {}) {
