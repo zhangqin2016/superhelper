@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { ADMIN_SESSION_PATH, adminCredentialHeaders, isPrefetchRequest, readAdminSessionResponse, readAdminSummaryResponse } from "../web/lib/admin-auth-shared.mjs";
+import { ADMIN_SESSION_PATH, adminCredentialHeaders, createAdminSessionVerdicts, isPrefetchRequest, readAdminSessionResponse, readAdminSummaryResponse } from "../web/lib/admin-auth-shared.mjs";
 
 // Polyfill Response for Node < 18
 if (typeof globalThis.Response === "undefined") {
@@ -53,13 +53,27 @@ process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_web_admin
 const { ADMIN_SESSION_SERVICE } = await import("../server/src/routes/admin.js");
 assert.equal(ADMIN_SESSION_SERVICE, session.service, "the server answers the shape the console expects");
 
-// A hundred row links are a hundred prefetches: none may cost a session check,
-// and the check never again runs the dashboard aggregate.
+// A hundred row links are a hundred router prefetches, which the proxy cannot
+// tell from navigations (Next strips its flight headers first). A confirmed
+// credential is remembered briefly, so they cost one check, not a hundred.
 const h = (entries) => new Headers(entries);
-assert.equal(isPrefetchRequest(h({ "next-router-prefetch": "1", rsc: "1" })), true);
 assert.equal(isPrefetchRequest(h({ "sec-purpose": "prefetch;prerender" })), true);
-assert.equal(isPrefetchRequest(h({ rsc: "1" })), false, "a real client navigation is still checked");
 assert.equal(isPrefetchRequest(h({})), false);
+{
+  let clock = 1_000;
+  const verdicts = createAdminSessionVerdicts({ ttlMs: 30_000, now: () => clock });
+  assert.equal(await verdicts.confirmed("t:abc"), false, "an unseen credential is checked");
+  await verdicts.remember("t:abc");
+  assert.equal(await verdicts.confirmed("t:abc"), true, "a confirmed one is not re-checked");
+  assert.equal(await verdicts.confirmed("t:other"), false, "and confirms nothing else");
+  clock += 30_001;
+  assert.equal(await verdicts.confirmed("t:abc"), false, "the verdict expires");
+  await verdicts.remember("t:abc");
+  await verdicts.forget("t:abc");
+  assert.equal(await verdicts.confirmed("t:abc"), false, "a 401 forgets it at once");
+  for (let i = 0; i < 200; i += 1) await verdicts.remember(`t:${i}`);
+  assert.equal(await verdicts.confirmed("t:199"), true, "the store is bounded and keeps the newest");
+}
 
 process.env.ADMIN_TOKEN = "server-token-must-not-authenticate-web";
 assert.equal(adminCredentialHeaders(), null);
@@ -76,6 +90,7 @@ assert.equal(proxySource.includes("process.env.ADMIN_TOKEN"), false);
 assert.equal(apiSource.includes("process.env.ADMIN_TOKEN"), false);
 assert.ok(!proxySource.includes("/api/admin/summary"), "the per-request session check does not run the dashboard aggregate");
 assert.ok(proxySource.includes("${ADMIN_SESSION_PATH}") && ADMIN_SESSION_PATH === "/api/admin/session");
-assert.ok(proxySource.indexOf("isPrefetchRequest(request.headers)") < proxySource.indexOf("await validateAdminSession(headers)"), "prefetches are let through before any API call");
+assert.ok(proxySource.indexOf("adminSessionVerdicts.confirmed(credential)") < proxySource.indexOf("await validateAdminSession(headers)"), "a remembered verdict is consulted before any API call");
+assert.match(proxySource, /if \(result\.valid\) await adminSessionVerdicts\.remember\(credential\)/, "only a positive verdict is kept");
 
 console.log("web admin auth response validation ok");

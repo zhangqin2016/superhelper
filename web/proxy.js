@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_PATH, adminCredentialHeaders, isPrefetchRequest, readAdminSessionResponse } from "./lib/admin-auth-shared.mjs";
+import { ADMIN_SESSION_PATH, adminCredentialHeaders, createAdminSessionVerdicts, isPrefetchRequest, readAdminSessionResponse } from "./lib/admin-auth-shared.mjs";
+
+const adminSessionVerdicts = createAdminSessionVerdicts();
 
 const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lilych.lilywb.cn";
 
@@ -131,8 +133,12 @@ export async function proxy(request) {
   // A page of row links is a hundred prefetches; checking each one spent the
   // operator's API budget before the page's own reads ran (429 on every card).
   if (isPrefetchRequest(request.headers)) return NextResponse.next();
+  const credential = token ? `t:${token}` : `s:${session}`;
+  if (await adminSessionVerdicts.confirmed(credential)) return NextResponse.next();
 
   const result = await validateAdminSession(headers);
+  if (result.valid) await adminSessionVerdicts.remember(credential);
+  if (result.authFailed) await adminSessionVerdicts.forget(credential);
 
   // Only clear the session cookie when the API confirms it's truly invalid
   // (401).  Network errors, 5xx, and timeouts mean the server has a transient

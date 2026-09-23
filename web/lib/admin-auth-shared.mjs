@@ -15,12 +15,47 @@ export async function readAdminSessionResponse(response) {
   return isAdminSessionPayload(json) ? json : null;
 }
 
-// A router prefetch only fetches; the navigation that follows is checked. The
-// check is a courtesy redirect, not the boundary — every page read carries the
-// credential and the API refuses it on its own.
+// A browser speculative prefetch says so in Sec-Purpose. Next's own router
+// prefetch cannot be told apart here: Next strips its flight headers
+// (Next-Router-Prefetch, RSC) before the proxy runs — which is why the verdict
+// cache below, not this, is what bounds the checks.
 export function isPrefetchRequest(headers) {
   const get = (name) => String(headers?.get?.(name) || "").toLowerCase();
-  return get("next-router-prefetch") === "1" || get("purpose") === "prefetch" || get("sec-purpose").includes("prefetch");
+  return get("purpose") === "prefetch" || get("sec-purpose").includes("prefetch");
+}
+
+// A confirmed admin credential stays confirmed for a short while. A page of
+// row links is a hundred router prefetches the proxy cannot distinguish from
+// navigations; checking each spent the operator's API budget before the page's
+// own reads ran. Only a positive verdict is kept: a 401 still redirects at
+// once, and the check is a courtesy redirect, not the boundary — every page
+// read carries the credential and the API verifies it itself.
+export const ADMIN_SESSION_VERDICT_TTL_MS = 30_000;
+const MAX_VERDICTS = 64;
+
+export function createAdminSessionVerdicts({ ttlMs = ADMIN_SESSION_VERDICT_TTL_MS, now = Date.now } = {}) {
+  const verdicts = new Map();
+  const keyOf = async (credential) => {
+    const bytes = new TextEncoder().encode(String(credential || ""));
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  };
+  return {
+    async confirmed(credential) {
+      const key = await keyOf(credential);
+      const until = verdicts.get(key);
+      if (until && until > now()) return true;
+      if (until) verdicts.delete(key);
+      return false;
+    },
+    async remember(credential) {
+      if (verdicts.size >= MAX_VERDICTS) verdicts.delete(verdicts.keys().next().value);
+      verdicts.set(await keyOf(credential), now() + ttlMs);
+    },
+    async forget(credential) {
+      verdicts.delete(await keyOf(credential));
+    },
+  };
 }
 
 export function isAdminSummaryPayload(value) {
