@@ -17,9 +17,9 @@ export function TableRow({ className, ...props }) {
 }
 
 export function TableHead({ className, ...props }) {
-  return <th className={cn("px-5 py-4 font-medium", className)} {...props} />;
+  return <th className={cn("px-4 py-2 font-medium whitespace-nowrap", className)} {...props} />;
 }
 
 export function TableCell({ className, ...props }) {
-  return <td className={cn("px-5 py-4", className)} {...props} />;
+  return <td className={cn("px-4 py-2 align-middle", className)} {...props} />;
 }

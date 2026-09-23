@@ -53,4 +53,14 @@ for (const id of anchors.keys()) {
   assert(ids.has(id), `CAPABILITY-GATE.md anchor [gate: ${id}] has no registry entry`);
 }
 
+// A test that names itself a gate must be one: admin-lists-and-analytics ran
+// for a day carrying [gate: …] with no registry entry and no doc row.
+const scriptsDir = path.join(ROOT, "scripts");
+for (const file of fs.readdirSync(scriptsDir).filter((name) => /^test-.*\.(mjs|cjs|js)$/.test(name))) {
+  const src = fs.readFileSync(path.join(scriptsDir, file), "utf8");
+  for (const match of src.matchAll(/\[gate: ([a-z0-9-]+)\]/g)) {
+    assert(ids.has(match[1]), `scripts/${file} declares [gate: ${match[1]}] but the registry has no such gate`);
+  }
+}
+
 console.log(`capability-gate-registry: ok (${registry.gates.length} gates, ${anchors.size} doc anchors)`);

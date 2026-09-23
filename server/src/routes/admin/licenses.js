@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
@@ -36,7 +37,11 @@ export function registerAdminLicenseRoutes(app, { audit }) {
     },
     async (request) => listPage(request, {
       key: "licenses",
-      query: () => db.selectFrom("licenses").selectAll(),
+      // Seats alone cannot say whether a license is used: production had seven
+      // active licenses with no device at all, indistinguishable in the list.
+      query: () => db.selectFrom("licenses").selectAll("licenses").select(
+        sql`(select count(*)::int from license_devices d where d.license_id = licenses.id and d.status = 'active')`.as("active_devices"),
+      ),
       countQuery: () => db.selectFrom("licenses").select((eb) => eb.fn.count("id").as("count")),
       sortColumn: "created_at",
     }),

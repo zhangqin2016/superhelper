@@ -76,9 +76,9 @@ export async function AdminShell({ children, title, subtitle }) {
         </form>
       </aside>
       <main className="admin-main">
-        <div className="mb-8">
-          <h1 className="text-3xl font-semibold text-slate-950">{title}</h1>
-          {subtitle ? <p className="mt-2 text-slate-500">{subtitle}</p> : null}
+        <div className="mb-4 shrink-0">
+          <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
+          {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
         </div>
         {failures.length ? (
           <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert">

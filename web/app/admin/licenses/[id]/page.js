@@ -66,15 +66,15 @@ export default async function LicenseDetailPage({ params }) {
           {devices.length ? (
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500">
-                <tr>{["Device", "Platform", "Version", "Status", "Last seen"].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+                <tr>{["Device", "Platform", "Version", "Status", "Last seen"].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
               </thead>
               <tbody>{devices.map((device) => (
                 <tr key={device.id} className="border-t border-slate-100">
-                  <td className="px-5 py-4 font-mono"><Link href={`/admin/devices/${device.id}`} className="text-brand hover:underline">{device.device_id}</Link></td>
-                  <td className="px-5 py-4">{[device.platform, device.arch].filter(Boolean).join(" / ") || "-"}</td>
-                  <td className="px-5 py-4">{device.app_version || "-"}</td>
-                  <td className="px-5 py-4">{device.status}</td>
-                  <td className="px-5 py-4">{device.last_seen_at ? new Date(device.last_seen_at).toLocaleString() : "-"}</td>
+                  <td className="px-4 py-2 font-mono"><Link href={`/admin/devices/${device.id}`} className="text-brand hover:underline">{device.device_id}</Link></td>
+                  <td className="px-4 py-2">{[device.platform, device.arch].filter(Boolean).join(" / ") || "-"}</td>
+                  <td className="px-4 py-2">{device.app_version || "-"}</td>
+                  <td className="px-4 py-2">{device.status}</td>
+                  <td className="px-4 py-2">{device.last_seen_at ? new Date(device.last_seen_at).toLocaleString() : "-"}</td>
                 </tr>
               ))}</tbody>
             </table>

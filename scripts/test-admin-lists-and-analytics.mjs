@@ -48,6 +48,19 @@ await check("a page is bounded, and asks for one row more to know whether there 
   assert.equal(capped.pageSize, paging.MAX_PAGE_SIZE, "a caller cannot ask for the whole table");
 });
 
+await check("a joined list's next page is reachable — the cursor reads the row's own key", async () => {
+  // devices orders by "devices.last_seen_at" but the row holds "last_seen_at";
+  // reading the qualified name made every next page empty.
+  const builder = {
+    where() { return builder; },
+    orderBy() { return builder; },
+    limit(n) { builder.n = n; return builder; },
+    execute: async () => Array.from({ length: builder.n }, (_, i) => ({ id: `dev_${i}`, last_seen_at: `2026-09-${20 - i}T00:00:00Z` })),
+  };
+  const page = await paging.pageOf({ query: () => builder, sortColumn: "devices.last_seen_at", idColumn: "devices.id", limit: 3 });
+  assert.deepEqual(paging.decodeCursor(page.nextCursor), { sortValue: "2026-09-18T00:00:00Z", id: "dev_2" });
+});
+
 await check("every admin list answers with a cursor and a total — none truncates silently", () => {
   const dir = path.join(ROOT, "server/src/routes/admin");
   const offenders = [];

@@ -33,14 +33,14 @@ export default async function AdminWishesPage({ searchParams }) {
       {wishes.length ? (
         <div className="table-card overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500"><tr>{copy.columns.map((item) => <th key={item} className="px-5 py-4">{item}</th>)}</tr></thead>
+            <thead className="bg-slate-50 text-slate-500"><tr>{copy.columns.map((item) => <th key={item} className="px-4 py-2">{item}</th>)}</tr></thead>
             <tbody>{wishes.map((wish) => (
               <tr key={wish.id} className="border-t border-slate-100">
-                <td className="px-5 py-4"><Link className="font-semibold text-brand hover:underline" href={`/admin/wishes/${wish.id}`}>{wish.public_title || wish.title}</Link><div className="mt-1 font-mono text-xs text-slate-400">{wish.id}</div></td>
-                <td className="px-5 py-4"><Badge variant={wish.status === "shipped" ? "success" : "brand"}>{copy.statuses[wish.status] || wish.status}</Badge></td>
-                <td className="px-5 py-4">{copy.categories[wish.category] || wish.category}</td>
-                <td className="px-5 py-4">{Number(wish.support_count || 0)}</td>
-                <td className="px-5 py-4">{wish.updated_at ? new Date(wish.updated_at).toLocaleString() : "-"}</td>
+                <td className="px-4 py-2"><Link className="font-semibold text-brand hover:underline" href={`/admin/wishes/${wish.id}`}>{wish.public_title || wish.title}</Link><div className="mt-1 font-mono text-xs text-slate-400">{wish.id}</div></td>
+                <td className="px-4 py-2"><Badge variant={wish.status === "shipped" ? "success" : "brand"}>{copy.statuses[wish.status] || wish.status}</Badge></td>
+                <td className="px-4 py-2">{copy.categories[wish.category] || wish.category}</td>
+                <td className="px-4 py-2">{Number(wish.support_count || 0)}</td>
+                <td className="px-4 py-2">{wish.updated_at ? new Date(wish.updated_at).toLocaleString() : "-"}</td>
               </tr>
             ))}</tbody>
           </table>

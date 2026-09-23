@@ -106,7 +106,7 @@ export async function adminRoutes(app) {
   registerAdminDeviceRoutes(app, { audit });
   registerAdminUsageRoutes(app);
   registerAdminDiagnosticsRoutes(app);
-  registerAdminContactRoutes(app);
+  registerAdminContactRoutes(app, { audit });
   registerAdminReleaseRoutes(app, { audit });
   registerAdminRuntimePackRoutes(app, { audit });
   registerAdminLegalKnowledgePackRoutes(app, { audit });

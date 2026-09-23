@@ -1,7 +1,21 @@
 import { z } from "zod";
 import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
+import { sql } from "kysely";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
+import { latestReleases } from "../../services/admin-attention.js";
+
+// 1,210 installs, 85% unseen for a month: an unfiltered list is mostly the
+// dead. Default to the fleet that is actually running; "all" is one click away.
+const SEEN_WINDOWS = { "7d": "7 days", "30d": "30 days" };
+const deviceListQuerySchema = pageQuerySchema.extend({
+  seen: z.enum(["7d", "30d", "all"]).optional().default("30d"),
+});
+
+function seenSince(seen) {
+  const window = SEEN_WINDOWS[seen];
+  return window ? sql`now() - ${sql.raw(`interval '${window}'`)}` : null;
+}
 
 const updateDeviceBindingSchema = z.object({
   status: z.enum(["active", "disabled"]),
@@ -14,14 +28,19 @@ export function registerAdminDeviceRoutes(app, { audit }) {
       schema: {
         tags: ["admin:devices"],
         summary: "List devices",
-        description: "Returns up to 300 devices with their most recent license binding, newest first.",
-        querystring: zodBody(pageQuerySchema),
-        response: { 200: okResponse(pageResponseSchema("devices")) },
+        description: "Returns a page of devices seen within the window (default 30d) with their license binding, most recently seen first, plus the latest enabled release per platform-arch.",
+        querystring: zodBody(deviceListQuerySchema),
+        response: { 200: okResponse({ ...pageResponseSchema("devices"), seen: { type: "string" }, latest: { type: "object", additionalProperties: { type: "string" } } }) },
       },
     },
-    async (request) => listPage(request, {
+    async (request) => {
+      const { seen } = deviceListQuerySchema.parse(request?.query || {});
+      const since = seenSince(seen);
+      const inWindow = (builder) => (since ? builder.where("devices.last_seen_at", ">", since) : builder);
+      const [page, releases] = await Promise.all([
+        listPage(request, {
       key: "devices",
-      query: () => db
+      query: () => inWindow(db
         .selectFrom("devices")
         .leftJoin("license_devices", "license_devices.device_id", "devices.id")
         .select([
@@ -36,11 +55,16 @@ export function registerAdminDeviceRoutes(app, { audit }) {
           "license_devices.id as license_device_id",
           "license_devices.license_id",
           "license_devices.status as license_status",
-        ]),
-      countQuery: () => db.selectFrom("devices").select((eb) => eb.fn.count("devices.id").as("count")),
+        ])),
+      countQuery: () => inWindow(db.selectFrom("devices").select((eb) => eb.fn.count("devices.id").as("count"))),
       sortColumn: "devices.last_seen_at",
       idColumn: "devices.id",
-    }),
+        }),
+        db.selectFrom("releases").select(["platform", "version"]).where("enabled", "=", true).execute().catch(() => []),
+      ]);
+      const latest = Object.fromEntries(latestReleases(releases).map((row) => [row.platform, row.latest]));
+      return { ...page, seen, latest };
+    },
   );
 
   app.get(

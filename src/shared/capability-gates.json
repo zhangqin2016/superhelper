@@ -2146,6 +2146,24 @@
       "tests": [
         "scripts/test-admin-consistency.mjs"
       ]
+    },
+    {
+      "id": "admin-lists-and-analytics",
+      "protects": "Every admin list can be walked to its end and says how far through it the reader is, and usage answers how token spend is distributed rather than only its sum.",
+      "baseline": "The first page shows the same newest rows the old capped list did; an unreadable cursor reads the first page.",
+      "failureFallback": "A list without a count still pages by cursor; per-turn distribution is declared unavailable rather than faked.",
+      "tests": [
+        "scripts/test-admin-lists-and-analytics.mjs"
+      ]
+    },
+    {
+      "id": "admin-pages-render",
+      "protects": "Every admin page renders — compiled by Next's swc and prerendered with its own empty state — and the list cells that carry meaning (seat use, expiry, version drift, the release each platform is offered, inbox state) say it, with toggles labelled by the action they take.",
+      "baseline": "The first view of each list is today's data narrowed to what needs reading (running devices, waiting requests); 'all' is one click away and nothing is removed from the API.",
+      "failureFallback": "A missing count or latest-release map renders the plain value without a badge; a page whose read fails still renders its fallback and the ledger banner.",
+      "tests": [
+        "scripts/test-admin-pages-render.mjs"
+      ]
     }
   ]
 }

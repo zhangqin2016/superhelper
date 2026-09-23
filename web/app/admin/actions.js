@@ -294,6 +294,11 @@ export async function setReleaseEnabledAction(formData) {
   revalidatePath("/admin/releases");
 }
 
+export async function setContactStatusAction(formData) {
+  await apiPatch(`/api/admin/contact-requests/${text(formData, "id")}`, { status: text(formData, "status") === "handled" ? "handled" : "new" });
+  revalidatePath("/admin/contacts");
+}
+
 export async function setRuntimePackEnabledAction(formData) {
   await apiPatch(`/api/admin/runtime-packs/${text(formData, "id")}`, { enabled: text(formData, "enabled") === "true" });
   revalidatePath("/admin/runtime-packs");

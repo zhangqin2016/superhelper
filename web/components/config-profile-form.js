@@ -6,7 +6,7 @@ import { CheckboxField, SubmitButton } from "./admin-forms";
 import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 import { labels, localeLabels } from "./config-profile-copy.js";
-import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds } from "./config-profile-config-builder.js";
+import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds, splitCsv } from "./config-profile-config-builder.js";
 import { Field } from "./admin-field";
 
 const initialState = { ok: null, message: "" };
@@ -96,13 +96,6 @@ function defaultDraft(copy, templates) {
 
 function selectedTemplate(draft, templates) {
   return templates.find((template) => template.id === draft.selectedTemplateId) || templates[0] || FALLBACK_TEMPLATE;
-}
-
-function splitCsv(text) {
-  return String(text || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 // Media-generation providers offered for distribution. The server gates each by whether

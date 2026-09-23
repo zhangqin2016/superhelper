@@ -22,7 +22,8 @@ const repoRoot = join(__dirname, "..");
   // as stored config live in the builder, the labels in the copy module.
   const formSource = readFileSync(join(repoRoot, "web/components/config-profile-form.js"), "utf8");
   const builderSource = readFileSync(join(repoRoot, "web/components/config-profile-config-builder.js"), "utf8");
-  assert.match(builderSource, /id:\s*"lily"/, "config profiles should offer Lily as a media provider");
+  // The self-hosted GPU was retired (5a6415ca); the offered list equals the catalog — see media-provider-manageability.
+  assert.doesNotMatch(builderSource, /id:\s*"lily"/, "the retired self-hosted GPU is not offered");
   assert.match(formSource, /\["speech",\s*copy\.mediaSpeech\]/, "config profiles should render speech generation controls");
   assert.match(builderSource, /draft\.speechProviders/, "config profiles should include speech selection in generated config.media");
 }

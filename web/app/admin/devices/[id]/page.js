@@ -62,15 +62,15 @@ export default async function DeviceDetailPage({ params }) {
           {licenses.length ? (
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-500">
-                <tr>{["License", "Customer", "Plan", "Status", "Last seen"].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+                <tr>{["License", "Customer", "Plan", "Status", "Last seen"].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
               </thead>
               <tbody>{licenses.map((license) => (
                 <tr key={license.id} className="border-t border-slate-100">
-                  <td className="px-5 py-4"><Link href={`/admin/licenses/${license.license_id}`} className="font-mono text-brand">{license.license_id}</Link></td>
-                  <td className="px-5 py-4">{license.customer_name || "-"}</td>
-                  <td className="px-5 py-4">{license.plan || "-"}</td>
-                  <td className="px-5 py-4"><Badge variant={license.status === "active" ? "success" : "danger"}>{license.status}</Badge></td>
-                  <td className="px-5 py-4">{license.last_seen_at ? new Date(license.last_seen_at).toLocaleString() : "-"}</td>
+                  <td className="px-4 py-2"><Link href={`/admin/licenses/${license.license_id}`} className="font-mono text-brand">{license.license_id}</Link></td>
+                  <td className="px-4 py-2">{license.customer_name || "-"}</td>
+                  <td className="px-4 py-2">{license.plan || "-"}</td>
+                  <td className="px-4 py-2"><Badge variant={license.status === "active" ? "success" : "danger"}>{license.status}</Badge></td>
+                  <td className="px-4 py-2">{license.last_seen_at ? new Date(license.last_seen_at).toLocaleString() : "-"}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -82,16 +82,16 @@ export default async function DeviceDetailPage({ params }) {
         {usage.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{["Date", "Model", "Messages", "Images", "Tools", "Tokens"].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{["Date", "Model", "Messages", "Images", "Tools", "Tokens"].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
             </thead>
             <tbody>{usage.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{String(row.usage_date).slice(0, 10)}</td>
-                <td className="px-5 py-4">{row.model}</td>
-                <td className="px-5 py-4">{fmt(row.message_count)}</td>
-                <td className="px-5 py-4">{fmt(row.image_count)}</td>
-                <td className="px-5 py-4">{fmt(row.tool_call_count)}</td>
-                <td className="px-5 py-4">{fmt(Number(row.input_tokens || 0) + Number(row.output_tokens || 0))}</td>
+                <td className="px-4 py-2">{String(row.usage_date).slice(0, 10)}</td>
+                <td className="px-4 py-2">{row.model}</td>
+                <td className="px-4 py-2">{fmt(row.message_count)}</td>
+                <td className="px-4 py-2">{fmt(row.image_count)}</td>
+                <td className="px-4 py-2">{fmt(row.tool_call_count)}</td>
+                <td className="px-4 py-2">{fmt(Number(row.input_tokens || 0) + Number(row.output_tokens || 0))}</td>
               </tr>
             ))}</tbody>
           </table>

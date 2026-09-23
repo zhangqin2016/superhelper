@@ -955,9 +955,14 @@ a {
 }
 
 .admin-layout {
-  min-height: 100vh;
+  /* The page itself does not scroll: the rail and the content each scroll in
+     their own column. A console whose whole document scrolls loses its
+     navigation and its table header the moment a list gets long, which is
+     exactly what a console is for. */
+  height: 100vh;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 240px 1fr;
   background: #f7f9fc;
 }
 
@@ -968,11 +973,7 @@ a {
   /* The nav used to scroll away with the content: on a long list an operator
      lost every other page and had to scroll back up to move. It stays put and
      scrolls on its own only when it is taller than the viewport. */
-  position: sticky;
-  top: 0;
-  align-self: start;
-  height: 100vh;
-  max-height: 100vh;
+  height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -983,7 +984,45 @@ a {
 .admin-sidebar::-webkit-scrollbar-track { background: transparent; }
 
 .admin-main {
-  padding: 32px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 24px 24px;
+  /* The content column is a flex column so the last card can take the height
+     that is left instead of stopping short and leaving the screen half empty. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.admin-main > .table-card:last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A table scrolls inside its card with the header pinned, so the columns stay
+   readable no matter how far down the list the reader is. Applies to the
+   horizontal-scroll wrapper every table card already has — no markup change,
+   and therefore no page that forgets it. */
+.table-card .overflow-x-auto,
+.table-scroll {
+  overflow: auto;
+  /* Inside a card that fills the column, "as tall as there is room" beats any
+     fixed guess; the fallback covers cards that are not the last child. */
+  max-height: min(100%, calc(100vh - 220px));
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.table-card .overflow-x-auto thead th,
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  box-shadow: inset 0 -1px 0 #e2e8f0;
 }
 
 .table-card {

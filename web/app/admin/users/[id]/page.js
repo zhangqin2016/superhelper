@@ -38,7 +38,7 @@ function SimpleTable({ headers, rows, emptyTitle, emptyDesc }) {
     <div className="overflow-x-auto">
       <table className="min-w-full text-left text-sm">
         <thead className="bg-slate-50 text-slate-500">
-          <tr>{headers.map((header) => <th key={header} className="px-5 py-4">{header}</th>)}</tr>
+          <tr>{headers.map((header) => <th key={header} className="px-4 py-2">{header}</th>)}</tr>
         </thead>
         <tbody>{rows}</tbody>
       </table>
@@ -99,14 +99,14 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.orders[1]}
             rows={orders.map((order) => (
               <tr key={order.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{date(order.created_at, locale)}</td>
-                <td className="px-5 py-4">
+                <td className="px-4 py-2">{date(order.created_at, locale)}</td>
+                <td className="px-4 py-2">
                   <div className="font-medium">{order.product_name || order.product_id}</div>
                   <div className="font-mono text-xs text-slate-400">{order.id}</div>
                 </td>
-                <td className="px-5 py-4">{money(order.amount_cents, order.currency)}</td>
-                <td className="px-5 py-4">{order.provider}</td>
-                <td className="px-5 py-4">{order.status}{order.paid_at ? ` · ${date(order.paid_at, locale)}` : ""}</td>
+                <td className="px-4 py-2">{money(order.amount_cents, order.currency)}</td>
+                <td className="px-4 py-2">{order.provider}</td>
+                <td className="px-4 py-2">{order.status}{order.paid_at ? ` · ${date(order.paid_at, locale)}` : ""}</td>
               </tr>
             ))}
           />
@@ -124,12 +124,12 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.devices[1]}
             rows={devices.map((device) => (
               <tr key={device.device_id} className="border-t border-slate-100">
-                <td className="px-5 py-4 font-mono text-xs">
+                <td className="px-4 py-2 font-mono text-xs">
                   <Link href={`/admin/devices/${device.device_id}`} className="text-brand hover:underline">{device.device_id}</Link>
                 </td>
-                <td className="px-5 py-4">{[device.platform, device.arch, device.app_version].filter(Boolean).join(" / ") || "-"}</td>
-                <td className="px-5 py-4">{device.status}</td>
-                <td className="px-5 py-4">{date(device.last_seen_at, locale)}</td>
+                <td className="px-4 py-2">{[device.platform, device.arch, device.app_version].filter(Boolean).join(" / ") || "-"}</td>
+                <td className="px-4 py-2">{device.status}</td>
+                <td className="px-4 py-2">{date(device.last_seen_at, locale)}</td>
               </tr>
             ))}
           />
@@ -147,11 +147,11 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.grants[1]}
             rows={grants.map((grant) => (
               <tr key={grant.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{grant.source_type}<div className="font-mono text-xs text-slate-400">{grant.source_id || grant.id}</div></td>
-                <td className="px-5 py-4">{grant.resource_type}</td>
-                <td className="px-5 py-4">{grant.resource_type === "token" ? `${fmt(grant.token_remaining, locale)} / ${fmt(grant.token_total, locale)}` : `${fmt(grant.unit_remaining, locale)} / ${fmt(grant.unit_total, locale)}`}</td>
-                <td className="px-5 py-4">{grant.status}</td>
-                <td className="px-5 py-4">{date(grant.expires_at, locale)}</td>
+                <td className="px-4 py-2">{grant.source_type}<div className="font-mono text-xs text-slate-400">{grant.source_id || grant.id}</div></td>
+                <td className="px-4 py-2">{grant.resource_type}</td>
+                <td className="px-4 py-2">{grant.resource_type === "token" ? `${fmt(grant.token_remaining, locale)} / ${fmt(grant.token_total, locale)}` : `${fmt(grant.unit_remaining, locale)} / ${fmt(grant.unit_total, locale)}`}</td>
+                <td className="px-4 py-2">{grant.status}</td>
+                <td className="px-4 py-2">{date(grant.expires_at, locale)}</td>
               </tr>
             ))}
           />
@@ -169,11 +169,11 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.ledger[1]}
             rows={ledger.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{date(row.created_at, locale)}</td>
-                <td className="px-5 py-4">{row.event_type}</td>
-                <td className="px-5 py-4">{row.resource_type || "-"}</td>
-                <td className="px-5 py-4">{row.resource_type === "token" ? fmt(row.token_delta, locale) : fmt(row.unit_delta, locale)}</td>
-                <td className="px-5 py-4">{row.source_type || "-"} {row.source_id || ""}</td>
+                <td className="px-4 py-2">{date(row.created_at, locale)}</td>
+                <td className="px-4 py-2">{row.event_type}</td>
+                <td className="px-4 py-2">{row.resource_type || "-"}</td>
+                <td className="px-4 py-2">{row.resource_type === "token" ? fmt(row.token_delta, locale) : fmt(row.unit_delta, locale)}</td>
+                <td className="px-4 py-2">{row.source_type || "-"} {row.source_id || ""}</td>
               </tr>
             ))}
           />
@@ -191,12 +191,12 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.sms[1]}
             rows={smsCodes.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{date(row.created_at, locale)}</td>
-                <td className="px-5 py-4 font-mono text-xs">{row.device_id || "-"}</td>
-                <td className="px-5 py-4">{row.send_status}</td>
-                <td className="px-5 py-4">{fmt(row.attempt_count, locale)}</td>
-                <td className="px-5 py-4">{row.risk_level}{row.risk_reason ? ` · ${row.risk_reason}` : ""}</td>
-                <td className="px-5 py-4">{row.ip || "-"}</td>
+                <td className="px-4 py-2">{date(row.created_at, locale)}</td>
+                <td className="px-4 py-2 font-mono text-xs">{row.device_id || "-"}</td>
+                <td className="px-4 py-2">{row.send_status}</td>
+                <td className="px-4 py-2">{fmt(row.attempt_count, locale)}</td>
+                <td className="px-4 py-2">{row.risk_level}{row.risk_reason ? ` · ${row.risk_reason}` : ""}</td>
+                <td className="px-4 py-2">{row.ip || "-"}</td>
               </tr>
             ))}
           />
@@ -214,11 +214,11 @@ export default async function AdminUserDetailPage({ params }) {
             emptyDesc={c.empty.usage[1]}
             rows={usageEvents.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{date(row.created_at, locale)}</td>
-                <td className="px-5 py-4">{row.feature || "-"}</td>
-                <td className="px-5 py-4">{row.model || row.provider || "-"}</td>
-                <td className="px-5 py-4">{row.resource_type === "token" ? fmt(row.billable_tokens, locale) : fmt(row.billable_units, locale)}</td>
-                <td className="px-5 py-4">{row.status}</td>
+                <td className="px-4 py-2">{date(row.created_at, locale)}</td>
+                <td className="px-4 py-2">{row.feature || "-"}</td>
+                <td className="px-4 py-2">{row.model || row.provider || "-"}</td>
+                <td className="px-4 py-2">{row.resource_type === "token" ? fmt(row.billable_tokens, locale) : fmt(row.billable_units, locale)}</td>
+                <td className="px-4 py-2">{row.status}</td>
               </tr>
             ))}
           />

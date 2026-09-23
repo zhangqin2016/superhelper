@@ -69,7 +69,7 @@ export function AgentPackagesTable({ rows, empty }) {
           <form action={setAgentPackageEnabledAction}>
             <input type="hidden" name="id" value={row.original.id} />
             <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
           </form>
         </div>
       ),

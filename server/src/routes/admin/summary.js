@@ -1,8 +1,22 @@
 import { sql } from "kysely";
 import { db } from "../../db.js";
 import { okResponse } from "../../openapi.js";
+import { adminAttention } from "../../services/admin-attention.js";
 
 export function registerAdminSummaryRoutes(app) {
+  app.get(
+    "/api/admin/attention",
+    {
+      schema: {
+        tags: ["admin:summary"],
+        summary: "What needs a human, and the shape of the fleet",
+        description: "Actionable counts — failures today, expired/expiring/unused licenses, active devices behind the latest release — plus active-device recency, the version spread of devices in use this week, top failure kinds and the latest release per platform.",
+        response: { 200: okResponse({ attention: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async () => ({ ok: true, attention: await adminAttention() }),
+  );
+
   app.get(
     "/api/admin/summary",
     {

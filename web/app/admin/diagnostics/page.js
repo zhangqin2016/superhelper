@@ -77,19 +77,19 @@ export default async function DiagnosticsPage({ searchParams }) {
         {rows.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{[c.time, c.severity, c.kind, c.event, c.device, c.app, c.claude, c.summary].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{[c.time, c.severity, c.kind, c.event, c.device, c.app, c.claude, c.summary].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
             </thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id} className="border-t border-slate-100 align-top">
                 <td className="whitespace-nowrap px-5 py-4">{fmtDate(row.created_at)}</td>
-                <td className="px-5 py-4">
+                <td className="px-4 py-2">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${severityClass(row.severity)}`}>{row.severity}</span>
                 </td>
-                <td className="px-5 py-4 font-mono text-xs">{row.normalized_kind || "-"}</td>
-                <td className="px-5 py-4 font-mono text-xs">{row.event_type || "-"}{row.event_subtype ? `/${row.event_subtype}` : ""}</td>
-                <td className="px-5 py-4 font-mono text-xs">{row.device_id}</td>
-                <td className="px-5 py-4">{row.app_version || "-"}</td>
-                <td className="px-5 py-4">{row.claude_version || "-"}</td>
+                <td className="px-4 py-2 font-mono text-xs">{row.normalized_kind || "-"}</td>
+                <td className="px-4 py-2 font-mono text-xs">{row.event_type || "-"}{row.event_subtype ? `/${row.event_subtype}` : ""}</td>
+                <td className="px-4 py-2 font-mono text-xs">{row.device_id}</td>
+                <td className="px-4 py-2">{row.app_version || "-"}</td>
+                <td className="px-4 py-2">{row.claude_version || "-"}</td>
                 <td className="max-w-md px-5 py-4">
                   <div>{row.summary || "-"}</div>
                   <details className="mt-2">

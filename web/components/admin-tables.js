@@ -53,8 +53,33 @@ export function LicensesTable({ rows, empty }) {
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>{t.admin.nav.licenses}</SortHeader>, cell: ({ row }) => <Link href={`/admin/licenses/${row.original.id}`} className="font-mono text-brand">{row.original.id}</Link> },
     { accessorKey: "customer_name", header: t.admin.cols.customer, cell: ({ row }) => row.original.customer_name || "-" },
     { accessorKey: "plan", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.plan}</SortHeader> },
-    { accessorKey: "seats", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.seats}</SortHeader> },
-    { accessorKey: "expires_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.expires}</SortHeader>, cell: ({ row }) => formatDate(row.original.expires_at).slice(0, 10) },
+    {
+      // Used against allowed, so an unused license is visible at a glance.
+      accessorKey: "active_devices",
+      header: ({ column }) => <SortHeader column={column}>{t.admin.cols.seatsUsed}</SortHeader>,
+      cell: ({ row }) => {
+        const used = Number(row.original.active_devices ?? 0);
+        const seats = Number(row.original.seats ?? 0);
+        return (
+          <span className={`tabular-nums ${used === 0 ? "text-amber-700" : seats && used >= seats ? "font-semibold text-slate-950" : ""}`}>
+            {used} / {seats || "∞"}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: "expires_at",
+      header: ({ column }) => <SortHeader column={column}>{t.admin.cols.expires}</SortHeader>,
+      cell: ({ row }) => {
+        const at = new Date(row.original.expires_at).getTime();
+        if (!row.original.expires_at || !Number.isFinite(at)) return "-";
+        const date = new Date(at).toLocaleDateString();
+        if (at < Date.now()) return <span className="flex items-center gap-2 whitespace-nowrap">{date}<Badge variant="danger">{t.admin.cols.expired}</Badge></span>;
+        const days = Math.ceil((at - Date.now()) / 86_400_000);
+        if (days <= 30) return <span className="flex items-center gap-2 whitespace-nowrap">{date}<Badge variant="warning">{t.admin.cols.expiresInDays.replace("{n}", String(days))}</Badge></span>;
+        return date;
+      },
+    },
     { accessorKey: "status", header: t.admin.common.status, cell: ({ row }) => <Badge variant={row.original.status === "active" ? "success" : "danger"}>{row.original.status}</Badge> },
     {
       id: "action",
@@ -67,7 +92,7 @@ export function LicensesTable({ rows, empty }) {
         }}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="status" value={row.original.status === "active" ? "disabled" : "active"} />
-          <Button variant="outline" size="sm">{row.original.status === "active" ? t.admin.common.disabled : t.admin.cols.restore}</Button>
+          <Button variant="outline" size="sm">{row.original.status === "active" ? (t.admin.cols.disableAction) : t.admin.cols.restore}</Button>
         </form>
       ),
     },
@@ -75,15 +100,36 @@ export function LicensesTable({ rows, empty }) {
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.licenses}`} />;
 }
 
-export function DevicesTable({ rows, empty }) {
+function VersionCell({ version, latest, behindLabel }) {
+  if (!version) return "-";
+  const behind = latest && compareVersions(version, latest) < 0;
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <span className="font-mono">{version}</span>
+      {behind ? <Badge variant="warning" title={`${behindLabel} ${latest}`}>→ {latest}</Badge> : null}
+    </span>
+  );
+}
+
+// Versions compare by meaning: as text "0.1.99" sorts after "0.1.183".
+function compareVersions(a, b) {
+  const pa = String(a || "").split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const pb = String(b || "").split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
+
+export function DevicesTable({ rows, latest = {}, empty }) {
   const { t } = useI18n();
+  const copy = t.admin.devicesList;
   const columns = [
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>{t.admin.nav.devices}</SortHeader>, cell: ({ row }) => <Link href={`/admin/devices/${row.original.id}`} className="font-mono text-brand">{row.original.id}</Link> },
-    { accessorKey: "license_id", header: t.admin.nav.licenses, cell: ({ row }) => row.original.license_id ? <Link href={`/admin/licenses/${row.original.license_id}`} className="font-mono text-brand hover:underline">{row.original.license_id}</Link> : <span className="font-mono">-</span> },
-    { accessorKey: "platform", header: t.admin.cols.platform, cell: ({ row }) => row.original.platform || "-" },
-    { accessorKey: "arch", header: t.admin.cols.arch, cell: ({ row }) => row.original.arch || "-" },
-    { accessorKey: "app_version", header: t.admin.cols.version, cell: ({ row }) => row.original.app_version || "-" },
-    { accessorKey: "trial_ends_at", header: t.admin.cols.trial, cell: ({ row }) => trialStatus(row.original.trial_ends_at, t.admin.cols) },
+    // A licensed device's trial date means nothing; only an unlicensed one is on trial.
+    { accessorKey: "license_id", header: t.admin.nav.licenses, cell: ({ row }) => row.original.license_id ? <Link href={`/admin/licenses/${row.original.license_id}`} className="font-mono text-brand hover:underline">{row.original.license_id}</Link> : trialStatus(row.original.trial_ends_at, t.admin.cols) },
+    { accessorKey: "platform", header: t.admin.cols.platform, cell: ({ row }) => [row.original.platform, row.original.arch].filter(Boolean).join("-") || "-" },
+    { accessorKey: "app_version", header: t.admin.cols.version, cell: ({ row }) => <VersionCell version={row.original.app_version} latest={latest[[row.original.platform, row.original.arch].filter(Boolean).join("-")] || ""} behindLabel={copy.behind} /> },
     { accessorKey: "license_status", header: t.admin.common.status, cell: ({ row }) => row.original.license_status ? <Badge variant={row.original.license_status === "active" ? "success" : "danger"}>{row.original.license_status}</Badge> : "-" },
     { accessorKey: "last_seen_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.lastSeen}</SortHeader>, cell: ({ row }) => formatDate(row.original.last_seen_at) },
     {
@@ -94,7 +140,7 @@ export function DevicesTable({ rows, empty }) {
           <form action={setLicenseDeviceStatusAction}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
             <input type="hidden" name="status" value={row.original.license_status === "active" ? "disabled" : "active"} />
-            <Button variant="outline" size="sm" formAction={setLicenseDeviceStatusAction}>{row.original.license_status === "active" ? t.admin.common.disabled : t.admin.cols.restore}</Button>
+            <Button variant="outline" size="sm" formAction={setLicenseDeviceStatusAction}>{row.original.license_status === "active" ? t.admin.cols.disableAction : t.admin.cols.restore}</Button>
           </form>
           <DangerForm action={removeLicenseDeviceAction} confirm={t.admin.confirm.unbindDevice}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
@@ -107,15 +153,32 @@ export function DevicesTable({ rows, empty }) {
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.devices}`} />;
 }
 
-export function ReleasesTable({ rows, empty }) {
+function fileName(url) {
+  const value = String(url || "");
+  return decodeURIComponent(value.split("?")[0].split("/").pop() || "") || "-";
+}
+
+export function ReleasesTable({ rows, latest = {}, empty }) {
   const { t } = useI18n();
+  const copy = t.admin.releasesList;
   const columns = [
-    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
+    { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.version}</span> },
     { accessorKey: "platform", header: t.admin.cols.platform },
-    { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "force_update", header: t.admin.cols.force, cell: ({ row }) => String(Boolean(row.original.force_update)) },
-    { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
-    { accessorKey: "url", header: t.admin.cols.url, cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
+    {
+      // 415 rows all read "enabled": the column carried no information. What an
+      // operator needs is which row each platform is offered right now.
+      accessorKey: "enabled",
+      header: t.admin.common.status,
+      cell: ({ row }) => {
+        if (!row.original.enabled) return <Badge variant="danger">{t.admin.common.disabled}</Badge>;
+        if (latest[row.original.platform] === row.original.version) return <Badge variant="success">{copy.current}</Badge>;
+        return <span className="text-slate-400">{copy.superseded}</span>;
+      },
+    },
+    { accessorKey: "force_update", header: t.admin.cols.force, cell: ({ row }) => row.original.force_update ? <Badge variant="warning">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
+    { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? <span className="tabular-nums">{(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB</span> : "-" },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
+    { accessorKey: "url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.url} title={row.original.url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.url)}</a> },
     {
       id: "action",
       header: t.admin.common.action,
@@ -123,7 +186,7 @@ export function ReleasesTable({ rows, empty }) {
         <form action={setReleaseEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
         </form>
       ),
     },
@@ -139,7 +202,7 @@ export function RuntimePacksTable({ rows, empty }) {
     { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
     { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
-    { accessorKey: "url", header: t.admin.cols.url, cell: ({ row }) => <span className="block max-w-[360px] truncate text-slate-500">{row.original.url}</span> },
+    { accessorKey: "url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.url} title={row.original.url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.url)}</a> },
     { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
     {
       id: "action",
@@ -148,7 +211,7 @@ export function RuntimePacksTable({ rows, empty }) {
         <form action={setRuntimePackEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
         </form>
       ),
     },
@@ -166,7 +229,7 @@ export function SkillPackagesTable({ rows, empty }) {
     { accessorKey: "risk_level", header: t.admin.cols.risk, cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
     { accessorKey: "default_eligible", header: t.admin.cols.default, cell: ({ row }) => row.original.default_eligible ? <Badge variant="success">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "artifact_url", header: t.admin.cols.fileUrl, cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
+    { accessorKey: "artifact_url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.artifact_url} title={row.original.artifact_url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.artifact_url)}</a> },
     {
       id: "action",
       header: t.admin.common.action,
@@ -174,7 +237,7 @@ export function SkillPackagesTable({ rows, empty }) {
         <form action={setSkillPackageEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
         </form>
       ),
     },
@@ -193,7 +256,7 @@ export function WorkspaceAppsTable({ rows, empty }) {
     { accessorKey: "risk_level", header: t.admin.cols.risk, cell: ({ row }) => <Badge variant={row.original.risk_level === "high" ? "danger" : row.original.risk_level === "medium" ? "brand" : "success"}>{row.original.risk_level}</Badge> },
     { accessorKey: "featured", header: t.admin.cols.featured, cell: ({ row }) => row.original.featured ? <Badge variant="success">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "artifact_url", header: t.admin.cols.fileUrl, cell: ({ row }) => <span className="block max-w-[320px] truncate text-slate-500">{row.original.artifact_url}</span> },
+    { accessorKey: "artifact_url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.artifact_url} title={row.original.artifact_url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.artifact_url)}</a> },
     {
       id: "action",
       header: t.admin.common.action,
@@ -201,7 +264,7 @@ export function WorkspaceAppsTable({ rows, empty }) {
         <form action={setWorkspaceAppEnabledAction}>
           <input type="hidden" name="id" value={row.original.id} />
           <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
         </form>
       ),
     },
@@ -254,7 +317,7 @@ export function ConfigProfilesTable({ rows, empty }) {
           <form action={setConfigProfileEnabledAction}>
             <input type="hidden" name="id" value={row.original.id} />
             <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
+            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
           </form>
           <DangerForm action={rollbackConfigProfileAction} confirm={copy.rollbackConfirm}>
             <input type="hidden" name="id" value={row.original.id} />

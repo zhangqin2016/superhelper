@@ -2,8 +2,14 @@
 // the agent selection, and the provider menu directive. Pure functions — the
 // form decides what the operator sees, this decides what gets saved.
 
+export function splitCsv(text) {
+  return String(text || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export const MEDIA_PROVIDERS = [
-  { id: "lily", label: "Lily 自有 GPU" },
   { id: "dashscope", label: "阿里百炼 DashScope" },
   { id: "volcengine", label: "火山方舟 Volcengine" },
   { id: "kling", label: "可灵 Kling" },

@@ -4,6 +4,7 @@ import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { artifactErrorResponse, checkReleaseArtifact } from "../../services/release-artifact-check.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
+import { latestReleases } from "../../services/admin-attention.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -27,17 +28,25 @@ export function registerAdminReleaseRoutes(app, { audit }) {
       schema: {
         tags: ["admin:releases"],
         summary: "List app releases",
-        description: "Returns the most recent app releases ordered by creation time.",
+        description: "Returns the most recent app releases ordered by creation time, plus the version each platform is currently offered (newest enabled).",
         querystring: zodBody(pageQuerySchema),
-        response: { 200: okResponse(pageResponseSchema("releases")) },
+        response: { 200: okResponse({ ...pageResponseSchema("releases"), latest: { type: "object", additionalProperties: { type: "string" } } }) },
       },
     },
-    async (request) => listPage(request, {
-      key: "releases",
-      query: () => db.selectFrom("releases").selectAll(),
-      countQuery: () => db.selectFrom("releases").select((eb) => eb.fn.count("id").as("count")),
-      sortColumn: "created_at",
-    }),
+    async (request) => {
+      const [page, enabled] = await Promise.all([
+        listPage(request, {
+          key: "releases",
+          query: () => db.selectFrom("releases").selectAll(),
+          countQuery: () => db.selectFrom("releases").select((eb) => eb.fn.count("id").as("count")),
+          sortColumn: "created_at",
+        }),
+        db.selectFrom("releases").select(["platform", "version"]).where("enabled", "=", true).execute().catch(() => []),
+      ]);
+      // Which row a client is offered today is the one fact the list could not say.
+      const latest = Object.fromEntries(latestReleases(enabled).map((row) => [row.platform, row.latest]));
+      return { ...page, latest };
+    },
   );
 
   app.post(

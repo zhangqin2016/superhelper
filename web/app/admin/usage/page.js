@@ -73,17 +73,17 @@ export default async function UsagePage({ searchParams }) {
         {rows.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{[c.date, c.device, c.model, c.messages, c.images, c.tools, c.tokens].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{[c.date, c.device, c.model, c.messages, c.images, c.tools, c.tokens].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
             </thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id} className="border-t border-slate-100">
-                <td className="px-5 py-4">{String(row.usage_date).slice(0, 10)}</td>
-                <td className="px-5 py-4 font-mono">{row.device_id}</td>
-                <td className="px-5 py-4">{row.model}</td>
-                <td className="px-5 py-4">{fmt(row.message_count)}</td>
-                <td className="px-5 py-4">{fmt(row.image_count)}</td>
-                <td className="px-5 py-4">{fmt(row.tool_call_count)}</td>
-                <td className="px-5 py-4">{fmt(Number(row.input_tokens || 0) + Number(row.output_tokens || 0))}</td>
+                <td className="px-4 py-2">{String(row.usage_date).slice(0, 10)}</td>
+                <td className="px-4 py-2 font-mono">{row.device_id}</td>
+                <td className="px-4 py-2">{row.model}</td>
+                <td className="px-4 py-2">{fmt(row.message_count)}</td>
+                <td className="px-4 py-2">{fmt(row.image_count)}</td>
+                <td className="px-4 py-2">{fmt(row.tool_call_count)}</td>
+                <td className="px-4 py-2">{fmt(Number(row.input_tokens || 0) + Number(row.output_tokens || 0))}</td>
               </tr>
             ))}</tbody>
           </table>

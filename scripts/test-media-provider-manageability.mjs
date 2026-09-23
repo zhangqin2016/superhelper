@@ -24,7 +24,11 @@ const {
 } = await import("../server/src/services/media-provider-catalog.js");
 
 let checks = 0;
-const check = (name, fn) => { fn(); checks += 1; console.log(`ok - ${name}`); };
+const check = (name, fn) => {
+  const done = () => { checks += 1; console.log(`ok - ${name}`); };
+  const result = fn();
+  return result?.then ? result.then(done) : done();
+};
 
 check("every provider names where its credential lives", () => {
   // No provider is special: the self-hosted GPU entry and its bespoke
@@ -110,6 +114,16 @@ check("no media provider gets a private integration", () => {
   for (const skill of ["lily-image-generation", "lily-video-generation"]) {
     assert.ok(!fs.existsSync(path.join(ROOT, `resources/skills/${skill}/scripts/providers/lily.cjs`)), `${skill} has no bespoke adapter`);
   }
+});
+
+await check("the rule form offers exactly the catalog — a retired provider cannot linger as an option", async () => {
+  // Retiring the self-hosted GPU left "Lily 自有 GPU" selectable in the config
+  // rule form: a hand-written list drifts from the catalog it copies.
+  const builder = fs.readFileSync(path.join(ROOT, "web/components/config-profile-config-builder.js"), "utf8");
+  const block = builder.slice(builder.indexOf("export const MEDIA_PROVIDERS"), builder.indexOf("];", builder.indexOf("export const MEDIA_PROVIDERS")));
+  const offered = [...block.matchAll(/id: "([a-z0-9-]+)"/g)].map((m) => m[1]);
+  const { MEDIA_PROVIDER_IDS } = await import("../server/src/services/media-provider-catalog.js");
+  assert.deepEqual([...offered].sort(), [...MEDIA_PROVIDER_IDS].sort());
 });
 
 console.log(`\n${checks} checks passed (media provider manageability)`);

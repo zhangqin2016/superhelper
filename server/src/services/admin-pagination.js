@@ -40,6 +40,16 @@ export function decodeCursor(cursor) {
 }
 
 /**
+ * The key a selected column comes back under. A joined list orders by
+ * "devices.last_seen_at" but the row holds "last_seen_at"; reading the
+ * qualified name gave an undefined cursor, and every "next page" came back
+ * empty.
+ */
+export function rowKey(column) {
+  return String(column).split(".").pop();
+}
+
+/**
  * Run one page of a keyset-ordered query.
  *
  * @param {object} input
@@ -69,7 +79,7 @@ export async function pageOf({ query, sortColumn, idColumn = "id", cursor = "", 
   const rows = await builder.orderBy(sortColumn, dir).orderBy(idColumn, dir).limit(size + 1).execute();
   const items = rows.slice(0, size);
   const last = items[items.length - 1];
-  const nextCursor = rows.length > size && last ? encodeCursor(last[sortColumn], last[idColumn]) : "";
+  const nextCursor = rows.length > size && last ? encodeCursor(last[rowKey(sortColumn)], last[rowKey(idColumn)]) : "";
   let total = null;
   if (countQuery) {
     const row = await countQuery().executeTakeFirst();

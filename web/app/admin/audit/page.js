@@ -31,15 +31,15 @@ export default async function AuditPage({ searchParams }) {
         {rows.length ? (
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
-              <tr>{[c.time, c.actor, c.action, c.target, c.ip, c.metadata].map((h) => <th key={h} className="px-5 py-4">{h}</th>)}</tr>
+              <tr>{[c.time, c.actor, c.action, c.target, c.ip, c.metadata].map((h) => <th key={h} className="px-4 py-2">{h}</th>)}</tr>
             </thead>
             <tbody>{rows.map((row) => (
               <tr key={row.id} className="border-t border-slate-100 align-top">
-                <td className="px-5 py-4">{row.created_at ? new Date(row.created_at).toLocaleString() : "-"}</td>
-                <td className="px-5 py-4">{row.actor}</td>
-                <td className="px-5 py-4"><Badge variant="brand">{row.action}</Badge></td>
-                <td className="px-5 py-4 font-mono">{row.target_type}:{row.target_id || "-"}</td>
-                <td className="px-5 py-4">{row.ip || "-"}</td>
+                <td className="px-4 py-2">{row.created_at ? new Date(row.created_at).toLocaleString() : "-"}</td>
+                <td className="px-4 py-2">{row.actor}</td>
+                <td className="px-4 py-2"><Badge variant="brand">{row.action}</Badge></td>
+                <td className="px-4 py-2 font-mono">{row.target_type}:{row.target_id || "-"}</td>
+                <td className="px-4 py-2">{row.ip || "-"}</td>
                 <td className="max-w-[360px] px-5 py-4 text-xs text-slate-500">
                   {hasMeta(row.metadata) ? (
                     <details>
