@@ -4,7 +4,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
-const { buildMediaContractRequest } = require("./media-contract-executor.cjs");
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1";
 const CREATE_PATH = "/services/audio/tts/SpeechSynthesizer";
@@ -61,40 +60,13 @@ function envValue(...names) {
   return "";
 }
 
-function lilySpeechUrl() {
-  const explicit = envValue("LILY_MEDIA_SPEECH_ENDPOINT", "LILY_MEDIA_TTS_ENDPOINT", "LILY_GPU_SPEECH_ENDPOINT", "LILY_GPU_TTS_ENDPOINT");
-  if (explicit) return explicit;
-  const specificBase = envValue("LILY_MEDIA_SPEECH_BASE_URL", "LILY_MEDIA_TTS_BASE_URL", "LILY_GPU_SPEECH_BASE_URL", "LILY_GPU_TTS_BASE_URL");
-  if (specificBase) return `${specificBase.replace(/\/+$/, "")}/generate`;
-  const base = envValue("LILY_MEDIA_BASE_URL", "LILY_GPU_BASE_URL");
-  if (base) return `${base.replace(/\/+$/, "")}/speech/generate`;
-  return "";
-}
 
-function lilyAuthHeaders() {
-  const key = envValue("LILY_MEDIA_API_KEY", "LILY_GPU_API_KEY");
-  return key ? { Authorization: `Bearer ${key}` } : {};
-}
 
 const LILY_SUPPORTED_VOICES = new Set(["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"]);
 const LILY_DASHSCOPE_EXAMPLE_VOICES = new Set(["default", "longanyang"]);
 
-function lilyVoice(input) {
-  const configured = envValue("LILY_MEDIA_TTS_VOICE", "LILY_GPU_TTS_VOICE");
-  const fallback = configured || "aiden";
-  const requested = String(input.voice || "").trim();
-  const voice = !requested || LILY_DASHSCOPE_EXAMPLE_VOICES.has(requested) ? fallback : requested;
-  if (!LILY_SUPPORTED_VOICES.has(voice)) {
-    fail(
-      msg(`Lily GPU 不支持 voice：${voice}`, `Lily GPU does not support voice: ${voice}`),
-      `supported: ${[...LILY_SUPPORTED_VOICES].join(", ")}`,
-    );
-  }
-  return voice;
-}
 
 function inferProviderFromEnv() {
-  if (lilySpeechUrl()) return "lily";
   if (apiKey() || process.env.DASHSCOPE_TTS_ENDPOINT || process.env.DASHSCOPE_TTS_BASE_URL) return "dashscope";
   return "";
 }
@@ -225,10 +197,6 @@ function downloadHeaders(url) {
   } catch {
     return {};
   }
-  const key = envValue("LILY_MEDIA_API_KEY", "LILY_GPU_API_KEY");
-  if (key && /^https?:$/.test(parsed.protocol) && /\/llm\/media\/lily\//.test(parsed.pathname)) {
-    return { Authorization: `Bearer ${key}` };
-  }
   return {};
 }
 
@@ -240,64 +208,6 @@ function writeGeneratedSpeech(files) {
   process.stdout.write("</generated_media>\n");
 }
 
-async function runLilySpeech(input, text, format, outputDir) {
-  const contractRequest = buildMediaContractRequest({
-    env: process.env,
-    modality: "speech",
-    provider: "lily",
-    input: {
-      ...input,
-      text,
-      input: text,
-      format,
-      sample_rate: input.sample_rate,
-      model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL,
-    },
-  });
-  let result;
-  if (contractRequest) {
-    result = await requestJsonOrBinary(contractRequest.url, contractRequest.options);
-  } else {
-    const url = lilySpeechUrl();
-    if (!url) {
-      fail("缺少 LILY_MEDIA_SPEECH_ENDPOINT 或 LILY_MEDIA_SPEECH_BASE_URL。", "Missing LILY_MEDIA_SPEECH_ENDPOINT or LILY_MEDIA_SPEECH_BASE_URL.");
-    }
-    const payload = {
-      text,
-      input: text,
-      voice: lilyVoice(input),
-      format,
-      sample_rate: Number(input.sample_rate || 24000),
-      model: input.model || process.env.LILY_MEDIA_TTS_MODEL || process.env.LILY_GPU_TTS_MODEL || "qwen3-tts",
-    };
-    result = await requestJsonOrBinary(url, {
-      method: "POST",
-      headers: { ...lilyAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  }
-  const files = [];
-  if (result.bytes) {
-    const filePath = path.join(outputDir, safeName("speech", format));
-    fs.writeFileSync(filePath, result.bytes);
-    files.push({ path: filePath, bytes: result.bytes.length });
-  } else {
-    const buffers = collectAudioBuffers(result.json);
-    for (let i = 0; i < buffers.length; i += 1) {
-      const filePath = path.join(outputDir, safeName(`speech-${i + 1}`, buffers[i].ext || format));
-      fs.writeFileSync(filePath, buffers[i].data);
-      files.push({ path: filePath, bytes: buffers[i].data.length });
-    }
-    const urls = collectAudioUrls(result.json);
-    for (let i = 0; i < urls.length; i += 1) {
-      const filePath = path.join(outputDir, safeName(`speech-${buffers.length + i + 1}`, format));
-      const bytes = await downloadFile(urls[i], filePath);
-      files.push({ path: filePath, bytes });
-    }
-  }
-  if (!files.length) fail("Lily GPU 语音生成完成，但没有找到音频 URL 或音频数据。", JSON.stringify(result.json || {}, null, 2));
-  writeGeneratedSpeech(files);
-}
 
 async function main() {
   const input = jsonParse(await readStdin());
@@ -312,16 +222,12 @@ async function main() {
       ),
     );
   }
-  if (provider !== "dashscope" && provider !== "lily") {
-    fail(msg(`不支持的语音 provider：${provider}`, `Unsupported speech provider: ${provider}`), "available: dashscope, lily");
+  if (provider !== "dashscope") {
+    fail(msg(`不支持的语音 provider：${provider}`, `Unsupported speech provider: ${provider}`), "available: dashscope");
   }
   const format = String(input.format || "wav").replace(/[^a-z0-9]/gi, "").toLowerCase() || "wav";
   const outputDir = path.resolve(process.cwd(), input.output_dir || "generated-assets");
   fs.mkdirSync(outputDir, { recursive: true });
-  if (provider === "lily") {
-    await runLilySpeech(input, text, format, outputDir);
-    return;
-  }
   const key = apiKey();
   if (!key) fail(msg("缺少 DASHSCOPE_API_KEY。请在模型配置或环境变量中配置百炼 API Key。", "Missing DASHSCOPE_API_KEY. Configure the DashScope API key in model settings or environment variables."));
 

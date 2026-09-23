@@ -14,7 +14,6 @@ const { userDataPath } = require("./config");
 // The assistant can still override image/video per-call via input.provider.
 
 const PROVIDERS = [
-  { id: "lily", label: "Lily 自有 GPU（Qwen-Image / Wan / Qwen3-TTS）", fields: [], modalities: ["image", "video", "speech"], byok: false },
   { id: "dashscope", label: "阿里百炼 Qwen-Image / 通义万相 / CosyVoice", fields: ["apiKey"], modalities: ["image", "video", "speech"] },
   { id: "volcengine", label: "火山方舟 · 即梦 Seedream / Seedance", fields: ["apiKey"], modalities: ["image", "video"] },
   { id: "kling", label: "可灵 Kling", fields: ["accessKey", "secretKey"], modalities: ["image", "video"] },
@@ -99,17 +98,6 @@ function remoteMediaSelection() {
   }
 }
 
-function remoteMediaContracts() {
-  try {
-    const cfg = require("./remote-config").getRemoteEffectiveConfigSync();
-    const media = cfg && typeof cfg.media === "object" ? cfg.media : null;
-    const contracts = media && typeof media.contracts === "object" ? media.contracts : null;
-    if (!contracts || contracts.schemaVersion !== 1 || typeof contracts.contracts !== "object") return null;
-    return contracts;
-  } catch {
-    return null;
-  }
-}
 
 function serviceEnabledProvidersByModality() {
   let env = {};
@@ -129,22 +117,13 @@ function serviceEnabledProvidersByModality() {
   const byModality = {};
   for (const modality of MODALITIES) {
     let list = on.filter((p) => providerSupports(p, modality));
-    const lilyOn = lilyMediaConfigured(env, modality);
-    if (lilyOn) list.unshift("lily");
     const allowed = new Set(sel?.[modality]?.providers || []);
-    if (allowed.size) list = list.filter((p) => allowed.has(p) || (p === "lily" && lilyOn));
+    if (allowed.size) list = list.filter((p) => allowed.has(p));
     byModality[modality] = [...new Set(list)];
   }
   return byModality;
 }
 
-function lilyMediaConfigured(env, modality) {
-  if (env.LILY_MEDIA_BASE_URL || env.LILY_GPU_BASE_URL) return true;
-  if (modality === "image") return Boolean(env.LILY_MEDIA_IMAGE_ENDPOINT || env.LILY_MEDIA_IMAGE_BASE_URL || env.LILY_GPU_IMAGE_ENDPOINT || env.LILY_GPU_IMAGE_BASE_URL);
-  if (modality === "video") return Boolean(env.LILY_MEDIA_VIDEO_ENDPOINT || env.LILY_MEDIA_VIDEO_BASE_URL || env.LILY_GPU_VIDEO_ENDPOINT || env.LILY_GPU_VIDEO_BASE_URL);
-  if (modality === "speech") return Boolean(env.LILY_MEDIA_SPEECH_ENDPOINT || env.LILY_MEDIA_SPEECH_BASE_URL || env.LILY_MEDIA_TTS_ENDPOINT || env.LILY_MEDIA_TTS_BASE_URL || env.LILY_GPU_SPEECH_ENDPOINT || env.LILY_GPU_SPEECH_BASE_URL || env.LILY_GPU_TTS_ENDPOINT || env.LILY_GPU_TTS_BASE_URL);
-  return false;
-}
 
 function keysPresent(keys) {
   const present = {};
@@ -176,7 +155,6 @@ function listMediaProvidersPublic() {
     serviceProviders: [...new Set([...serviceProvidersByModality.image, ...serviceProvidersByModality.video])],
     serviceProvidersByModality,
     serviceSelection: remoteMediaSelection(),
-    serviceContracts: remoteMediaContracts(),
     keysPresent: keysPresent(settings.keys),
     modelIds: modelIds(settings.keys),
   };
@@ -271,8 +249,6 @@ function getMediaProviderSpawnEnv() {
   const settings = loadSettings();
   const effective = getEffectiveMediaProviderChoices();
   const env = {};
-  const contracts = remoteMediaContracts();
-  if (contracts) env.LILY_MEDIA_CONTRACTS_JSON = JSON.stringify(contracts);
   for (const modality of MODALITIES) {
     const choice = settings[modality];
     const providerEnvVar = MODALITY_ENV[modality];
@@ -291,5 +267,4 @@ module.exports = {
   setProviderKey,
   getMediaProviderSpawnEnv,
   getEffectiveMediaProviderChoices,
-  getMediaProviderContracts: remoteMediaContracts,
 };

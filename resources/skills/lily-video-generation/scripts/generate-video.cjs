@@ -11,7 +11,6 @@ const { fileURLToPath } = require("node:url");
 // stdin, provider selection, downloading, and the XML output.
 const ADAPTERS = {
   dashscope: require("./providers/dashscope.cjs"),
-  lily: require("./providers/lily.cjs"),
   volcengine: require("./providers/volcengine.cjs"),
   kling: require("./providers/kling.cjs"),
   minimax: require("./providers/minimax.cjs"),
@@ -92,10 +91,6 @@ function downloadHeaders(url) {
   } catch {
     return {};
   }
-  const key = envValue("LILY_MEDIA_API_KEY", "LILY_GPU_API_KEY");
-  if (key && /^https?:$/.test(parsed.protocol) && /\/llm\/media\/lily\//.test(parsed.pathname)) {
-    return { Authorization: `Bearer ${key}` };
-  }
   return {};
 }
 
@@ -113,7 +108,6 @@ async function downloadFile(url, outputPath) {
 }
 
 function inferProviderFromEnv(env) {
-  if (env.LILY_MEDIA_VIDEO_ENDPOINT || env.LILY_MEDIA_VIDEO_BASE_URL || env.LILY_MEDIA_BASE_URL || env.LILY_GPU_VIDEO_ENDPOINT || env.LILY_GPU_VIDEO_BASE_URL || env.LILY_GPU_BASE_URL) return "lily";
   if (env.DASHSCOPE_API_KEY || env.ALIYUN_BAILIAN_API_KEY || env.DASHSCOPE_VIDEO_ENDPOINT || env.DASHSCOPE_VIDEO_BASE_URL) return "dashscope";
   if (env.VOLCENGINE_API_KEY || env.ARK_API_KEY) return "volcengine";
   if (env.KLING_API_KEY || (env.KLING_ACCESS_KEY && env.KLING_SECRET_KEY)) return "kling";

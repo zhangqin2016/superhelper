@@ -12,20 +12,18 @@
  *
  * The catalog is the single source: delivery builds availability from it, the
  * admin reports status from it, and the form renders chips from it.
+ *
+ * 2026-09-23: the "Lily self-hosted GPU" entry was removed with the bespoke
+ * integration behind it — its own env vars, its own gateway routes and its own
+ * hand-written contracts. The endpoints no longer exist, and a provider that
+ * needs a private path through five files is not an integration anyone can
+ * repeat. Every provider here is integrated the same way: a credential row (or
+ * an env key), a catalog entry, and an adapter in the generation skills.
  */
 
 export const MEDIA_KINDS = ["image", "video", "speech"];
 
 export const MEDIA_PROVIDER_CATALOG = [
-  {
-    id: "lily",
-    label: "Lily 自有 GPU",
-    labelEn: "Lily self-hosted GPU",
-    kinds: ["image", "video", "speech"],
-    // Configured by endpoint env vars rather than a key row; see configuredLilyMediaKinds.
-    credentialProviderId: "",
-    envVars: ["LILY_MEDIA_BASE_URL", "LILY_MEDIA_IMAGE_BASE_URL", "LILY_MEDIA_VIDEO_BASE_URL", "LILY_MEDIA_SPEECH_BASE_URL"],
-  },
   {
     id: "dashscope",
     label: "阿里百炼 DashScope",
@@ -81,7 +79,7 @@ export const MEDIA_CREDENTIAL_PROVIDER_IDS = MEDIA_PROVIDER_CATALOG
  * @param {{providers?: object, serverConfig?: object, lilyKinds?: object}} input
  * @returns {Array<{id, label, labelEn, kinds, configured, source, credentialProviderId, envVars}>}
  */
-export function mediaProviderStatus({ providers = {}, serverConfig = {}, lilyKinds = {} } = {}) {
+export function mediaProviderStatus({ providers = {}, serverConfig = {} } = {}) {
   const envKeyOf = {
     dashscope: serverConfig.dashscopeApiKey,
     volcengine: serverConfig.volcengineApiKey,
@@ -90,10 +88,6 @@ export function mediaProviderStatus({ providers = {}, serverConfig = {}, lilyKin
     zhipu: serverConfig.zhipuApiKey,
   };
   return MEDIA_PROVIDER_CATALOG.map((entry) => {
-    if (entry.id === "lily") {
-      const kinds = MEDIA_KINDS.filter((kind) => Boolean(lilyKinds?.[kind]));
-      return { ...entry, kinds: kinds.length ? kinds : entry.kinds, configured: kinds.length > 0, source: kinds.length ? "env" : "" };
-    }
     const row = entry.credentialProviderId ? providers?.[entry.credentialProviderId] : null;
     if (row?.apiKey) return { ...entry, configured: true, source: "provider" };
     if (envKeyOf[entry.id]) return { ...entry, configured: true, source: "env" };

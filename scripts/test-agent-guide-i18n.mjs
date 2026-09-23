@@ -219,88 +219,43 @@ function writeRemoteConfig(effectiveConfig) {
   );
   require("../src/main/remote-config.js").reloadRemoteConfigCache();
 }
-mediaSettings.setModalityChoice("image", "service", "lily");
-mediaSettings.setModalityChoice("video", "service", "lily");
-mediaSettings.setModalityChoice("speech", "service", "lily");
+mediaSettings.setModalityChoice("image", "service", "dashscope");
+mediaSettings.setModalityChoice("video", "service", "dashscope");
+mediaSettings.setModalityChoice("speech", "service", "dashscope");
 searchSettings.setSearchProvider("searxng");
 const unavailableProviderGuideZh = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(unavailableProviderGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
-assert.match(unavailableProviderGuideZh, /图片生成: 未配置/, "agent guide must not claim unavailable Lily image generation");
-assert.match(unavailableProviderGuideZh, /视频生成: 未配置/, "agent guide must not claim unavailable Lily video generation");
-assert.match(unavailableProviderGuideZh, /语音生成: 未配置/, "agent guide must not claim unavailable Lily speech generation");
+assert.match(unavailableProviderGuideZh, /图片生成: 未配置/, "agent guide must not claim image generation the server cannot serve");
+assert.match(unavailableProviderGuideZh, /视频生成: 未配置/, "agent guide must not claim video generation the server cannot serve");
+assert.match(unavailableProviderGuideZh, /语音生成: 未配置/, "agent guide must not claim speech generation the server cannot serve");
 assert.doesNotMatch(
   unavailableProviderGuideZh,
-  /图片生成: `lily`|视频生成: `lily`|语音生成: `lily`/,
-  "agent guide must not invent Lily when the selected provider has no usable endpoint",
+  /图片生成: `dashscope`|视频生成: `dashscope`|语音生成: `dashscope`/,
+  "agent guide must not name a provider the server has no key for",
 );
 writeRemoteConfig({
   media: {
-    image: { providers: ["lily"], default: "lily" },
-    video: { providers: ["lily"], default: "lily" },
-    speech: { providers: ["lily"], default: "lily" },
-    contracts: {
-      schemaVersion: 1,
-      selected: { image: "lily", video: "lily", speech: "lily" },
-      contracts: {
-        video: {
-          lily: {
-            displayName: "Lily GPU Video (Wan)",
-            params: {
-              prompt: { type: "string", required: true },
-              width: { type: "number", optional: true, default: 512 },
-              height: { type: "number", optional: true, default: 320 },
-              frames: { type: "number", optional: true, default: 17 },
-              steps: { type: "number", optional: true, default: 4 },
-            },
-          },
-        },
-        speech: {
-          lily: {
-            displayName: "Lily GPU Speech (Qwen3-TTS)",
-            params: {
-              voice: {
-                type: "string",
-                default: "aiden",
-                enum: ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"],
-              },
-            },
-          },
-        },
-      },
-    },
+    image: { providers: ["dashscope"], default: "dashscope" },
+    video: { providers: ["dashscope"], default: "dashscope" },
+    speech: { providers: ["dashscope"], default: "dashscope" },
   },
-  runtime: {
-    env: {
-      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
-      LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/llm/media/lily/video/generate",
-      LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/llm/media/lily/speech/generate",
-    },
-  },
+  runtime: { env: { DASHSCOPE_API_KEY: "dashscope-token" } },
 });
 const providerGuideZh = skillManager.buildAgentGuideContent([], "zh-CN");
 assert.match(providerGuideZh, /当前用户选择的服务商/, "agent guide must expose current provider choices");
-assert.match(providerGuideZh, /图片生成: `lily`/, "agent guide must expose usable selected image provider");
-assert.match(providerGuideZh, /视频生成: `lily`/, "agent guide must expose usable selected video provider");
-assert.match(providerGuideZh, /语音生成: `lily`/, "agent guide must expose usable selected speech provider");
+assert.match(providerGuideZh, /图片生成: `dashscope`/, "agent guide must expose usable selected image provider");
+assert.match(providerGuideZh, /视频生成: `dashscope`/, "agent guide must expose usable selected video provider");
+assert.match(providerGuideZh, /语音生成: `dashscope`/, "agent guide must expose usable selected speech provider");
 assertAgentGuideWithinStaticBudget(providerGuideZh, "Chinese provider agent guide");
 assertAgentGuideWithinStaticBudget(
   skillManager.buildAgentGuideContent(allLocalGuideSkills, "zh-CN"),
   "Chinese provider agent guide with all local skills",
 );
-assert.match(providerGuideZh, /width: number; optional; default `512`/, "agent guide must expose video contract width");
-assert.match(providerGuideZh, /frames: number; optional; default `17`/, "agent guide must expose video contract frames");
-assert.match(providerGuideZh, /voice: string; optional; default `aiden`/, "agent guide must expose speech contract defaults");
-assert.match(providerGuideZh, /aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian/, "agent guide must expose speech contract enum values");
 assert.match(providerGuideZh, /联网搜索: `searxng`/, "agent guide must expose selected search provider");
 assert.match(
   providerGuideZh,
   /当前已配置的 provider 调用失败，不要自动改用其他 provider/,
   "agent guide must forbid automatic media provider fallback after a configured provider error",
-);
-assert.doesNotMatch(
-  providerGuideZh,
-  /图片生成: `dashscope`|视频生成: `dashscope`|语音生成: `dashscope`/,
-  "agent guide must not invent DashScope when Lily is selected",
 );
 function loadBundledSkillForGuide(skillId) {
   const skillDir = path.join(skillsDir, skillId);
@@ -320,23 +275,18 @@ const providerGuideWithMediaSkillsZh = skillManager.buildAgentGuideContent(
 );
 assert.match(
   providerGuideWithMediaSkillsZh,
-  /lily-image-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
-  "image skill index must follow the selected Lily provider and forbid automatic fallback",
+  /lily-image-generation[\s\S]*使用当前选择的 dashscope[\s\S]*不要自动切换 provider/,
+  "image skill index must follow the selected provider and forbid automatic fallback",
 );
 assert.match(
   providerGuideWithMediaSkillsZh,
-  /lily-video-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
-  "video skill index must follow the selected Lily provider and forbid automatic fallback",
+  /lily-video-generation[\s\S]*使用当前选择的 dashscope[\s\S]*不要自动切换 provider/,
+  "video skill index must follow the selected provider and forbid automatic fallback",
 );
 assert.match(
   providerGuideWithMediaSkillsZh,
-  /lily-speech-generation[\s\S]*使用当前选择的 lily[\s\S]*不要自动切换 provider/,
-  "speech skill index must follow the selected Lily provider and forbid automatic fallback",
-);
-assert.doesNotMatch(
-  providerGuideWithMediaSkillsZh,
-  /lily-(?:image|video|speech)-generation[\s\S]{0,220}阿里(?:云)?百炼|lily-(?:image|video|speech)-generation[\s\S]{0,220}DashScope|lily-(?:image|video|speech)-generation[\s\S]{0,220}dashscope/,
-  "media skill index must not describe DashScope/Bailian as the active provider when Lily is selected",
+  /lily-speech-generation[\s\S]*使用当前选择的 dashscope[\s\S]*不要自动切换 provider/,
+  "speech skill index must follow the selected provider and forbid automatic fallback",
 );
 
 for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {

@@ -14,7 +14,7 @@ const server = http.createServer(async (req, res) => {
   let raw = "";
   req.setEncoding("utf8");
   for await (const chunk of req) raw += chunk;
-  seen.push(JSON.parse(raw));
+  seen.push({ body: JSON.parse(raw), raw });
   res.writeHead(400, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "fixture: request received, no generation" }));
 });
@@ -37,21 +37,26 @@ function run(bin, args, input = "", env = {}) {
 try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const endpoint = `http://127.0.0.1:${server.address().port}/generate`;
-  const env = { LILY_MEDIA_IMAGE_ENDPOINT: endpoint, LILY_MEDIA_VIDEO_ENDPOINT: endpoint,
-    LILY_MEDIA_SPEECH_ENDPOINT: endpoint, LILY_MEDIA_API_KEY: "fixture" };
+  // Any live provider serves as the fixture; this test is about UTF-8 input
+  // handling, not about which vendor answers.
+  const env = { DASHSCOPE_IMAGE_ENDPOINT: endpoint, DASHSCOPE_VIDEO_ENDPOINT: endpoint,
+    DASHSCOPE_TTS_ENDPOINT: endpoint, DASHSCOPE_API_KEY: "fixture",
+    DASHSCOPE_IMAGE_BASE_URL: endpoint.replace(/\/generate$/, ""), DASHSCOPE_VIDEO_BASE_URL: endpoint.replace(/\/generate$/, "") };
   for (const kind of ["image", "video", "speech"]) {
     const script = path.join(root, `resources/skills/lily-${kind}-generation/scripts/generate-${kind}.cjs`);
-    const input = { provider: "lily", prompt: text, text, output_dir: tmp };
+    const input = { provider: "dashscope", prompt: text, text, output_dir: tmp };
     const filename = path.join(tmp, `${kind}-\u4e2d\u6587.json`);
     fs.writeFileSync(filename, "\uFEFF" + JSON.stringify(input), "utf8");
     const before = seen.length;
     const fileRun = await run(process.execPath, [script, "--input-file", filename], "", env);
     assert.equal(seen.length, before + 1, fileRun.stderr);
-    assert.equal(seen.at(-1)[kind === "speech" ? "text" : "prompt"], text);
+    // Adapter-agnostic: this test is about UTF-8 surviving the trip, not about
+    // which field a given vendor names it.
+    assert.ok(seen.at(-1).raw.includes(text), `${kind}: the text reached the provider intact`);
     assert.notEqual(fileRun.code, 0, "the intentional provider failure must not become success");
     const pipeRun = await run(process.execPath, [script], JSON.stringify(input), env);
     assert.equal(seen.length, before + 2, pipeRun.stderr);
-    assert.equal(seen.at(-1)[kind === "speech" ? "text" : "prompt"], text, "UTF-8 stdin remains compatible");
+    assert.ok(seen.at(-1).raw.includes(text), "UTF-8 stdin remains compatible");
     const missing = await run(process.execPath, [script, "--input-file"], "", env);
     assert.notEqual(missing.code, 0);
     assert.equal(seen.length, before + 2, "malformed file option must never send a request");

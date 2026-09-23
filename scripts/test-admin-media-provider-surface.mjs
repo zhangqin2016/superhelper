@@ -2,46 +2,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { listBuiltinMediaProviderRows } from "../server/src/services/model-gateway/builtin-media-providers.js";
+import { MEDIA_PROVIDER_CATALOG } from "../server/src/services/media-provider-catalog.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const repoRoot = join(__dirname, "..");
 
 {
-  const rows = listBuiltinMediaProviderRows({
-    lilyMediaApiKey: "upstream-key",
-    lilyMediaImageEndpoint: "http://127.0.0.1:18012/generate",
-    lilyMediaVideoEndpoint: "http://127.0.0.1:18010/generate",
-    lilyMediaSpeechEndpoint: "http://127.0.0.1:18013/generate",
-  });
+  // The bespoke self-hosted GPU rows were retired on 2026-09-23; what the admin
+  // surfaces now is the catalog every provider shares.
   assert.deepEqual(
-    rows.map((row) => row.id),
-    ["lily-media-image", "lily-media-video", "lily-media-speech"],
-    "admin provider list should surface all built-in Lily media services",
+    MEDIA_PROVIDER_CATALOG.map((entry) => entry.credentialProviderId),
+    ["vision", "volcengine-media", "kling-media", "minimax-media", "zhipu-media"],
+    "the admin offers exactly the credential ids the media pickers wait for",
   );
-  for (const row of rows) {
-    assert.equal(row.type, "media");
-    assert.equal(row.readOnly, true);
-    assert.equal(row.source, "builtin");
-    assert.equal(row.hasApiKey, true);
-    assert.equal(row.base_url.startsWith("/llm/media/lily/"), true);
-  }
-}
-
-{
-  const rows = listBuiltinMediaProviderRows({
-    lilyMediaBaseUrl: "http://127.0.0.1:18080",
-  });
-  assert.deepEqual(
-    rows.map((row) => row.metadata.modality),
-    ["image", "video", "speech"],
-    "a shared Lily media base URL should expose image, video, and speech",
-  );
-}
-
-{
-  const rows = listBuiltinMediaProviderRows({});
-  assert.equal(rows.length, 0, "unconfigured Lily media should not create admin rows");
 }
 
 {

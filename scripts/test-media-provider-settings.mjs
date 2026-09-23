@@ -43,9 +43,6 @@ writeRemoteConfig({
   runtime: {
     env: {
       DASHSCOPE_API_KEY: "dashscope-token",
-      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
-      LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/llm/media/lily/video/generate",
-      LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/llm/media/lily/speech/generate",
     },
   },
 });
@@ -53,11 +50,13 @@ writeRemoteConfig({
 const settings = require("../src/main/media-provider-settings.js");
 const publicSettings = settings.listMediaProvidersPublic();
 
+// The self-hosted GPU provider was retired on 2026-09-23 with its bespoke
+// endpoints: the client offers what the server says is available, nothing more.
 for (const modality of ["image", "video", "speech"]) {
   assert.equal(
     publicSettings.serviceProvidersByModality[modality].includes("lily"),
-    true,
-    `configured first-party Lily ${modality} service must remain visible in client media settings`,
+    false,
+    `the retired first-party ${modality} service must not be offered`,
   );
 }
 
@@ -69,9 +68,9 @@ assert.deepEqual(
 
 writeRemoteConfig({
   media: {
-    image: { providers: ["lily"], default: "lily" },
-    video: { providers: ["lily"], default: "lily" },
-    speech: { providers: ["lily"], default: "lily" },
+    image: { providers: ["dashscope"], default: "dashscope" },
+    video: { providers: ["dashscope"], default: "dashscope" },
+    speech: { providers: ["dashscope"], default: "dashscope" },
   },
   runtime: {
     env: {},
@@ -79,7 +78,7 @@ writeRemoteConfig({
 });
 
 {
-  const result = settings.setModalityChoice("image", "service", "lily");
+  const result = settings.setModalityChoice("image", "service", "dashscope");
   assert.equal(result.ok, true, "choosing Lily should be persisted even if the service is temporarily unavailable");
   const env = settings.getMediaProviderSpawnEnv();
   assert.equal(env.LILY_IMAGE_PROVIDER, undefined, "unavailable selected Lily image service must not drive execution");
@@ -87,38 +86,36 @@ writeRemoteConfig({
 
 writeRemoteConfig({
   media: {
-    image: { providers: ["lily", "dashscope"], default: "lily" },
-    video: { providers: ["lily", "dashscope"], default: "lily" },
-    speech: { providers: ["lily", "dashscope"], default: "lily" },
+    image: { providers: ["dashscope"], default: "dashscope" },
+    video: { providers: ["dashscope"], default: "dashscope" },
+    speech: { providers: ["dashscope"], default: "dashscope" },
   },
   runtime: {
     env: {
-      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
-      LILY_MEDIA_VIDEO_ENDPOINT: "https://lily.example.com/llm/media/lily/video/generate",
-      LILY_MEDIA_SPEECH_ENDPOINT: "https://lily.example.com/llm/media/lily/speech/generate",
+      DASHSCOPE_API_KEY: "dashscope-token",
     },
   },
 });
 
 {
   const env = settings.getMediaProviderSpawnEnv();
-  assert.equal(env.LILY_IMAGE_PROVIDER, "lily", "server default must drive image execution when local JSON has no explicit choice");
-  assert.equal(env.LILY_VIDEO_PROVIDER, "lily", "server default must drive video execution when local JSON has no explicit choice");
-  assert.equal(env.LILY_SPEECH_PROVIDER, "lily", "server default must drive speech execution when local JSON has no explicit choice");
+  assert.equal(env.LILY_IMAGE_PROVIDER, "dashscope", "server default must drive image execution when local JSON has no explicit choice");
+  assert.equal(env.LILY_VIDEO_PROVIDER, "dashscope", "server default must drive video execution when local JSON has no explicit choice");
+  assert.equal(env.LILY_SPEECH_PROVIDER, "dashscope", "server default must drive speech execution when local JSON has no explicit choice");
 }
 
 {
-  const result = settings.setModalityChoice("image", "service", "lily");
+  const result = settings.setModalityChoice("image", "service", "dashscope");
   assert.equal(result.ok, true, "explicitly choosing Lily should be accepted");
   const stored = JSON.parse(fs.readFileSync(path.join(root, "media-provider-settings.json"), "utf8"));
   assert.deepEqual(
     stored.image,
-    { source: "service", provider: "lily" },
+    { source: "service", provider: "dashscope" },
     "explicit client media choice must be persisted so new runs execute with the selected provider",
   );
   assert.equal(
     settings.getMediaProviderSpawnEnv().LILY_IMAGE_PROVIDER,
-    "lily",
+    "dashscope",
     "persisted service choice must become execution env",
   );
 }

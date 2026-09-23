@@ -480,9 +480,8 @@ function mediaSkillIndexDescription(skillId, loc) {
 function configuredProviderContextSignature() {
   const media = currentMediaProviderContext();
   const availableMedia = currentAvailableMediaProviderContext();
-  const contracts = currentMediaProviderContractContext();
   const search = currentSearchProviderContext();
-  return JSON.stringify({ media, availableMedia, contracts, search });
+  return JSON.stringify({ media, availableMedia, search });
 }
 
 function currentMediaProviderContext() {
@@ -522,40 +521,12 @@ function currentSearchProviderContext() {
   }
 }
 
-function currentMediaProviderContractContext() {
-  try {
-    const mediaSettings = require("./media-provider-settings");
-    return mediaSettings.getMediaProviderContracts?.() || {};
-  } catch {
-    return {};
-  }
-}
 
-function summarizeContractParams(contract) {
-  const params = contract && typeof contract.params === "object" ? contract.params : null;
-  if (!params) return [];
-  const lines = [];
-  for (const [name, spec] of Object.entries(params)) {
-    if (!spec || typeof spec !== "object") continue;
-    const parts = [];
-    if (spec.type) parts.push(String(spec.type));
-    parts.push(spec.required ? "required" : "optional");
-    if (spec.default !== undefined && spec.default !== null && String(spec.default) !== "") {
-      parts.push(`default \`${spec.default}\``);
-    }
-    if (Array.isArray(spec.enum) && spec.enum.length) {
-      parts.push(`values: ${spec.enum.map((value) => String(value)).join(", ")}`);
-    }
-    lines.push(`${name}: ${parts.join("; ")}`);
-  }
-  return lines;
-}
 
 function buildConfiguredProviderSection(loc) {
   const media = currentMediaProviderContext();
   const search = currentSearchProviderContext();
   const availableMedia = currentAvailableMediaProviderContext();
-  const contractContext = currentMediaProviderContractContext();
   const hasMedia = ["image", "video", "speech"].some((key) => media[key]?.provider || availableMedia[key]?.length);
   const hasSearch = Boolean(search.provider);
   if (!hasMedia && !hasSearch) return "";
@@ -604,12 +575,6 @@ function buildConfiguredProviderSection(loc) {
     }
     const source = item.source === "own" ? "BYOK" : configuredDefault;
     lines.push(`- ${mediaNames[modality]}: \`${item.provider}\`${item.label ? ` (${item.label})` : ""} — ${source}`);
-    const contract = contractContext?.contracts?.[modality]?.[item.provider];
-    const paramLines = summarizeContractParams(contract);
-    if (paramLines.length) {
-      const contractLabel = zh ? "请求合同" : ar ? "عقد الطلب" : "request contract";
-      lines.push(`  - ${contractLabel}: ${paramLines.join("; ")}`);
-    }
   }
   if (search.provider) {
     const searchName = zh ? "联网搜索" : ar ? "بحث الويب" : "Web search";

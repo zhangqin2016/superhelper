@@ -8,10 +8,8 @@ import {
   listModelGatewayProviders,
   refreshModelGatewayProviders,
 } from "../../services/model-gateway/providers.js";
-import { listBuiltinMediaProviderRows } from "../../services/model-gateway/builtin-media-providers.js";
 import { normalizeProviderForProtocol } from "../../services/model-gateway/model-aliases.js";
 import { mediaProviderStatus } from "../../services/media-provider-catalog.js";
-import { configuredLilyMediaKinds } from "../../services/client-config.js";
 
 // Operator-managed model gateway providers. The API key is stored encrypted and
 // never returned to the browser; the /llm gateway uses it server-side and the
@@ -50,7 +48,6 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       mediaProviders: mediaProviderStatus({
         providers: listModelGatewayProviders(),
         serverConfig: config,
-        lilyKinds: configuredLilyMediaKinds(config),
       }),
     }),
   );
@@ -110,14 +107,11 @@ export function registerAdminModelProviderRoutes(app, { audit }) {
       hasApiKey: Boolean(api_key_encrypted),
       hasSecretKey: Boolean(secret_key_encrypted),
     }));
-    const builtinMediaProviders = listBuiltinMediaProviderRows(config).filter((row) => !dbIds.has(String(row.id)));
     // Never leak secrets; expose only whether each is set. metadata (e.g.
-    // groupId) is non-secret and returned as-is. Built-in media services are
-    // read-only rows backed by the server media gateway, not DB records.
-    return {
-      providers: [...dbProviders, ...builtinMediaProviders],
-      gateway,
-    };
+    // groupId) is non-secret and returned as-is. Every provider is a DB record:
+    // the read-only "built-in" media rows were the self-hosted GPU integration,
+    // retired 2026-09-23 along with its private routes and env plumbing.
+    return { providers: dbProviders, gateway };
   });
 
   app.post(

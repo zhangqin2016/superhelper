@@ -64,9 +64,6 @@ async function startMockServer() {
   const seen = {
     image: 0, video: 0, speech: 0, volcImage: 0, volcVideo: 0,
     klingImage: 0, klingVideo: 0, mmImage: 0, mmVideo: 0, zhipuImage: 0, zhipuVideo: 0,
-    lilyImage: 0, lilyVideo: 0, lilySpeech: 0, lilyImageAsset: 0, lilyVideoAsset: 0, lilySpeechAsset: 0,
-    lilySpeechVoices: [],
-    lilyVideoBodies: [],
   };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -176,63 +173,6 @@ async function startMockServer() {
       res.end(JSON.stringify({ id: "seedance-task", status: "succeeded", content: { video_url: `${base}/media/generated.mp4` } }));
       return;
     }
-    if (req.method === "POST" && url.pathname === "/lily/image/generate") {
-      const body = await readJson(req);
-      seen.lilyImage += 1;
-      assert.equal(req.headers.authorization, "Bearer lily-token");
-      assert.equal(body.model, "flux-kontext");
-      if (body.prompt === "Lily GPU 图片") {
-        assert.equal(body.steps, 4);
-        assert.equal(body.seed, 123);
-      }
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ output: { image_url: `${base}/llm/media/lily/image/asset?url=${encodeURIComponent("http://127.0.0.1:8012/media/generated.png")}` } }));
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/lily/video/generate") {
-      const body = await readJson(req);
-      seen.lilyVideo += 1;
-      seen.lilyVideoBodies.push(body);
-      assert.equal(req.headers.authorization, "Bearer lily-token");
-      if (body.model !== undefined) assert.equal(body.model, "wan2.2");
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ ok: true, kind: "wan", file: `${base}/llm/media/lily/video/asset?url=${encodeURIComponent("http://127.0.0.1:8010/media/generated.mp4")}` }));
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/lily/speech/generate") {
-      const body = await readJson(req);
-      seen.lilySpeech += 1;
-      seen.lilySpeechVoices.push(body.voice);
-      assert.equal(req.headers.authorization, "Bearer lily-token");
-      assert.equal(body.model, "qwen3-tts");
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ output: { audio: { url: `${base}/llm/media/lily/speech/asset?url=${encodeURIComponent("http://127.0.0.1:8013/media/generated.wav")}` } } }));
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/llm/media/lily/image/asset") {
-      seen.lilyImageAsset += 1;
-      assert.equal(req.headers.authorization, "Bearer lily-token", "Lily image asset download must carry the gateway token");
-      assert.equal(url.searchParams.get("url"), "http://127.0.0.1:8012/media/generated.png");
-      res.setHeader("Content-Type", "image/png");
-      res.end(Buffer.from("mock-lily-png"));
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/llm/media/lily/video/asset") {
-      seen.lilyVideoAsset += 1;
-      assert.equal(req.headers.authorization, "Bearer lily-token", "Lily video asset download must carry the gateway token");
-      assert.equal(url.searchParams.get("url"), "http://127.0.0.1:8010/media/generated.mp4");
-      res.setHeader("Content-Type", "video/mp4");
-      res.end(Buffer.from("mock-lily-mp4"));
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/llm/media/lily/speech/asset") {
-      seen.lilySpeechAsset += 1;
-      assert.equal(req.headers.authorization, "Bearer lily-token", "Lily speech asset download must carry the gateway token");
-      assert.equal(url.searchParams.get("url"), "http://127.0.0.1:8013/media/generated.wav");
-      res.setHeader("Content-Type", "audio/wav");
-      res.end(Buffer.from("mock-lily-wav"));
-      return;
-    }
     if (req.method === "POST" && url.pathname.endsWith("/multimodal-generation/generation")) {
       const body = await readJson(req);
       seen.image += 1;
@@ -314,81 +254,7 @@ const scripts = {
   speech: path.join(ROOT, "resources/skills/lily-speech-generation/scripts/generate-speech.cjs"),
 };
 
-function lilySpeechContract(defaultVoice = "aiden") {
-  return JSON.stringify({
-    schemaVersion: 1,
-    selected: { speech: "lily" },
-    contracts: {
-      speech: {
-        lily: {
-          endpointEnv: "LILY_MEDIA_SPEECH_ENDPOINT",
-          authEnv: "LILY_MEDIA_API_KEY",
-          request: {
-            method: "POST",
-            contentType: "application/json",
-            template: {
-              text: "{{text}}",
-              input: "{{text}}",
-              voice: "{{voice}}",
-              format: "{{format}}",
-              sample_rate: "{{sample_rate}}",
-              model: "{{model}}",
-            },
-          },
-          params: {
-            text: { type: "string", required: true },
-            voice: {
-              type: "string",
-              default: defaultVoice,
-              enum: ["aiden", "dylan", "eric", "ono_anna", "ryan", "serena", "sohee", "uncle_fu", "vivian"],
-              aliases: { default: defaultVoice, longanyang: defaultVoice },
-            },
-            format: { type: "string", default: "wav" },
-            sample_rate: { type: "number", default: 24000 },
-            model: { type: "string", default: "qwen3-tts" },
-          },
-          response: { mediaType: "speech", extract: ["$.output.audio.url"], assetProxy: "lily" },
-        },
-      },
-    },
-  });
-}
 
-function lilyVideoContract() {
-  return JSON.stringify({
-    schemaVersion: 1,
-    selected: { video: "lily" },
-    contracts: {
-      video: {
-        lily: {
-          endpointEnv: "LILY_MEDIA_VIDEO_ENDPOINT",
-          authEnv: "LILY_MEDIA_API_KEY",
-          request: {
-            method: "POST",
-            contentType: "application/json",
-            template: {
-              prompt: "{{prompt}}",
-              width: "{{width}}",
-              height: "{{height}}",
-              frames: "{{frames}}",
-              steps: "{{steps}}",
-              seed: "{{seed}}",
-            },
-          },
-          params: {
-            prompt: { type: "string", required: true },
-            width: { type: "number", default: 512 },
-            height: { type: "number", default: 320 },
-            frames: { type: "number", default: 17 },
-            steps: { type: "number", default: 4 },
-            seed: { type: "number", default: 123 },
-          },
-          response: { mediaType: "video", extract: ["$.file"], assetProxy: "lily" },
-        },
-      },
-    },
-  });
-}
 
 const noProvider = await runNode(
   scripts.image,
@@ -448,94 +314,9 @@ try {
   assert.match(speech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(speech.stdout, "generated-assets"), /generated-assets\/speech-/);
 
-  const lilyEnv = {
-    LILY_LOCALE: "zh-CN",
-    LILY_MEDIA_API_KEY: "lily-token",
-    LILY_MEDIA_IMAGE_ENDPOINT: `${base}/lily/image/generate`,
-    LILY_MEDIA_VIDEO_ENDPOINT: `${base}/lily/video/generate`,
-    LILY_MEDIA_SPEECH_ENDPOINT: `${base}/lily/speech/generate`,
-  };
-  const lilyImage = await runNode(scripts.image, { prompt: "Lily GPU 图片", provider: "lily", steps: 4, seed: 123 }, lilyEnv, tmp);
-  assert.equal(lilyImage.code, 0, lilyImage.stderr);
-  assert.match(lilyImage.stdout, /generated_media type="image"/);
-  assert.match(assertGeneratedPath(lilyImage.stdout, "generated-assets"), /generated-assets\/image-/);
-  const lilyImageFromDefault = await runNode(
-    scripts.image,
-    { prompt: "Lily GPU 默认图片" },
-    { ...lilyEnv, LILY_IMAGE_PROVIDER: "lily" },
-    tmp,
-  );
-  assert.equal(lilyImageFromDefault.code, 0, lilyImageFromDefault.stderr);
-  assert.match(lilyImageFromDefault.stdout, /generated_media type="image"/);
-  assert.match(assertGeneratedPath(lilyImageFromDefault.stdout, "generated-assets"), /generated-assets\/image-/);
-  const lilyVideo = await runNode(scripts.video, { prompt: "Lily GPU 视频", provider: "lily", timeout_ms: 5000 }, lilyEnv, tmp);
-  assert.equal(lilyVideo.code, 0, lilyVideo.stderr);
-  assert.match(lilyVideo.stdout, /generated_media type="video"/);
-  assert.match(assertGeneratedPath(lilyVideo.stdout, "generated-assets"), /generated-assets\/video-/);
-  const lilyVideoFromContract = await runNode(
-    scripts.video,
-    { prompt: "Lily GPU 合同视频", provider: "lily", timeout_ms: 5000 },
-    { ...lilyEnv, LILY_MEDIA_CONTRACTS_JSON: lilyVideoContract() },
-    tmp,
-  );
-  assert.equal(lilyVideoFromContract.code, 0, lilyVideoFromContract.stderr);
-  assert.match(lilyVideoFromContract.stdout, /generated_media type="video"/);
-  assert.match(assertGeneratedPath(lilyVideoFromContract.stdout, "generated-assets"), /generated-assets\/video-/);
-  assert.deepEqual(
-    seen.lilyVideoBodies.at(-1),
-    { prompt: "Lily GPU 合同视频", width: 512, height: 320, frames: 17, steps: 4, seed: 123 },
-    "Lily video should use server-delivered request contract params",
-  );
-  const lilyVideoFromDefault = await runNode(
-    scripts.video,
-    { prompt: "Lily GPU 默认视频", timeout_ms: 5000 },
-    { ...lilyEnv, LILY_VIDEO_PROVIDER: "lily" },
-    tmp,
-  );
-  assert.equal(lilyVideoFromDefault.code, 0, lilyVideoFromDefault.stderr);
-  assert.match(lilyVideoFromDefault.stdout, /generated_media type="video"/);
-  assert.match(assertGeneratedPath(lilyVideoFromDefault.stdout, "generated-assets"), /generated-assets\/video-/);
-  const lilySpeech = await runNode(scripts.speech, { text: "Lily GPU 语音", provider: "lily" }, lilyEnv, tmp);
-  assert.equal(lilySpeech.code, 0, lilySpeech.stderr);
-  assert.match(lilySpeech.stdout, /generated_media type="speech"/);
-  assert.match(assertGeneratedPath(lilySpeech.stdout, "generated-assets"), /generated-assets\/speech-/);
-  assert.equal(seen.lilySpeechVoices.at(-1), "aiden", "Lily speech must default to a supported GPU voice");
-  const lilySpeechFromContract = await runNode(
-    scripts.speech,
-    { text: "Lily GPU 合同语音", provider: "lily" },
-    { ...lilyEnv, LILY_MEDIA_CONTRACTS_JSON: lilySpeechContract("serena") },
-    tmp,
-  );
-  assert.equal(lilySpeechFromContract.code, 0, lilySpeechFromContract.stderr);
-  assert.match(lilySpeechFromContract.stdout, /generated_media type="speech"/);
-  assert.match(assertGeneratedPath(lilySpeechFromContract.stdout, "generated-assets"), /generated-assets\/speech-/);
-  assert.equal(seen.lilySpeechVoices.at(-1), "serena", "Lily speech should use the server-delivered contract default voice");
-  const lilySpeechDashScopeExampleVoice = await runNode(
-    scripts.speech,
-    { text: "Lily GPU 旧示例语音", provider: "lily", voice: "longanyang" },
-    lilyEnv,
-    tmp,
-  );
-  assert.equal(lilySpeechDashScopeExampleVoice.code, 0, lilySpeechDashScopeExampleVoice.stderr);
-  assert.equal(seen.lilySpeechVoices.at(-1), "aiden", "DashScope example voice must not be sent to Lily GPU");
-  const lilySpeechUnsupportedVoice = await runNode(
-    scripts.speech,
-    { text: "Lily GPU 不支持语音", provider: "lily", voice: "not-a-speaker" },
-    lilyEnv,
-    tmp,
-  );
-  assert.notEqual(lilySpeechUnsupportedVoice.code, 0);
-  assert.match(lilySpeechUnsupportedVoice.stderr, /not-a-speaker/);
-  assert.match(lilySpeechUnsupportedVoice.stderr, /aiden/);
-  const lilySpeechFromDefault = await runNode(
-    scripts.speech,
-    { text: "Lily GPU 默认语音" },
-    { ...lilyEnv, LILY_SPEECH_PROVIDER: "lily" },
-    tmp,
-  );
-  assert.equal(lilySpeechFromDefault.code, 0, lilySpeechFromDefault.stderr);
-  assert.match(lilySpeechFromDefault.stdout, /generated_media type="speech"/);
-  assert.match(assertGeneratedPath(lilySpeechFromDefault.stdout, "generated-assets"), /generated-assets\/speech-/);
+  // The self-hosted GPU provider was retired on 2026-09-23 with its bespoke
+  // endpoints, contracts and gateway routes; every remaining provider is
+  // exercised through the generic adapter path above.
 
   const speech404 = await runNode(
     scripts.speech,
@@ -628,21 +409,13 @@ try {
   assert.equal(seen.mmVideo, 1);
   assert.equal(seen.zhipuImage, 1);
   assert.equal(seen.zhipuVideo, 1);
-  assert.equal(seen.lilyImage, 2);
-  assert.equal(seen.lilyVideo, 3);
-  assert.equal(seen.lilySpeech, 4);
-  assert.equal(seen.lilyImageAsset, 2);
-  assert.equal(seen.lilyVideoAsset, 3);
-  assert.equal(seen.lilySpeechAsset, 4);
   assert.equal(countGeneratedMediaFiles([
     image, video, speech,
-    lilyImage, lilyImageFromDefault, lilyVideo, lilyVideoFromContract, lilyVideoFromDefault,
-    lilySpeech, lilySpeechFromContract, lilySpeechDashScopeExampleVoice, lilySpeechFromDefault,
     volcImage, volcVideo,
     klingImage, klingVideo,
     mmImage, mmVideo,
     zhipuImage, zhipuVideo,
-  ]), 20);
+  ]), 11);
 } finally {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(tmp, { recursive: true, force: true });

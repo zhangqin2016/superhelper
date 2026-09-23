@@ -56,10 +56,9 @@ function writeRemoteConfig(effectiveConfig) {
 writeRemoteConfig({
   runtime: {
     env: {
-      LILY_IMAGE_PROVIDER: "lily",
-      LILY_VIDEO_PROVIDER: "lily",
-      LILY_SPEECH_PROVIDER: "lily",
-      LILY_MEDIA_IMAGE_ENDPOINT: "https://lily.example.com/llm/media/lily/image/generate",
+      LILY_IMAGE_PROVIDER: "dashscope",
+      LILY_VIDEO_PROVIDER: "dashscope",
+      LILY_SPEECH_PROVIDER: "dashscope",
       WEBSEARCH_IQS_API_KEY: "lily-search-token",
       WEBSEARCH_IQS_API_URL: "https://lily.example.com/llm/search/iqs",
     },
@@ -68,14 +67,9 @@ writeRemoteConfig({
 
 {
   const patch = buildLiveEngineEnvPatch();
-  assert.equal(patch.LILY_IMAGE_PROVIDER, "lily", "live env patch must include server-delivered image provider");
-  assert.equal(patch.LILY_VIDEO_PROVIDER, "lily", "live env patch must include server-delivered video provider");
-  assert.equal(patch.LILY_SPEECH_PROVIDER, "lily", "live env patch must include server-delivered speech provider");
-  assert.equal(
-    patch.LILY_MEDIA_IMAGE_ENDPOINT,
-    "https://lily.example.com/llm/media/lily/image/generate",
-    "live env patch must include server-delivered Lily media gateway endpoint",
-  );
+  assert.equal(patch.LILY_IMAGE_PROVIDER, "dashscope", "live env patch must include server-delivered image provider");
+  assert.equal(patch.LILY_VIDEO_PROVIDER, "dashscope", "live env patch must include server-delivered video provider");
+  assert.equal(patch.LILY_SPEECH_PROVIDER, "dashscope", "live env patch must include server-delivered speech provider");
   assert.equal(patch.WEBSEARCH_IQS_API_KEY, "lily-search-token", "live env patch must include server-delivered search token");
   assert.equal(
     patch.WEBSEARCH_IQS_API_URL,

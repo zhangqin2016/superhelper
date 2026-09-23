@@ -36,8 +36,6 @@ const PASSTHROUGH_KEYS = new Set([
 ]);
 const PASSTHROUGH_PREFIXES = [
   "LILY_OPENCODE_",
-  "LILY_MEDIA_",
-  "LILY_GPU_",
   "VISION_",
   "DASHSCOPE_",
   "ALIYUN_BAILIAN_",

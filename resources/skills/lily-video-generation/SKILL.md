@@ -1,6 +1,6 @@
 ---
 name: lily-video-generation
-description: Generate videos with the configured video provider. Supports Lily GPU, Alibaba Bailian Wanxiang, Volcengine Seedance, Kling, MiniMax, and Zhipu. Use when the user asks for short videos, animations, storyboard videos, image-to-video, video continuation, or video editing.
+description: Generate videos with the configured video provider. Supports Alibaba Bailian Wanxiang, Volcengine Seedance, Kling, MiniMax, and Zhipu. Use when the user asks for short videos, animations, storyboard videos, image-to-video, video continuation, or video editing.
 allowed-tools: Bash(node *)
 ---
 
@@ -44,14 +44,13 @@ Optional parameters:
 - `duration`: seconds, default `5`
 - `prompt_extend`: default `true`
 - `watermark`: default `false`
-- `provider`: `lily`/`dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
+- `provider`: `dashscope`/`volcengine`/`kling`/`minimax`/`zhipu` (else the configured default)
 - `output_dir`: save directory, default current workspace `generated-assets`
 
 Provider rules:
 
 - Do not assume DashScope/Wanxiang. The configured provider from Settings is
   injected as `LILY_VIDEO_PROVIDER`; when the user has selected Lily, omit
-  `provider` or set `"provider":"lily"`.
 - Only set `"provider":"dashscope"` when the user explicitly asks for
   DashScope/Bailian/Wanxiang, or when intentionally overriding the configured
   provider.
@@ -64,8 +63,6 @@ Provider rules:
 `DASHSCOPE_VIDEO_ENDPOINT` can override the full endpoint. Otherwise the script
 uses `DASHSCOPE_VIDEO_BASE_URL` with the official default path. `DASHSCOPE_BASE_URL`
 is reserved for chat model APIs and is not used for video generation.
-For Lily self-hosted GPU, set `LILY_MEDIA_VIDEO_ENDPOINT` (or
-`LILY_MEDIA_VIDEO_BASE_URL`) and choose provider `lily`.
 
 Video generation can take a long time. The script polls the task and downloads the
 temporary video URL to a local file when complete. Reply with the local file path

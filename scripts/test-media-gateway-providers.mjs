@@ -22,10 +22,6 @@ process.env.KLING_BASE_URL = "https://kling.test.local";
 process.env.MINIMAX_API_KEY = "mm-secret";
 process.env.MINIMAX_GROUP_ID = "grp-9";
 process.env.MINIMAX_BASE_URL = "https://minimax.test.local";
-process.env.LILY_MEDIA_API_KEY = "lily-upstream-secret";
-process.env.LILY_MEDIA_IMAGE_ENDPOINT = "http://127.0.0.1:18012/generate";
-process.env.LILY_MEDIA_VIDEO_ENDPOINT = "http://127.0.0.1:18010/generate";
-process.env.LILY_MEDIA_SPEECH_ENDPOINT = "http://127.0.0.1:18013/generate";
 process.env.MODEL_GATEWAY_PROVIDERS = JSON.stringify({
   vision: {
     type: "openai",
@@ -69,11 +65,6 @@ assert.equal(directEnv.VOLCENGINE_BASE_URL, "https://ark.test.local/api/v3");
 assert.equal(gwEnv.KLING_BASE_URL, "https://lily.example.com/llm/media/kling");
 assert.equal(verifyModelGatewayToken(gwEnv.KLING_API_KEY, "kling-media").ok, true);
 assert.equal(gwEnv.KLING_SECRET_KEY, undefined, "Kling SecretKey must NOT leak in gateway mode");
-assert.equal(gwEnv.LILY_MEDIA_IMAGE_ENDPOINT, "https://lily.example.com/llm/media/lily/image/generate");
-assert.equal(gwEnv.LILY_MEDIA_VIDEO_ENDPOINT, "https://lily.example.com/llm/media/lily/video/generate");
-assert.equal(gwEnv.LILY_MEDIA_SPEECH_ENDPOINT, "https://lily.example.com/llm/media/lily/speech/generate");
-assert.notEqual(gwEnv.LILY_MEDIA_API_KEY, "lily-upstream-secret", "raw Lily GPU media key must NOT be delivered in gateway mode");
-assert.equal(verifyModelGatewayToken(gwEnv.LILY_MEDIA_API_KEY, "lily-media").ok, true);
 assert.equal(directEnv.KLING_ACCESS_KEY, "kling-ak");
 assert.equal(directEnv.KLING_SECRET_KEY, "kling-sk");
 // MiniMax GroupId is delivered only in direct mode (appended server-side in gateway).
@@ -355,162 +346,9 @@ try {
   assert.equal(captured.init.headers.Authorization, "Bearer mm-secret");
 
   // Lily GPU media proxy: client calls the public Lily gateway, server forwards
-  // to the private GPU tunnel and injects the optional upstream media key.
-  const lilyToken = signModelGatewayToken({ deviceId: input.deviceId, licenseId: input.licenseId, providerId: "lily-media" });
-  const lilyReply = fakeReply();
-  await routes["POST /llm/media/:provider/*"](
-    {
-      method: "POST",
-      url: "/llm/media/lily/image/generate",
-      params: { provider: "lily", "*": "image/generate" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-        authorization: `Bearer ${lilyToken}`,
-      },
-      body: { prompt: "neon workbench" },
-    },
-    lilyReply,
-  );
-  assert.equal(lilyReply._code, 200);
-  assert.equal(captured.url, "http://127.0.0.1:18012/generate");
-  assert.equal(captured.init.headers.Authorization, "Bearer lily-upstream-secret");
-  const lilyBody = JSON.parse(lilyReply._sent);
-  assert.equal(lilyBody.output.public_url, "https://cdn.example.com/public/generated.png", "public CDN result URLs should stay direct");
-  assert.match(lilyBody.output.image_url, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/image\/asset\?url=/);
-  assert.match(lilyBody.output.image_url, /[?&]access_token=lilygw\./, "rewritten asset URLs must carry a short token for old clients that cannot add download headers");
-  assert.doesNotMatch(lilyReply._sent, /127\.0\.0\.1:8012/, "private GPU result URLs must not leak to clients");
-
-  const lilyVideoReply = fakeReply();
-  await routes["POST /llm/media/:provider/*"](
-    {
-      method: "POST",
-      url: "/llm/media/lily/video/generate",
-      params: { provider: "lily", "*": "video/generate" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-        authorization: `Bearer ${lilyToken}`,
-      },
-      body: { prompt: "spinning apple" },
-    },
-    lilyVideoReply,
-  );
-  assert.equal(lilyVideoReply._code, 200);
-  const lilyVideoBody = JSON.parse(lilyVideoReply._sent);
-  assert.equal(lilyVideoBody.kind, "wan", "non-URL metadata must not be rewritten as an asset URL");
-  assert.match(lilyVideoBody.file, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/video\/asset\?url=/);
-  assert.match(lilyVideoBody.file, /[?&]access_token=lilygw\./);
-
-  const lilySpeechReply = fakeReply();
-  await routes["POST /llm/media/:provider/*"](
-    {
-      method: "POST",
-      url: "/llm/media/lily/speech/generate",
-      params: { provider: "lily", "*": "speech/generate" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-        authorization: `Bearer ${lilyToken}`,
-      },
-      body: { text: "hello", input: "hello", voice: "longanyang", format: "wav" },
-    },
-    lilySpeechReply,
-  );
-  assert.equal(lilySpeechReply._code, 200);
-  assert.equal(captured.url, "http://127.0.0.1:18013/generate");
-  assert.equal(JSON.parse(captured.init.body).voice, "aiden", "gateway must map legacy DashScope/default voice to a Lily-supported voice");
-  const lilySpeechBody = JSON.parse(lilySpeechReply._sent);
-  assert.match(lilySpeechBody.file, /^https:\/\/lily\.example\.com\/llm\/media\/lily\/speech\/asset\?url=/);
-  assert.equal(lilySpeechBody.speaker, "aiden");
-
-  const invalidLilySpeechReply = fakeReply();
-  const beforeInvalidSpeechFetches = captures.length;
-  await routes["POST /llm/media/:provider/*"](
-    {
-      method: "POST",
-      url: "/llm/media/lily/speech/generate",
-      params: { provider: "lily", "*": "speech/generate" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-        authorization: `Bearer ${lilyToken}`,
-      },
-      body: { text: "hello", voice: "not-a-speaker" },
-    },
-    invalidLilySpeechReply,
-  );
-  assert.equal(invalidLilySpeechReply._code, 400);
-  assert.match(invalidLilySpeechReply._sent.error.message, /not-a-speaker/);
-  assert.equal(captures.length, beforeInvalidSpeechFetches, "invalid Lily speech voices should fail before hitting the GPU service");
-
-  const assetReply = fakeReply();
-  await routes["GET /llm/media/:provider/*"](
-    {
-      method: "GET",
-      url: `/llm/media/lily/image/asset?url=${encodeURIComponent("http://127.0.0.1:8012/outputs/generated.png")}`,
-      params: { provider: "lily", "*": "image/asset" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-        authorization: `Bearer ${lilyToken}`,
-      },
-    },
-    assetReply,
-  );
-  assert.equal(assetReply._code, 200);
-  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png", "asset proxy should fetch through the configured private tunnel");
-  assert.equal(captures.at(-1).init.headers.Authorization, "Bearer lily-upstream-secret");
-  assert.equal(assetReply._headers["content-type"], "image/png");
-
-  const legacyAssetUrl = new URL(lilyBody.output.image_url);
-  const legacyAssetReply = fakeReply();
-  await routes["GET /llm/media/:provider/*"](
-    {
-      method: "GET",
-      url: `${legacyAssetUrl.pathname}${legacyAssetUrl.search}`,
-      params: { provider: "lily", "*": "image/asset" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-      },
-    },
-    legacyAssetReply,
-  );
-  assert.equal(legacyAssetReply._code, 200, "old clients should be able to download rewritten asset URLs without adding Authorization headers");
-  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/outputs/generated.png");
-
-  const fsPathAssetReply = fakeReply();
-  await routes["GET /llm/media/:provider/*"](
-    {
-      method: "GET",
-      url: `/llm/media/lily/image/asset?url=${encodeURIComponent("/mnt/media-services/outputs/flux/generated.png")}&access_token=${encodeURIComponent(lilyToken)}`,
-      params: { provider: "lily", "*": "image/asset" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-      },
-    },
-    fsPathAssetReply,
-  );
-  assert.equal(fsPathAssetReply._code, 200, "GPU filesystem output paths should download through the service /file endpoint");
-  assert.equal(captures.at(-1).url, "http://127.0.0.1:18012/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fflux%2Fgenerated.png");
-
-  const videoFsPathAssetReply = fakeReply();
-  await routes["GET /llm/media/:provider/*"](
-    {
-      method: "GET",
-      url: `/llm/media/lily/video/asset?url=${encodeURIComponent("/mnt/media-services/outputs/wan/generated.mp4")}&access_token=${encodeURIComponent(lilyToken)}`,
-      params: { provider: "lily", "*": "video/asset" },
-      headers: {
-        host: "lily.example.com",
-        "x-forwarded-proto": "https",
-      },
-    },
-    videoFsPathAssetReply,
-  );
-  assert.equal(videoFsPathAssetReply._code, 200, "GPU video filesystem output paths should download through the service /file endpoint");
-  assert.equal(captures.at(-1).url, "http://127.0.0.1:18010/file?path=%2Fmnt%2Fmedia-services%2Foutputs%2Fwan%2Fgenerated.mp4");
+  // The self-hosted GPU provider and its private route, asset proxy and
+  // filesystem-path handling were retired on 2026-09-23; every remaining
+  // provider is exercised through the generic route above.
 } finally {
   globalThis.fetch = realFetch;
 }

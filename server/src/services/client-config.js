@@ -9,8 +9,6 @@ import { getModelCatalog } from "./model-catalog.js";
 import { parseRequestShapeHints } from "./request-shape-hints.js";
 import { resolveModelRuntimeBudget } from "./model-runtime-budget.js";
 import { resolveModelCapabilities } from "./model-capabilities.js";
-import { buildMediaProviderContracts } from "./media-provider-contracts.js";
-import { stripDisabledLilyMediaEnv } from "./lily-media-env.js";
 import {
   CHARACTER_WORLDS_DEFAULT_POLICY,
   resolveCharacterWorldsPolicy,
@@ -127,25 +125,7 @@ export function resolveMediaSelection(configCopy, availability) {
   return configCopy;
 }
 
-export function configuredLilyMediaKinds(serverConfig = config) {
-  const shared = Boolean(serverConfig.lilyMediaBaseUrl);
-  return {
-    image: shared || Boolean(serverConfig.lilyMediaImageEndpoint || serverConfig.lilyMediaImageBaseUrl),
-    video: shared || Boolean(serverConfig.lilyMediaVideoEndpoint || serverConfig.lilyMediaVideoBaseUrl),
-    speech: shared || Boolean(serverConfig.lilyMediaSpeechEndpoint || serverConfig.lilyMediaSpeechBaseUrl),
-  };
-}
 
-function applyDirectLilyMediaEnv(env, serverConfig = config) {
-  if (serverConfig.lilyMediaApiKey) env.LILY_MEDIA_API_KEY = serverConfig.lilyMediaApiKey;
-  if (serverConfig.lilyMediaBaseUrl) env.LILY_MEDIA_BASE_URL = serverConfig.lilyMediaBaseUrl;
-  if (serverConfig.lilyMediaImageBaseUrl) env.LILY_MEDIA_IMAGE_BASE_URL = serverConfig.lilyMediaImageBaseUrl;
-  if (serverConfig.lilyMediaVideoBaseUrl) env.LILY_MEDIA_VIDEO_BASE_URL = serverConfig.lilyMediaVideoBaseUrl;
-  if (serverConfig.lilyMediaSpeechBaseUrl) env.LILY_MEDIA_SPEECH_BASE_URL = serverConfig.lilyMediaSpeechBaseUrl;
-  if (serverConfig.lilyMediaImageEndpoint) env.LILY_MEDIA_IMAGE_ENDPOINT = serverConfig.lilyMediaImageEndpoint;
-  if (serverConfig.lilyMediaVideoEndpoint) env.LILY_MEDIA_VIDEO_ENDPOINT = serverConfig.lilyMediaVideoEndpoint;
-  if (serverConfig.lilyMediaSpeechEndpoint) env.LILY_MEDIA_SPEECH_ENDPOINT = serverConfig.lilyMediaSpeechEndpoint;
-}
 
 /** A provider's selectable models: the explicit `models` list, else its single
  *  default model. Empty only when the provider declares no model at all. */
@@ -416,14 +396,6 @@ function runtimeEnvFromServerConfig(serverConfig) {
     env.ZHIPU_IMAGE_MODEL = serverConfig.zhipuImageModel || "cogview-4-250304";
     env.ZHIPU_VIDEO_MODEL = serverConfig.zhipuVideoModel || "cogvideox-3";
   }
-  if (serverConfig.lilyMediaApiKey) env.LILY_MEDIA_API_KEY = serverConfig.lilyMediaApiKey;
-  if (serverConfig.lilyMediaBaseUrl) env.LILY_MEDIA_BASE_URL = serverConfig.lilyMediaBaseUrl;
-  if (serverConfig.lilyMediaImageBaseUrl) env.LILY_MEDIA_IMAGE_BASE_URL = serverConfig.lilyMediaImageBaseUrl;
-  if (serverConfig.lilyMediaVideoBaseUrl) env.LILY_MEDIA_VIDEO_BASE_URL = serverConfig.lilyMediaVideoBaseUrl;
-  if (serverConfig.lilyMediaSpeechBaseUrl) env.LILY_MEDIA_SPEECH_BASE_URL = serverConfig.lilyMediaSpeechBaseUrl;
-  if (serverConfig.lilyMediaImageEndpoint) env.LILY_MEDIA_IMAGE_ENDPOINT = serverConfig.lilyMediaImageEndpoint;
-  if (serverConfig.lilyMediaVideoEndpoint) env.LILY_MEDIA_VIDEO_ENDPOINT = serverConfig.lilyMediaVideoEndpoint;
-  if (serverConfig.lilyMediaSpeechEndpoint) env.LILY_MEDIA_SPEECH_ENDPOINT = serverConfig.lilyMediaSpeechEndpoint;
   // Default media provider for the image/video skills (per-call overridable via
   // input.provider). Drives the dispatch shell in generate-image/video.cjs.
   env.LILY_IMAGE_PROVIDER = serverConfig.mediaImageProvider || "dashscope";
@@ -856,26 +828,15 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
     configCopy.runtime = runtime;
   }
 
-  const lilyKinds = configuredLilyMediaKinds(config);
-  stripDisabledLilyMediaEnv(configCopy, { ...lilyKinds, shared: Boolean(config.lilyMediaBaseUrl) });
-  if (lilyKinds.image || lilyKinds.video || lilyKinds.speech) {
+  // Which media provider the generation skills should prefer. This used to sit
+  // inside the self-hosted-GPU branch, so a deployment without that GPU — every
+  // deployment, since it was retired — never received its own defaults here.
+  {
     const runtime = configCopy.runtime && typeof configCopy.runtime === "object" ? configCopy.runtime : {};
     const env = runtime.env && typeof runtime.env === "object" ? runtime.env : {};
     env.LILY_IMAGE_PROVIDER = env.LILY_IMAGE_PROVIDER || config.mediaImageProvider || "dashscope";
     env.LILY_VIDEO_PROVIDER = env.LILY_VIDEO_PROVIDER || config.mediaVideoProvider || "dashscope";
     env.LILY_SPEECH_PROVIDER = env.LILY_SPEECH_PROVIDER || config.mediaSpeechProvider || "dashscope";
-    if (options.mediaDeliveryMode === "gateway" && base) {
-      env.LILY_MEDIA_API_KEY = signMediaToken("lily-media");
-      if (lilyKinds.image) env.LILY_MEDIA_IMAGE_ENDPOINT = `${base}/llm/media/lily/image/generate`;
-      if (lilyKinds.video) env.LILY_MEDIA_VIDEO_ENDPOINT = `${base}/llm/media/lily/video/generate`;
-      if (lilyKinds.speech) env.LILY_MEDIA_SPEECH_ENDPOINT = `${base}/llm/media/lily/speech/generate`;
-      delete env.LILY_MEDIA_BASE_URL;
-      delete env.LILY_MEDIA_IMAGE_BASE_URL;
-      delete env.LILY_MEDIA_VIDEO_BASE_URL;
-      delete env.LILY_MEDIA_SPEECH_BASE_URL;
-    } else {
-      applyDirectLilyMediaEnv(env, config);
-    }
     runtime.env = env;
     configCopy.runtime = runtime;
   }
@@ -888,20 +849,9 @@ export function withGatewayRuntimeConfig(effectiveConfig, request, input, option
   const mediaStatus = mediaProviderStatus({
     providers: { ...gatewayProviders, vision: { apiKey: visionKey } },
     serverConfig: { ...config, volcengineApiKey: volcengineKey, klingAccessKey, minimaxApiKey: minimaxKey, zhipuApiKey: zhipuKey },
-    lilyKinds,
   });
   const mediaAvailability = availableMediaProviders(mediaStatus);
   resolveMediaSelection(configCopy, mediaAvailability);
-  if (configCopy.media && typeof configCopy.media === "object") {
-    configCopy.media.contracts = options.mediaContracts || buildMediaProviderContracts({
-      selected: {
-        image: configCopy.media.image?.default || "",
-        video: configCopy.media.video?.default || "",
-        speech: configCopy.media.speech?.default || "",
-      },
-      available: mediaAvailability,
-    });
-  }
 
   const presets = configCopy?.models?.presets;
   if (!Array.isArray(presets)) return configCopy;

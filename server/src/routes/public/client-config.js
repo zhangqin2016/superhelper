@@ -17,7 +17,6 @@ import {
 import {
   applyCollaborationPolicyGate,
 } from "../../services/collaboration/policy.js";
-import { discoverLilyMediaProviderContracts } from "../../services/media-provider-contracts.js";
 import {
   recoverLicenseScopeByFingerprint,
   requireSignedDeviceRequest,
@@ -217,28 +216,12 @@ export function registerPublicClientConfigRoutes(app) {
       licenseScope: resolved.licenseScope,
       trialEndsAt: device?.trial_ends_at || "",
     });
-    const selectedMedia = {
-      image: scopedPreview.media?.image?.default || "",
-      video: scopedPreview.media?.video?.default || "",
-      speech: scopedPreview.media?.speech?.default || "",
-    };
-    const availableMedia = {
-      image: scopedPreview.media?.image?.providers || [],
-      video: scopedPreview.media?.video?.providers || [],
-      speech: scopedPreview.media?.speech?.providers || [],
-    };
-    const mediaContracts = await discoverLilyMediaProviderContracts({
-      serverConfig: config,
-      selected: selectedMedia,
-      available: availableMedia,
-    });
     const effectiveConfig = withGatewayRuntimeConfig(scopedConfig, request, input, {
       publicBaseUrl: config.publicBaseUrl,
       policyBaseUrl: bootstrapPolicy.apiBaseUrl,
       mediaDeliveryMode,
       modelDeliveryMode,
       account,
-      mediaContracts,
       licenseScope: resolved.licenseScope,
       trialEndsAt: device?.trial_ends_at || "",
     });
