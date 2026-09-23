@@ -1,17 +1,10 @@
 import { upsertBillingProductAction, upsertPricingRuleAction } from "../app/admin/billing/actions";
+import { Field } from "./admin-field";
 
 function money(cents, currency = "CNY") {
   return `${currency === "CNY" ? "¥" : currency} ${(Number(cents || 0) / 100).toFixed(2)}`;
 }
 
-function Field({ label, children, span = "" }) {
-  return (
-    <label className={`block ${span}`}>
-      <span className="mb-1.5 block text-xs font-semibold text-slate-600">{label}</span>
-      {children}
-    </label>
-  );
-}
 
 const inputClass = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500";
 const selectClass = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500";

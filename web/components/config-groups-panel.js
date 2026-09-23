@@ -1,5 +1,6 @@
 "use client";
 
+import { DangerForm } from "./danger-form";
 import { useActionState } from "react";
 import {
   assignConfigGroupAction,
@@ -8,6 +9,7 @@ import {
 } from "../app/admin/actions";
 import { SubmitButton } from "./admin-forms";
 import { useI18n } from "../lib/use-i18n";
+import { Field } from "./admin-field";
 
 const labels = {
   zh: {
@@ -81,14 +83,6 @@ function fieldClass() {
   return "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 }
 
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold text-slate-800">{label}</span>
-      {children}
-    </label>
-  );
-}
 
 export function ConfigGroupsPanel({ groups = [], showCreate = true, showAssign = true, showList = true }) {
   const { locale } = useI18n();
@@ -166,12 +160,12 @@ export function ConfigGroupsPanel({ groups = [], showCreate = true, showAssign =
                     {group.deviceCount || 0} {copy.devices} · {group.licenseCount || 0} {copy.licenses}
                   </td>
                   <td className="px-4 py-2 text-end">
-                    <form action={deleteConfigGroupAction}>
+                    <DangerForm action={deleteConfigGroupAction} name={`${group.name || ""} (${group.id})`}>
                       <input type="hidden" name="id" value={group.id} />
                       <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">
                         {copy.remove}
                       </button>
-                    </form>
+                    </DangerForm>
                   </td>
                 </tr>
               ))}

@@ -1,5 +1,7 @@
 "use client";
 
+import { DangerForm } from "./danger-form";
+
 import { useActionState } from "react";
 import { mergeWishAction, updateWishAction } from "../app/admin/actions";
 import { Field, SelectField, SubmitButton, TextAreaField } from "./admin-forms";
@@ -45,12 +47,12 @@ export function WishAdminForm({ wish, apps, skills, copy }) {
           <div className="mt-4 text-xs text-slate-500">{apps.map((item) => item.app_id).join(" · ") || "-"}</div>
           <div className="mt-3 text-xs text-slate-500">{skills.map((item) => item.skill_id).join(" · ") || "-"}</div>
         </div>
-        <form action={mergeAction} className="table-card p-6" onSubmit={(event) => { if (!window.confirm(copy.mergeConfirm)) event.preventDefault(); }}>
+<DangerForm action={mergeAction} className="table-card p-6" confirm={copy.mergeConfirm}>
           <input type="hidden" name="id" value={wish.id} />
           <Field label={copy.mergeTarget} name="targetWishId" required />
           {mergeState.message ? <p className={`my-4 rounded-lg px-4 py-3 text-sm ${mergeState.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>{mergeState.message}</p> : null}
           <div className="mt-4"><SubmitButton disabled={mergePending}>{mergePending ? copy.merging : copy.merge}</SubmitButton></div>
-        </form>
+        </DangerForm>
       </aside>
     </div>
   );

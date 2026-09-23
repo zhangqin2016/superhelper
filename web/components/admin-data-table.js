@@ -11,6 +11,8 @@ import {
 import { ArrowUpDown } from "lucide-react";
 import { Card } from "./ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { AdminEmpty } from "./admin-empty";
+import { useI18n } from "../lib/use-i18n";
 
 export function SortHeader({ column, children }) {
   return (
@@ -22,6 +24,7 @@ export function SortHeader({ column, children }) {
 }
 
 export function AdminDataTable({ columns, data, empty, filterPlaceholder = "Search..." }) {
+  const { t } = useI18n();
   const [sorting, setSorting] = useState([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const table = useReactTable({
@@ -69,7 +72,7 @@ export function AdminDataTable({ columns, data, empty, filterPlaceholder = "Sear
           </TableBody>
         </Table>
       ) : (
-        <div className="p-6">{empty}</div>
+        <div className="p-6">{empty || <AdminEmpty title={t?.admin?.emptyState?.title} description={t?.admin?.emptyState?.description} />}</div>
       )}
     </Card>
   );

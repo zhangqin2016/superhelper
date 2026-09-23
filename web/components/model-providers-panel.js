@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { createModelProviderAction, deleteModelProviderAction } from "../app/admin/actions";
+import { DangerForm } from "./danger-form";
 import { SubmitButton } from "./admin-forms";
 import { useI18n } from "../lib/use-i18n";
+import { Field } from "./admin-field";
 
 const labels = {
   zh: {
@@ -129,15 +131,6 @@ function fieldClass() {
   return "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 }
 
-function Field({ label, children, help }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold text-slate-800">{label}</span>
-      {children}
-      {help ? <span className="mt-1 block text-xs text-slate-500">{help}</span> : null}
-    </label>
-  );
-}
 
 function SectionTitle({ title }) {
   return <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>;
@@ -230,7 +223,7 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
           <SectionTitle title={copy.providerSection} />
         </div>
         <Field label={copy.id} help={copy.idHelp}>
-          <input className={fieldClass()} name="id" required value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" list="known-provider-ids" />
+          <input className={fieldClass()} name="id" required minLength={2} maxLength={80} pattern="[A-Za-z0-9._\-]+" title={copy.idHelp} value={draft.id} onChange={(e) => set("id", e.target.value)} placeholder="deepseek" list="known-provider-ids" />
           {/* The media credential ids are not guessable — the picker in the config
               rule form offers "火山方舟", the key it needs is "volcengine-media". */}
           <datalist id="known-provider-ids">
@@ -253,7 +246,7 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
         </Field>
         <div className="md:col-span-2 xl:col-span-3">
           <Field label={copy.baseUrl}>
-            <input className={fieldClass()} name="baseUrl" value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.deepseek.com/anthropic" />
+            <input className={fieldClass()} name="baseUrl" type="url" maxLength={400} value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.deepseek.com/anthropic" />
           </Field>
         </div>
 
@@ -409,10 +402,10 @@ export function ModelProvidersPanel({ providers = [], initialProvider = null, sh
                           <Link href={`/admin/config/providers/new?id=${encodeURIComponent(provider.id)}`} className="me-3 text-xs font-semibold text-brand hover:underline">
                             {copy.edit}
                           </Link>
-                          <form action={deleteModelProviderAction} className="inline">
+                          <DangerForm action={deleteModelProviderAction} name={provider.id}>
                             <input type="hidden" name="id" value={provider.id} />
                             <button type="submit" className="text-xs font-semibold text-red-600 hover:underline">{copy.remove}</button>
-                          </form>
+                          </DangerForm>
                         </>
                       )}
                     </td>

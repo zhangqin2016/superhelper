@@ -185,6 +185,8 @@ export const dictionaries = {
       success: "已收到，我们会在后台查看并跟进。",
     },
     admin: {
+      confirmDestructive: "这个操作不可撤销，确定继续吗？",
+      emptyState: { title: "暂无数据", description: "这里还没有记录。如果你刚配置过，先确认上面的读取提示。" },
       dataUnavailable: {
         title: "部分数据没能读取",
         body: "下面这些接口这次没有返回，页面显示的是空位，不是真实情况。请刷新，或检查服务端。",
@@ -407,6 +409,8 @@ export const dictionaries = {
     },
     contactForm: { name: "Name", email: "Email", company: "Company / team", phone: "Phone / chat", subject: "Subject", message: "What should we help with?", submit: "Submit contact request", sending: "Submitting...", required: "Please leave your name, email, and a message of at least 8 characters.", failed: "Could not submit. Please try again later.", success: "Received. We will review it in the admin console." },
     admin: {
+      confirmDestructive: "This cannot be undone. Continue?",
+      emptyState: { title: "Nothing here yet", description: "No records yet. If you just configured something, check the read notice above." },
       dataUnavailable: {
         title: "Some data could not be read",
         body: "These endpoints did not answer, so what you see is a placeholder rather than the real state. Refresh, or check the server.",
@@ -503,6 +507,8 @@ if (!dictionaries.ar.admin) {
   dictionaries.ar.admin = {
     ...dictionaries.en.admin,
     nav: { ...dictionaries.en.admin.nav, wishes: "مجموعة الأمنيات" },
+    confirmDestructive: "لا يمكن التراجع عن هذا الإجراء. هل تريد المتابعة؟",
+    emptyState: { title: "لا توجد بيانات بعد", description: "لا سجلات هنا بعد. إن كنت قد أعددت شيئاً للتو، فراجع تنبيه القراءة أعلاه." },
     dataUnavailable: {
       title: "تعذّرت قراءة بعض البيانات",
       body: "لم تستجب هذه الواجهات، لذا ما تراه عنصر نائب وليس الحالة الحقيقية. حدّث الصفحة أو افحص الخادم.",

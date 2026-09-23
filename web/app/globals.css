@@ -965,7 +965,22 @@ a {
   background: #0c1015;
   color: white;
   border-right: 1px solid #26313d;
+  /* The nav used to scroll away with the content: on a long list an operator
+     lost every other page and had to scroll back up to move. It stays put and
+     scrolls on its own only when it is taller than the viewport. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+
+/* A narrow, quiet scrollbar inside the dark rail. */
+.admin-sidebar::-webkit-scrollbar { width: 8px; }
+.admin-sidebar::-webkit-scrollbar-thumb { background: #2b3644; border-radius: 4px; }
+.admin-sidebar::-webkit-scrollbar-track { background: transparent; }
 
 .admin-main {
   padding: 32px;
@@ -1177,7 +1192,16 @@ a {
 
 @media (max-width: 860px) {
   .admin-layout { grid-template-columns: 1fr; }
-  .admin-sidebar { display: none; }
+  /* Hiding the rail left a narrow window with no navigation at all — every page
+     but the current one became unreachable. It becomes a short scrollable strip
+     above the content instead. */
+  .admin-sidebar {
+    position: static;
+    height: auto;
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid #26313d;
+  }
   .site-brand-text { font-size: 17px; }
   .docs-content h1 { font-size: clamp(38px, 11vw, 48px); }
   .docs-content { max-width: calc(100vw - 40px); }

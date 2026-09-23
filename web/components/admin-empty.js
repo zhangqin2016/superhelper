@@ -1,4 +1,6 @@
-export function AdminEmpty({ title = "No data yet", description = "Connect the API or create the first record." }) {
+// Presentational only: it carries no language of its own, so every caller
+// supplies translated copy (the shared table supplies the default one).
+export function AdminEmpty({ title = "", description = "" }) {
   return (
     <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
       <div className="font-semibold text-slate-950">{title}</div>

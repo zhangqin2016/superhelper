@@ -2121,6 +2121,24 @@
       "tests": [
         "scripts/test-media-provider-manageability.mjs"
       ]
+    },
+    {
+      "id": "admin-destructive-and-chrome",
+      "protects": "A destructive action in the console always asks first and names its target, and the navigation stays reachable on every screen width.",
+      "baseline": "Confirmations that already existed keep their own wording; a confirmed submit behaves exactly as before.",
+      "failureFallback": "The shared form has no path that skips the question, and an untranslated locale still asks in the packaged sentence.",
+      "tests": [
+        "scripts/test-admin-destructive-and-chrome.mjs"
+      ]
+    },
+    {
+      "id": "admin-consistency",
+      "protects": "The console behaves the same way on every page: an empty list says so, a form field looks and reports the same, row actions sit in one place, and a form catches locally what the server would reject.",
+      "baseline": "Pages that already passed their own empty state or confirmation keep it; browser validation only adds a local check before the same server call.",
+      "failureFallback": "A caller that supplies nothing still gets a translated empty state rather than a blank box, and an untranslated locale falls back to the packaged copy.",
+      "tests": [
+        "scripts/test-admin-consistency.mjs"
+      ]
     }
   ]
 }

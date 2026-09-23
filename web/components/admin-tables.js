@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { DangerForm } from "./danger-form";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
+import { RowActions } from "./row-actions";
 import {
   deleteConfigProfileAction,
   removeLicenseDeviceAction,
@@ -88,19 +90,17 @@ export function DevicesTable({ rows, empty }) {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => row.original.license_device_id ? (
-        <div className="flex gap-2">
+        <RowActions>
           <form action={setLicenseDeviceStatusAction}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
             <input type="hidden" name="status" value={row.original.license_status === "active" ? "disabled" : "active"} />
             <Button variant="outline" size="sm" formAction={setLicenseDeviceStatusAction}>{row.original.license_status === "active" ? t.admin.common.disabled : t.admin.cols.restore}</Button>
           </form>
-          <form action={removeLicenseDeviceAction} onSubmit={(event) => {
-            if (!window.confirm(t.admin.confirm.unbindDevice)) event.preventDefault();
-          }}>
+          <DangerForm action={removeLicenseDeviceAction} confirm={t.admin.confirm.unbindDevice}>
             <input type="hidden" name="id" value={row.original.license_device_id} />
             <Button variant="danger" size="sm">{t.admin.cols.unbind}</Button>
-          </form>
-        </div>
+          </DangerForm>
+        </RowActions>
       ) : "-",
     },
   ];
@@ -250,25 +250,21 @@ export function ConfigProfilesTable({ rows, empty }) {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => (
-        <div className="flex gap-2">
+        <RowActions>
           <form action={setConfigProfileEnabledAction}>
             <input type="hidden" name="id" value={row.original.id} />
             <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
             <Button variant="outline" size="sm">{row.original.enabled ? t.admin.common.disabled : t.admin.common.enabled}</Button>
           </form>
-          <form action={rollbackConfigProfileAction} onSubmit={(event) => {
-            if (!window.confirm(copy.rollbackConfirm)) event.preventDefault();
-          }}>
+          <DangerForm action={rollbackConfigProfileAction} confirm={copy.rollbackConfirm}>
             <input type="hidden" name="id" value={row.original.id} />
             <Button variant="outline" size="sm">{copy.rollback}</Button>
-          </form>
-          <form action={deleteConfigProfileAction} onSubmit={(event) => {
-            if (!window.confirm(copy.deleteConfirm)) event.preventDefault();
-          }}>
+          </DangerForm>
+          <DangerForm action={deleteConfigProfileAction} confirm={copy.deleteConfirm}>
             <input type="hidden" name="id" value={row.original.id} />
             <Button variant="danger" size="sm">{copy.delete}</Button>
-          </form>
-        </div>
+          </DangerForm>
+        </RowActions>
       ),
     },
   ];

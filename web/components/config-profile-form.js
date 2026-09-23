@@ -7,6 +7,7 @@ import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 import { labels, localeLabels } from "./config-profile-copy.js";
 import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds } from "./config-profile-config-builder.js";
+import { Field } from "./admin-field";
 
 const initialState = { ok: null, message: "" };
 
@@ -115,15 +116,6 @@ function scopeLabel(scope, copy) {
   return copy.scopeGlobal;
 }
 
-function ConfigField({ label, children, help }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-semibold text-slate-800">{label}</span>
-      {children}
-      {help ? <span className="mt-1 block text-xs text-slate-500">{help}</span> : null}
-    </label>
-  );
-}
 
 export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [], mediaProviders = [] }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
@@ -264,13 +256,13 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
               ))}
             </div>
             <div className="mt-4 grid gap-4 lg:grid-cols-3">
-              <ConfigField label={adminCopy.id}>
+              <Field label={adminCopy.id}>
                 <input className={fieldClass()} name="id" required value={draft.id} onChange={(event) => updateField("id", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={adminCopy.name}>
+              </Field>
+              <Field label={adminCopy.name}>
                 <input className={fieldClass()} name="name" required value={draft.name} onChange={(event) => updateField("name", event.target.value)} placeholder={adminCopy.namePlaceholder} />
-              </ConfigField>
-              <ConfigField label={adminCopy.targetId} help={copy.targetHelp}>
+              </Field>
+              <Field label={adminCopy.targetId} help={copy.targetHelp}>
                 <input
                   className={fieldClass()}
                   disabled={draft.scope === "global"}
@@ -280,7 +272,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                   value={draft.targetId}
                   onChange={(event) => updateField("targetId", event.target.value)}
                 />
-              </ConfigField>
+              </Field>
             </div>
             <input name="scope" type="hidden" value={draft.scope} />
           </div>
@@ -500,29 +492,29 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
               <span className="mt-1 block text-sm text-slate-500">{t.admin.configAdvanced.desc}</span>
             </summary>
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <ConfigField label={adminCopy.priority}>
+              <Field label={adminCopy.priority}>
                 <input className={fieldClass()} name="priority" type="number" value={draft.priority} onChange={(event) => updateField("priority", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={adminCopy.rolloutPercent}>
+              </Field>
+              <Field label={adminCopy.rolloutPercent}>
                 <input className={fieldClass()} max="100" min="0" name="rolloutPercent" type="number" value={draft.rolloutPercent} onChange={(event) => updateField("rolloutPercent", event.target.value)} />
-              </ConfigField>
+              </Field>
               <div className="md:col-span-2 hidden xl:block" />
               <div className="md:col-span-2">
-                <ConfigField label={copy.registry}>
+                <Field label={copy.registry}>
                   <input className={fieldClass()} value={draft.pluginRegistryUrl} onChange={(event) => updateField("pluginRegistryUrl", event.target.value)} />
-                </ConfigField>
+                </Field>
               </div>
               <div className="md:col-span-2">
-                <ConfigField label={copy.pluginIds} help={copy.pluginIdsHelp}>
+                <Field label={copy.pluginIds} help={copy.pluginIdsHelp}>
                   <MultiSelectField
                     options={skillPackageOptions}
                     value={splitCsv(draft.enabledPluginIds)}
                     onChange={(ids) => updateField("enabledPluginIds", ids.join(","))}
                     emptyHint={copy.providerEmpty}
                   />
-                </ConfigField>
+                </Field>
               </div>
-              <ConfigField label={copy.permissionMode}>
+              <Field label={copy.permissionMode}>
                 <select className={fieldClass()} value={draft.permissionMode} onChange={(event) => updateField("permissionMode", event.target.value)}>
                   <option value="default">default</option>
                   <option value="acceptEdits">acceptEdits</option>
@@ -530,16 +522,16 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                   <option value="plan">plan</option>
                   <option value="dontAsk">dontAsk</option>
                 </select>
-              </ConfigField>
-              <ConfigField label={copy.minVersion}>
+              </Field>
+              <Field label={copy.minVersion}>
                 <input className={fieldClass()} value={draft.minAppVersion} onChange={(event) => updateField("minAppVersion", event.target.value)} placeholder="0.1.23" />
-              </ConfigField>
-              <ConfigField label={copy.timeout}>
+              </Field>
+              <Field label={copy.timeout}>
                 <input className={fieldClass()} type="number" value={draft.requestTimeoutMs} onChange={(event) => updateField("requestTimeoutMs", event.target.value)} />
-              </ConfigField>
-              <ConfigField label={copy.visionModel}>
+              </Field>
+              <Field label={copy.visionModel}>
                 <input className={fieldClass()} value={draft.visionModel} onChange={(event) => updateField("visionModel", event.target.value)} />
-              </ConfigField>
+              </Field>
             </div>
           </details>
         </div>
