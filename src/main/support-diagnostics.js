@@ -317,6 +317,8 @@ async function runSupportDiagnosticsPublic(options = {}) {
   checks.push(deepChecks.workspaceAccessCheck(options));
   checks.push(await deepChecks.environmentProcessesCheck(options));
   checks.push(longTaskDiagnosticCheck(options));
+  // What has actually been failing here, as opposed to what is broken right now.
+  checks.push(require("./support-diagnostics-recent-failures").recentFailuresCheck(options));
   if (license) {
     checks.push(check(
       license.valid || license.activated ? "ok" : "warning",

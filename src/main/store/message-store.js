@@ -24,6 +24,7 @@ const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
 const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
 const runtimeEventRetention = require("./runtime-event-retention");
+const { applyTerminalPayload, isTerminalEventType } = require("./turn-projection-payload");
 
 // The types getProjectedConversation LEFT JOINs to rebuild a turn's assistant
 // text. Reaching one of these means the turn is over.
@@ -331,6 +332,11 @@ class MessageStore {
     return row ? this._hydrateTurnProjection(row) : null;
   }
 
+  /** @see turn-failure-history — what keeps failing on this install. */
+  recentFailureCodes(options = {}) {
+    return require("./turn-failure-history").recentFailureCodes(this.db, options);
+  }
+
   getTurnProjections(sessionId, { limit = 100 } = {}) {
     return this.db.all(
       `SELECT * FROM turn_projection
@@ -608,13 +614,8 @@ class MessageStore {
         errorCode: payload.errorCode || (event.type === "turn.dispatch_blocked" ? "DISPATCH_BLOCKED" : "DISPATCH_OUTCOME_UNKNOWN"),
       } : {}),
     };
-    if (event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.interrupted" || event.type === "turn.stalled") {
-      delete projection.payload.recoveryId;
-      delete projection.payload.manualRecoveryRequired;
-      delete projection.payload.automaticReplay;
-      delete projection.payload.errorCode;
-      delete projection.payload.assistant;
-      delete projection.payload.retryable;
+    if (isTerminalEventType(event.type)) {
+      projection.payload = applyTerminalPayload(projection.payload, payload, event.type);
     }
 
     this.db.run(

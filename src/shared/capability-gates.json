@@ -325,7 +325,8 @@
       "failureFallback": "Use delivered_unverified or observed_work instead of verified_complete.",
       "tests": [
         "scripts/test-task-run-policy.mjs",
-        "scripts/test-turn-view-renderer.mjs"
+        "scripts/test-turn-view-renderer.mjs",
+        "scripts/test-turn-failure-visibility.mjs"
       ]
     },
     {
