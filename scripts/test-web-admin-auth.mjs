@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { adminCredentialHeaders, readAdminSummaryResponse } from "../web/lib/admin-auth-shared.mjs";
+import { ADMIN_SESSION_PATH, adminCredentialHeaders, isPrefetchRequest, readAdminSessionResponse, readAdminSummaryResponse } from "../web/lib/admin-auth-shared.mjs";
 
 // Polyfill Response for Node < 18
 if (typeof globalThis.Response === "undefined") {
@@ -42,6 +42,25 @@ assert.equal(await readAdminSummaryResponse(new Response("<html>Open WebUI</html
 assert.equal(await readAdminSummaryResponse(jsonResponse({ ok: true })), null);
 assert.equal(await readAdminSummaryResponse(jsonResponse(validSummary, { status: 401 })), null);
 
+// The console's session check is the light endpoint, recognised by its shape;
+// another service on the same address still never passes.
+const session = { ok: true, service: "lily-admin", role: "admin" };
+assert.deepEqual(await readAdminSessionResponse(jsonResponse(session)), session);
+assert.equal(await readAdminSessionResponse(jsonResponse({ ok: true })), null, "a bare ok is not this API");
+assert.equal(await readAdminSessionResponse(new Response("<html>Open WebUI</html>", { status: 200, headers: { "content-type": "text/html" } })), null);
+assert.equal(await readAdminSessionResponse(jsonResponse(session, { status: 401 })), null);
+process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_web_admin_auth_test";
+const { ADMIN_SESSION_SERVICE } = await import("../server/src/routes/admin.js");
+assert.equal(ADMIN_SESSION_SERVICE, session.service, "the server answers the shape the console expects");
+
+// A hundred row links are a hundred prefetches: none may cost a session check,
+// and the check never again runs the dashboard aggregate.
+const h = (entries) => new Headers(entries);
+assert.equal(isPrefetchRequest(h({ "next-router-prefetch": "1", rsc: "1" })), true);
+assert.equal(isPrefetchRequest(h({ "sec-purpose": "prefetch;prerender" })), true);
+assert.equal(isPrefetchRequest(h({ rsc: "1" })), false, "a real client navigation is still checked");
+assert.equal(isPrefetchRequest(h({})), false);
+
 process.env.ADMIN_TOKEN = "server-token-must-not-authenticate-web";
 assert.equal(adminCredentialHeaders(), null);
 assert.deepEqual(adminCredentialHeaders({ token: "cookie-token" }), {
@@ -55,5 +74,8 @@ const proxySource = fs.readFileSync(new URL("../web/proxy.js", import.meta.url),
 const apiSource = fs.readFileSync(new URL("../web/lib/api.js", import.meta.url), "utf8");
 assert.equal(proxySource.includes("process.env.ADMIN_TOKEN"), false);
 assert.equal(apiSource.includes("process.env.ADMIN_TOKEN"), false);
+assert.ok(!proxySource.includes("/api/admin/summary"), "the per-request session check does not run the dashboard aggregate");
+assert.ok(proxySource.includes("${ADMIN_SESSION_PATH}") && ADMIN_SESSION_PATH === "/api/admin/session");
+assert.ok(proxySource.indexOf("isPrefetchRequest(request.headers)") < proxySource.indexOf("await validateAdminSession(headers)"), "prefetches are let through before any API call");
 
 console.log("web admin auth response validation ok");

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminCredentialHeaders, readAdminSummaryResponse } from "./lib/admin-auth-shared.mjs";
+import { ADMIN_SESSION_PATH, adminCredentialHeaders, isPrefetchRequest, readAdminSessionResponse } from "./lib/admin-auth-shared.mjs";
 
 const API_BASE = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "https://lilych.lilywb.cn";
 
@@ -33,7 +33,8 @@ function redirectToLogin(request, clearSession = true) {
 }
 
 /**
- * Validate the admin session by calling GET /api/admin/summary.
+ * Validate the admin session by calling GET /api/admin/session (not the
+ * dashboard summary: that ran the whole aggregate per page and per prefetch).
  *
  * Returns { valid: true } on success.  Returns { valid: false, authFailed: true }
  * ONLY when the API responds 401 — the session is truly invalid and the cookie
@@ -47,7 +48,7 @@ async function validateAdminSession(headers) {
 
   let response;
   try {
-    response = await fetch(`${API_BASE}/api/admin/summary`, {
+    response = await fetch(`${API_BASE}${ADMIN_SESSION_PATH}`, {
       cache: "no-store",
       headers,
       signal: controller.signal,
@@ -65,8 +66,8 @@ async function validateAdminSession(headers) {
   // 5xx or other errors → server-side transient problem.
   if (!response.ok) return { valid: false };
 
-  const summary = await readAdminSummaryResponse(response);
-  if (!summary) return { valid: false };
+  const session = await readAdminSessionResponse(response);
+  if (!session) return { valid: false };
 
   return { valid: true };
 }
@@ -126,6 +127,10 @@ export async function proxy(request) {
 
   const headers = adminCredentialHeaders({ token, session });
   if (!headers) return redirectToLogin(request, false);
+
+  // A page of row links is a hundred prefetches; checking each one spent the
+  // operator's API budget before the page's own reads ran (429 on every card).
+  if (isPrefetchRequest(request.headers)) return NextResponse.next();
 
   const result = await validateAdminSession(headers);
 

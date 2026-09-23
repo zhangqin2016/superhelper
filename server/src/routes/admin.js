@@ -60,6 +60,8 @@ async function audit(request, action, targetType, targetId = null, metadata = {}
   }
 }
 
+export const ADMIN_SESSION_SERVICE = "lily-admin";
+
 export async function adminRoutes(app) {
   app.post(
     "/api/admin/login",
@@ -97,6 +99,24 @@ export async function adminRoutes(app) {
     if (request.url === "/api/admin/login") return;
     if (!assertAdmin(request, reply)) return reply;
   });
+
+  // What the web console asks before rendering an admin page: "is this
+  // credential an admin". It used to ask /api/admin/summary — the whole
+  // dashboard aggregate — once per page AND once per link prefetch, so a list
+  // with a hundred row links spent the operator's request budget in seconds and
+  // every real read on the page came back 429.
+  app.get(
+    "/api/admin/session",
+    {
+      schema: {
+        tags: ["admin:auth"],
+        summary: "Confirm an admin credential",
+        description: "Answers only when the preHandler accepted the admin credential; the body identifies this API so a different service on the same address is never mistaken for it.",
+        response: { 200: { type: "object", properties: { ok: { type: "boolean" }, service: { type: "string" }, role: { type: "string" } }, required: ["ok", "service", "role"] } },
+      },
+    },
+    async () => ({ ok: true, service: ADMIN_SESSION_SERVICE, role: "admin" }),
+  );
 
   registerAdminSummaryRoutes(app);
   registerAdminSystemRoutes(app, { audit });
