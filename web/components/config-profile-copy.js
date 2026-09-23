@@ -4,6 +4,11 @@
 
 export const labels = {
   zh: {
+    scopeOrganization: "企业",
+    scopeUser: "用户",
+    editTitle: "编辑下发规则",
+    editJsonOnly: "这条规则含有表单不支持的字段（如协作、角色世界、模型预设），已按原样载入下方 JSON。直接改 JSON 保存；用表单选项会重新生成 JSON 并丢弃这些字段。",
+    idLocked: "规则 ID 不能修改；需要新 ID 请新建规则。",
     quickTitle: "配置要下发给谁",
     quickDesc: "全局默认适合所有设备；设备组/授权/设备配置会按优先级覆盖全局。",
     scopeGlobal: "所有客户端",
@@ -57,6 +62,11 @@ export const labels = {
     gatewayName: "网关配置",
   },
   en: {
+    scopeOrganization: "Organization",
+    scopeUser: "User",
+    editTitle: "Edit delivery rule",
+    editJsonOnly: "This rule has fields the form cannot represent (e.g. collaboration, character worlds, model presets), so it is loaded verbatim into the JSON below. Edit the JSON and save; using the form options regenerates the JSON and drops those fields.",
+    idLocked: "A rule ID cannot change; create a new rule for a new ID.",
     quickTitle: "Who receives this config",
     quickDesc: "Global applies to every client. Device-group/license/device configs override it by priority.",
     scopeGlobal: "All clients",
@@ -110,6 +120,11 @@ export const labels = {
     gatewayName: "gateway config",
   },
   ar: {
+    scopeOrganization: "المؤسسة",
+    scopeUser: "المستخدم",
+    editTitle: "تعديل قاعدة التوزيع",
+    editJsonOnly: "تحتوي هذه القاعدة على حقول لا يمثلها النموذج (مثل التعاون وعوالم الشخصيات وإعدادات النماذج)، لذا حُمّلت كما هي في JSON أدناه. عدّل JSON واحفظ؛ استخدام خيارات النموذج يعيد توليد JSON ويحذف تلك الحقول.",
+    idLocked: "لا يمكن تغيير معرّف القاعدة؛ أنشئ قاعدة جديدة لمعرّف جديد.",
     quickTitle: "من يستلم هذا الإعداد",
     quickDesc: "الإعداد العام لكل العملاء. إعداد المجموعة/الترخيص/الجهاز يغطيه حسب الأولوية.",
     scopeGlobal: "كل العملاء",

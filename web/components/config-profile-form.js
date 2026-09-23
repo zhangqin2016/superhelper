@@ -6,7 +6,7 @@ import { CheckboxField, SubmitButton } from "./admin-forms";
 import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 import { labels, localeLabels } from "./config-profile-copy.js";
-import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds, splitCsv } from "./config-profile-config-builder.js";
+import { MEDIA_PROVIDERS, buildAgents, buildConfig, buildMedia, deliveryProviderIds, draftFromConfig, formCanEditConfig, splitCsv } from "./config-profile-config-builder.js";
 import { Field } from "./admin-field";
 
 const initialState = { ok: null, message: "" };
@@ -94,6 +94,37 @@ function defaultDraft(copy, templates) {
   };
 }
 
+function parseStoredConfig(value) {
+  if (value && typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Editing starts from the saved rule. The form takes over only when it can
+// hold the whole config (rebuilding it gives the same config back); otherwise
+// the saved JSON is loaded verbatim, so a save never drops what the form does
+// not model.
+function editState(profile, copy, templates) {
+  const config = parseStoredConfig(profile.config);
+  const formEditable = formCanEditConfig(config);
+  const draft = {
+    ...defaultDraft(copy, templates),
+    id: String(profile.id || ""),
+    name: String(profile.name || ""),
+    scope: String(profile.scope || "global"),
+    targetId: String(profile.target_id || ""),
+    priority: String(profile.priority ?? 0),
+    rolloutPercent: String(profile.rollout_percent ?? 100),
+    disabled: profile.enabled === false,
+    ...(formEditable ? draftFromConfig(config) : {}),
+  };
+  return { draft, jsonOverride: formEditable ? "" : JSON.stringify(config, null, 2), formEditable };
+}
+
 function selectedTemplate(draft, templates) {
   return templates.find((template) => template.id === draft.selectedTemplateId) || templates[0] || FALLBACK_TEMPLATE;
 }
@@ -106,11 +137,13 @@ function scopeLabel(scope, copy) {
   if (scope === "group") return copy.scopeGroup;
   if (scope === "license") return copy.scopeLicense;
   if (scope === "device") return copy.scopeDevice;
+  if (scope === "organization") return copy.scopeOrganization;
+  if (scope === "user") return copy.scopeUser;
   return copy.scopeGlobal;
 }
 
 
-export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [], mediaProviders = [] }) {
+export function ConfigProfileForm({ providers = [], skillPackageOptions = [], agentPackageOptions = [], mediaProviders = [], profile = null }) {
   const [state, action, pending] = useActionState(createConfigProfileAction, initialState);
   const { locale, t } = useI18n();
   const adminCopy = t.admin.configProfiles;
@@ -119,8 +152,10 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
   // The server's catalog when it answered, the packaged list when it did not —
   // an unreachable admin API must not empty the picker.
   const mediaCatalog = mediaProviders.length ? mediaProviders : MEDIA_PROVIDERS;
-  const [draft, setDraft] = useState(() => defaultDraft(copy, templates));
-  const [jsonOverride, setJsonOverride] = useState("");
+  const editing = Boolean(profile?.id);
+  const [initial] = useState(() => (editing ? editState(profile, copy, templates) : { draft: defaultDraft(copy, templates), jsonOverride: "", formEditable: true }));
+  const [draft, setDraft] = useState(initial.draft);
+  const [jsonOverride, setJsonOverride] = useState(initial.jsonOverride);
 
   const activeTemplate = selectedTemplate(draft, templates);
   const providerCapabilities = useMemo(
@@ -150,8 +185,9 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
     setJsonOverride("");
     setDraft((current) => ({
       ...current,
-      id: current.scope === "global" ? `${template.id}-global` : current.id,
-      name: `${templateLabel(template)} ${copy.gatewayName}`,
+      // An existing rule keeps its identity and its name.
+      id: !editing && current.scope === "global" ? `${template.id}-global` : current.id,
+      name: editing ? current.name : `${templateLabel(template)} ${copy.gatewayName}`,
       selectedTemplateId: template.id,
       menuProviders: Array.from(new Set([...(current.menuProviders || []), template.id].filter(Boolean))),
       baseUrl: template.route,
@@ -164,7 +200,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
       ...current,
       scope,
       targetId: scope === "global" ? "" : current.targetId,
-      id: scope === "global" ? `${current.selectedTemplateId}-global` : current.id,
+      id: !editing && scope === "global" ? `${current.selectedTemplateId}-global` : current.id,
     }));
   }
 
@@ -219,8 +255,9 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
   return (
     <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
       <div className="flex flex-col gap-2 border-b border-slate-100 pb-5">
-        <h2 className="text-2xl font-semibold text-slate-950">{adminCopy.formTitle}</h2>
+        <h2 className="text-2xl font-semibold text-slate-950">{editing ? copy.editTitle : adminCopy.formTitle}</h2>
         <p className="max-w-4xl text-sm text-slate-500">{adminCopy.formDesc}</p>
+        {editing && !initial.formEditable ? <p role="note" className="max-w-4xl rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{copy.editJsonOnly}</p> : null}
       </div>
 
       <form action={action} className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -233,7 +270,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
               <p className="mt-1 text-sm text-slate-500">{copy.quickDesc}</p>
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {["global", "group", "license", "device"].map((scope) => (
+              {[...new Set(["global", "group", "license", "device", ...(editing ? [draft.scope] : [])])].map((scope) => (
                 <button
                   key={scope}
                   type="button"
@@ -250,7 +287,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
             </div>
             <div className="mt-4 grid gap-4 lg:grid-cols-3">
               <Field label={adminCopy.id}>
-                <input className={fieldClass()} name="id" required value={draft.id} onChange={(event) => updateField("id", event.target.value)} />
+                <input className={`${fieldClass()} ${editing ? "bg-slate-100 text-slate-500" : ""}`} name="id" required readOnly={editing} title={editing ? copy.idLocked : undefined} value={draft.id} onChange={(event) => updateField("id", event.target.value)} />
               </Field>
               <Field label={adminCopy.name}>
                 <input className={fieldClass()} name="name" required value={draft.name} onChange={(event) => updateField("name", event.target.value)} placeholder={adminCopy.namePlaceholder} />
@@ -572,7 +609,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
               ) : null}
             </dl>
 
-            <details className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3">
+            <details open={editing && !initial.formEditable ? true : undefined} className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3">
               <summary className="cursor-pointer text-sm font-semibold">{copy.advanced}</summary>
               <p className="mt-3 text-xs text-slate-400">{copy.advancedDesc}</p>
               <textarea
@@ -585,7 +622,7 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
             </details>
 
             <div className="mt-5 flex flex-col gap-4 border-t border-white/10 pt-5">
-              <CheckboxField label={adminCopy.disabled} name="disabled" />
+              <CheckboxField label={adminCopy.disabled} name="disabled" defaultChecked={draft.disabled} />
               <SubmitButton disabled={pending || jsonInvalid}>{pending ? "..." : adminCopy.save}</SubmitButton>
             </div>
           </div>

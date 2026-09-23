@@ -1,14 +1,21 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../../components/admin-shell";
+import { AdminEmpty } from "../../../../../components/admin-empty";
 import { ConfigProfileForm } from "../../../../../components/config-profile-form";
 import { loadAdmin } from "../../../../../lib/api";
 import { getI18n } from "../../../../../lib/i18n.mjs";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewConfigProfilePage() {
+// Edit starts from the saved rule: the form is seeded with it, and saving
+// writes back to the same id (the API's upsert records a revision, so the
+// previous version stays one rollback away).
+export default async function EditConfigProfilePage({ params }) {
+  const { id } = await params;
   const { t } = await getI18n();
-  const [providersData, skillsData, agentsData, mediaData] = await Promise.all([
+  const c = t.admin.configProfiles;
+  const [profileData, providersData, skillsData, agentsData, mediaData] = await Promise.all([
+    loadAdmin(`/api/admin/config-profiles/${encodeURIComponent(id)}`, null),
     loadAdmin("/api/admin/model-providers", { providers: [] }),
     loadAdmin("/api/admin/skill-packages", { skillPackages: [] }),
     loadAdmin("/api/admin/agent-packages", { agentPackages: [] }),
@@ -29,12 +36,20 @@ export default async function NewConfigProfilePage() {
     agentPackageOptions.push({ id, label: definition.name ? `${definition.name} (${id})` : id });
   }
 
+  const profile = profileData?.profile;
+  if (!profile) {
+    return (
+      <AdminShell title={c.editMissingTitle} subtitle={id}>
+        <AdminEmpty title={c.editMissingTitle} description={c.editMissingDesc} />
+      </AdminShell>
+    );
+  }
   return (
-    <AdminShell title="新增下发规则" subtitle="创建一条客户端配置下发规则。已有规则在列表里点「编辑」修改。">
+    <AdminShell title={`${c.edit} · ${profile.name || profile.id}`} subtitle={c.editSubtitle}>
       <div className="mb-5">
-        <Link href="/admin/config/profiles" className="text-sm font-semibold text-brand">返回下发规则</Link>
+        <Link href="/admin/config/profiles" className="text-sm font-semibold text-brand">{c.back}</Link>
       </div>
-      <ConfigProfileForm providers={providersData.gateway || []} skillPackageOptions={skillPackageOptions} agentPackageOptions={agentPackageOptions} mediaProviders={mediaData.mediaProviders || []} />
+      <ConfigProfileForm providers={providersData.gateway || []} skillPackageOptions={skillPackageOptions} agentPackageOptions={agentPackageOptions} mediaProviders={mediaData.mediaProviders || []} profile={profile} />
     </AdminShell>
   );
 }

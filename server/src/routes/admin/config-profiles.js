@@ -271,6 +271,23 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
     return reply.code(201).send({ ok: true, id: input.id });
   });
 
+  app.get(
+    "/api/admin/config-profiles/:id",
+    {
+      schema: {
+        tags: ["admin:config-profiles"],
+        summary: "Get one config profile",
+        description: "Returns a single config profile, so the console can edit it starting from what is saved.",
+        response: { 200: okResponse({ profile: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async (request, reply) => {
+      const profile = await db.selectFrom("config_profiles").selectAll().where("id", "=", request.params.id).executeTakeFirst();
+      if (!profile) return reply.code(404).send({ ok: false, code: "CONFIG_PROFILE_NOT_FOUND" });
+      return { profile };
+    },
+  );
+
   app.patch(
     "/api/admin/config-profiles/:id",
     {

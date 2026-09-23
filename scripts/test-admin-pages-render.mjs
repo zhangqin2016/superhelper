@@ -274,6 +274,45 @@ await check("diagnostics: the list fits its card, ranks kinds by reach, and keep
   assert.ok(!/LIST_COLUMNS = \[[^\]]*"trace"/.test(api));
 });
 
+await check("a delivery rule can be edited, starting from what is saved", async () => {
+  const builder = load(path.join(WEB, "x.js"), "./components/config-profile-config-builder.js");
+  // A rule the form fully models round-trips; one with fields it does not is
+  // loaded verbatim so a save cannot drop them.
+  const formConfig = builder.buildConfig({ ...builder.draftFromConfig({}), selectedTemplateId: "deepseek", menuProviders: ["deepseek"], permissionMode: "acceptEdits", imageProviders: ["dashscope"], imageDefault: "dashscope" }, { id: "deepseek", provider: "deepseek" });
+  assert.equal(builder.formCanEditConfig(formConfig), true, "a config the form wrote is editable in the form");
+  const richConfig = { ...formConfig, collaboration: { enabled: true }, characterWorlds: { enabled: false } };
+  assert.equal(builder.formCanEditConfig(richConfig), false, "extra sections force verbatim JSON editing");
+
+  const profile = (id, config, enabled) => ({ id, name: `rule ${id}`, scope: "organization", target_id: "org_1", priority: 7, rollout_percent: 40, enabled, config });
+  samples.set("/api/admin/config-profiles/", { profile: profile("rich", richConfig, false) });
+  const rich = await renderPage("app/admin/config/profiles/[id]/page.js");
+  const copy = (await import("../web/components/config-profile-copy.js")).localeLabels("zh");
+  assert.match(rich, /name="id"[^>]*readOnly=""|readOnly=""[^>]*name="id"/i, "the id cannot be changed");
+  assert.match(rich, /value="rich"/);
+  assert.ok(rich.includes(copy.editJsonOnly), "the operator is told why the JSON is in charge");
+  assert.ok(rich.includes("collaboration") && rich.includes("characterWorlds"), "fields the form does not model are loaded, not dropped");
+  const disabledBox = (html) => (html.match(/<input[^>]*name="disabled"[^>]*>/) || [""])[0];
+  assert.match(disabledBox(rich), /checked=""/, "a disabled rule stays disabled when saved unchanged");
+  assert.ok(rich.includes(copy.scopeOrganization), "an organization rule shows its own scope, not 'all clients'");
+  assert.match(rich, /name="priority"[^>]*value="7"/);
+  assert.match(rich, /name="rolloutPercent"[^>]*value="40"/);
+
+  samples.set("/api/admin/config-profiles/", { profile: profile("plain", formConfig, true) });
+  const plain = await renderPage("app/admin/config/profiles/[id]/page.js");
+  assert.ok(!plain.includes(copy.editJsonOnly), "a config the form models is edited in the form");
+  const hidden = (/<input[^>]*name="config"[^>]*>/.exec(plain)?.[0].match(/value="([^"]*)"/) || [])[1] || "";
+  const submitted = JSON.parse(hidden.replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  delete submitted.models.capabilities;
+  const stored = JSON.parse(JSON.stringify(formConfig));
+  delete stored.models.capabilities;
+  assert.deepEqual(submitted, stored, "saving without a change writes back exactly what was stored");
+  assert.doesNotMatch(disabledBox(plain), /checked=""/, "and an enabled one stays enabled");
+  samples.clear();
+
+  const tablesSource = fs.readFileSync(path.join(WEB, "components/admin-tables.js"), "utf8");
+  assert.match(tablesSource, /href=\{`\/admin\/config\/profiles\/\$\{encodeURIComponent\(row\.original\.id\)\}`\}/, "every rule in the list links to its editor");
+});
+
 await check("no toggle is labelled with a state word", () => {
   const offenders = [];
   for (const dir of ["web/components", "web/app/admin"]) {

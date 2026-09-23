@@ -49,10 +49,10 @@ export function SelectField({ label, name, options, defaultValue }) {
   );
 }
 
-export function CheckboxField({ label, name }) {
+export function CheckboxField({ label, name, defaultChecked = false }) {
   return (
     <label className="flex items-center gap-2 text-sm text-slate-600">
-      <input className="h-4 w-4 rounded border-slate-300 text-brand" name={name} type="checkbox" />
+      <input className="h-4 w-4 rounded border-slate-300 text-brand" name={name} type="checkbox" defaultChecked={defaultChecked} />
       {label}
     </label>
   );

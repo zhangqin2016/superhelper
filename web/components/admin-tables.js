@@ -302,7 +302,7 @@ export function ConfigProfilesTable({ rows, empty }) {
   const copy = t.admin.configProfiles;
   const columns = [
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.id}</span> },
-    { accessorKey: "name", header: copy.name },
+    { accessorKey: "name", header: copy.name, cell: ({ row }) => <Link href={`/admin/config/profiles/${encodeURIComponent(row.original.id)}`} className="font-medium text-slate-900 hover:text-brand hover:underline">{row.original.name || row.original.id}</Link> },
     { accessorKey: "scope", header: copy.scope, cell: ({ row }) => <Badge variant="brand">{row.original.scope}</Badge> },
     { accessorKey: "target_id", header: copy.targetId, cell: ({ row }) => <span className="font-mono">{row.original.target_id || "-"}</span> },
     { accessorKey: "priority", header: ({ column }) => <SortHeader column={column}>{copy.priority}</SortHeader> },
@@ -314,6 +314,7 @@ export function ConfigProfilesTable({ rows, empty }) {
       header: t.admin.common.action,
       cell: ({ row }) => (
         <RowActions>
+          <Link href={`/admin/config/profiles/${encodeURIComponent(row.original.id)}`} className="inline-flex h-8 items-center rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 hover:bg-slate-50">{copy.edit}</Link>
           <form action={setConfigProfileEnabledAction}>
             <input type="hidden" name="id" value={row.original.id} />
             <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />

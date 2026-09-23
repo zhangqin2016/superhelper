@@ -95,3 +95,67 @@ export function buildConfig(draft, template) {
     ...agentsPart,
   };
 }
+
+// The inverse of buildConfig: the form's draft fields a stored config implies.
+// Editing a rule must start from what is saved, not from the new-rule
+// defaults — a save from defaults would silently overwrite every field the
+// operator did not touch.
+export function draftFromConfig(config) {
+  const value = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+  const models = value.models || {};
+  const providers = Array.isArray(models.providers) ? models.providers.filter(Boolean) : [];
+  const active = providers.includes(models.activeProvider) ? models.activeProvider : providers[0] || "";
+  const env = value.runtime?.env || {};
+  const media = value.media || {};
+  const pickMedia = (entry) => ({
+    providers: Array.isArray(entry?.providers) ? entry.providers.filter((id) => MEDIA_PROVIDER_IDS.has(id)) : [],
+    def: String(entry?.default || ""),
+  });
+  const image = pickMedia(media.image);
+  const video = pickMedia(media.video);
+  const speech = pickMedia(media.speech);
+  const agents = value.agents || {};
+  return {
+    selectedTemplateId: active,
+    menuProviders: providers,
+    pluginRegistryUrl: String(value.tools?.pluginRegistryUrl || "/api/skills/registry"),
+    enabledPluginIds: Array.isArray(value.tools?.enabledPluginIds) ? value.tools.enabledPluginIds.join(", ") : "",
+    permissionMode: String(value.policy?.permissionMode || "default"),
+    minAppVersion: String(value.policy?.minAppVersion || ""),
+    requestTimeoutMs: String(env.API_TIMEOUT_MS || "300000"),
+    visionModel: String(env.VISION_MODEL || "qwen3.7-plus"),
+    imageProviders: image.providers,
+    imageDefault: image.def,
+    videoProviders: video.providers,
+    videoDefault: video.def,
+    speechProviders: speech.providers,
+    speechDefault: speech.def,
+    agentIds: Array.isArray(agents.available) ? agents.available.filter(Boolean) : [],
+    agentDefault: String(agents.default || ""),
+  };
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  }
+  return value;
+}
+
+// Whether the form can hold this stored config without losing anything:
+// rebuilding it from its own draft gives the same config back. Vision
+// capabilities are left out on purpose — they are recomputed from the live
+// provider catalog on every save, so a stale flag is corrected, not lost.
+export function formCanEditConfig(config) {
+  const value = config && typeof config === "object" && !Array.isArray(config) ? config : null;
+  if (!value) return false;
+  const draft = draftFromConfig(value);
+  const rebuilt = buildConfig(draft, { id: draft.selectedTemplateId, provider: draft.selectedTemplateId });
+  const strip = (entry) => {
+    const copy = JSON.parse(JSON.stringify(entry));
+    if (copy.models) delete copy.models.capabilities;
+    return canonical(copy);
+  };
+  return JSON.stringify(strip(rebuilt)) === JSON.stringify(strip(value));
+}
