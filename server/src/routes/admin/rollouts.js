@@ -106,6 +106,12 @@ export function registerAdminRolloutRoutes(app, { audit }) {
             drafts: allRollouts.filter((r) => r.state === "draft").map((r) => ({ ...r, immutableFeed: Boolean(own.find((rel) => rel.id === r.release_id)?.immutable_feed) })),
             halted: ownRollouts.filter((r) => r.state === "halted").slice(0, 3),
             recent: ownRollouts.slice(0, 8),
+            // Devices active this week per version, newest first: what an operator
+            // needs to see before requiring or pulling a version ("affects N devices").
+            versions: adoption.filter((row) => row.platform === platform && row.app_version)
+              .map((row) => ({ version: String(row.app_version), devices: Number(row.devices) }))
+              .sort((a, b) => compareVersions(b.version, a.version)),
+            releasedVersions: [...new Set(own.map((r) => String(r.version)))].sort((a, b) => compareVersions(b, a)).slice(0, 30),
           };
         }),
       };

@@ -169,6 +169,10 @@ await check(`every admin page renders its own empty state (${pages.length} pages
 
 const tables = load(path.join(WEB, "x.js"), "./components/admin-tables.js");
 const day = 24 * 60 * 60 * 1000;
+const renderPage = async (rel, searchParams = {}) => {
+  const Page = load(path.join(WEB, "x.js"), `./${rel}`).default;
+  return (await render(React.createElement(async () => Page({ searchParams: Promise.resolve(searchParams), params: Promise.resolve({}) })))).html;
+};
 
 await check("licenses say how many seats are used and which ones are running out", async () => {
   const rows = [
@@ -194,23 +198,24 @@ await check("devices show drift from the release their platform is offered", asy
   assert.ok(html.includes("darwin-arm64"), "platform and arch read as the release's platform key");
 });
 
-await check("releases say which row each platform is offered, not a column of identical words", async () => {
+await check("the release list is one row per version, each platform saying what it is to clients now", async () => {
   const rows = [
-    { id: "r2", version: "0.1.183", platform: "darwin-arm64", enabled: true, force_update: false, url: "https://cdn.example/app/Lily-0.1.183-arm64.dmg", created_at: new Date().toISOString() },
-    { id: "r1", version: "0.1.182", platform: "darwin-arm64", enabled: true, force_update: false, url: "https://cdn.example/app/Lily-0.1.182-arm64.dmg", created_at: new Date().toISOString() },
-    { id: "r0", version: "0.1.181", platform: "darwin-arm64", enabled: false, force_update: true, url: "https://cdn.example/app/Lily-0.1.181-arm64.dmg", created_at: new Date().toISOString() },
+    { id: "r2", version: "0.1.183", platform: "darwin-arm64", enabled: true, url: "https://cdn.example/app/Lily-0.1.183-arm64.dmg", created_at: new Date().toISOString() },
+    { id: "r2w", version: "0.1.183", platform: "win32-x64", enabled: true, url: "https://cdn.example/app/Lily-0.1.183-x64.exe", created_at: new Date().toISOString() },
+    { id: "r1", version: "0.1.182", platform: "darwin-arm64", enabled: true, url: "https://cdn.example/app/Lily-0.1.182-arm64.dmg", created_at: new Date().toISOString() },
+    { id: "r0", version: "0.1.181", platform: "darwin-arm64", enabled: false, url: "https://cdn.example/app/Lily-0.1.181-arm64.dmg", created_at: new Date().toISOString() },
   ];
-  const { html } = await render(React.createElement(tables.ReleasesTable, { rows, latest: { "darwin-arm64": "0.1.183" }, empty: null }));
-  const copy = t.admin.releasesList;
-  assert.equal(html.split(copy.current).length - 1, 1, "exactly one row is what clients get");
-  assert.ok(html.includes(copy.superseded), "older enabled rows read as superseded");
-  assert.ok(html.includes("Lily-0.1.183-arm64.dmg") && !html.includes(">https://cdn.example"), "the file is named, the raw URL is not the cell text");
+  const support = { "darwin-arm64": { minSupportedVersion: "0.1.182", blockedVersions: [] }, "win32-x64": { blockedVersions: ["0.1.183"] } };
+  const { html } = await render(React.createElement(tables.ReleasesTable, { rows, latest: { "darwin-arm64": "0.1.183" }, support, empty: null }));
+  const copy = t.admin.releaseConsole;
+  const p = t.admin.platforms;
+  assert.equal((html.match(/<tr/g) || []).length, 4, "three versions, three rows (plus the header)");
+  assert.ok(html.includes(`${p["darwin-arm64"]}：${copy.chipOffered}`), "the offered version says so");
+  assert.ok(html.includes(`${p["win32-x64"]}：${copy.chipPulled}`), "a pulled one says so");
+  assert.ok(html.includes(`${copy.chipSuperseded} · ${copy.chipMinimum}`), "the minimum is marked on its row");
+  assert.ok(html.includes(copy.chipDisabled));
+  assert.ok(html.includes("Lily-0.1.183-arm64.dmg") && !html.includes(">https://cdn.example"), "files are named, not raw URLs");
 });
-
-const renderPage = async (rel, searchParams = {}) => {
-  const Page = load(path.join(WEB, "x.js"), `./${rel}`).default;
-  return (await render(React.createElement(async () => Page({ searchParams: Promise.resolve(searchParams), params: Promise.resolve({}) })))).html;
-};
 
 await check("a contact request can be marked handled, and the inbox opens on what is still waiting", async () => {
   samples.set("/api/admin/contact-requests", {
@@ -313,23 +318,33 @@ await check("a delivery rule can be edited, starting from what is saved", async 
   assert.match(tablesSource, /href=\{`\/admin\/config\/profiles\/\$\{encodeURIComponent\(row\.original\.id\)\}`\}/, "every rule in the list links to its editor");
 });
 
-await check("releases open on who is offered what, with only the rollout moves that exist", async () => {
-  samples.set("/api/admin/rollouts", { platforms: [
+await check("releases read as tasks in plain words, each consequence shown before it is confirmed", async () => {
+  samples.set("/api/admin/rollouts", { autoPause: { enabled: false, minDevices: 20, worseRatio: 1.5, windowHours: 24 }, legacyNotice: { enabled: false, licenseIds: [], deviceIds: [], hits: { requests: 0, devices: 0 } }, platforms: [
     { platform: "darwin-arm64", activeWeek: 80, full: { id: "r1", version: "0.1.183", installed: 60 },
-      active: { id: "rol_a", version: "0.1.184", platform: "darwin-arm64", state: "rolling", percent: 25, installed: 9,
+      active: { id: "rol_a", version: "0.1.184", platform: "darwin-arm64", state: "rolling", percent: 25, installed: 9, funnel: {},
         health: { verdict: "worse", rate: 0.4, baseRate: 0.1, baseline: { version: "0.1.183" } } },
-      drafts: [], halted: [] },
+      drafts: [], halted: [], support: { minSupportedVersion: "", blockedVersions: [] },
+      versions: [{ version: "0.1.183", devices: 60 }, { version: "0.1.150", devices: 11 }, { version: "0.1.18", devices: 9 }], releasedVersions: ["0.1.184", "0.1.183", "0.1.182"] },
     { platform: "win32-x64", activeWeek: 40, full: { id: "r2", version: "0.1.182", installed: 30 }, active: null,
-      drafts: [{ id: "rol_b", version: "0.1.184", immutableFeed: true }], halted: [{ id: "rol_c", version: "0.1.183", percent: 10 }] },
+      drafts: [{ id: "rol_b", version: "0.1.184", immutableFeed: true }], halted: [{ id: "rol_c", version: "0.1.183", percent: 10 }],
+      support: { minSupportedVersion: "", blockedVersions: [] }, versions: [], releasedVersions: ["0.1.182"] },
   ] });
-  samples.set("/api/admin/releases", { releases: [], nextCursor: "", total: 0, latest: {} });
+  samples.set("/api/admin/releases", { releases: [
+    { id: "a", version: "0.1.183", platform: "darwin-arm64", enabled: true, url: "https://cdn/x.dmg", created_at: new Date().toISOString() },
+    { id: "b", version: "0.1.183", platform: "darwin-x64", enabled: true, url: "https://cdn/y.dmg", created_at: new Date().toISOString() },
+  ], nextCursor: "", total: 2, latest: {} });
   const html = await renderPage("app/admin/releases/page.js", { rolloutError: "0.1.9 is already rolling" });
-  const copy = t.admin.rollouts;
+  const copy = t.admin.releaseConsole;
+  assert.ok(html.includes(t.admin.platforms["darwin-arm64"]) && !html.includes(">darwin-arm64<"), "platforms have people's names, not build targets");
+  for (const task of ["taskPublish", "taskRequire", "taskPull", "taskProtect", "taskNotice", "taskCleanup"]) assert.ok(html.includes(copy[task]), `the "${task}" task is on the page`);
   assert.ok(html.includes(copy.widenTo.replace("{n}", "50")) && !html.includes(copy.widenTo.replace("{n}", "10")), "only widening steps above 25% are offered");
   assert.ok(html.includes(copy.healthWorse), "a worse version says so next to its rollout");
   assert.ok(html.includes(copy.start) && html.includes('value="start"'), "a draft can be started");
   assert.ok(html.includes(copy.reopen), "a halted rollout can be reopened");
+  assert.ok(html.includes(copy.requireImpact.replace("{n}", "80").replace("{version}", "0.1.184")), "requiring 0.1.184 says it affects the 80 devices below it (60 + 11 + 9), before anything is confirmed");
   assert.match(html, /role="alert"[^>]*>(?:[^<]|<!-- -->)*0\.1\.9 is already rolling/, "a refused move comes back as a notice");
+  assert.equal((html.match(/font-mono">0\.1\.183</g) || []).length >= 1 && (html.match(/<tr/g) || []).length, 2, "one row per version: two platforms, one row (plus the header)");
+  assert.ok(!html.includes(copy.pullRun + "</button></form></td>"), "no per-row pull button in the list");
   samples.clear();
 });
 

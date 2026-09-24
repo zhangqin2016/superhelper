@@ -43,7 +43,7 @@ export default async function ReleaseArchivePage({ searchParams }) {
                   <tr key={item.id} className="border-t border-slate-100 align-top">
                     <td className="px-3 py-2"><input type="checkbox" name="releaseId" value={item.id} defaultChecked aria-label={`${item.platform} ${item.version}`} /></td>
                     <td className="px-3 py-2 font-mono">{item.version}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{item.platform}</td>
+                    <td className="px-3 py-2 text-xs">{t.admin.platforms?.[item.platform] || item.platform}</td>
                     <td className="px-3 py-2 text-slate-500">{new Date(item.created_at).toLocaleDateString()}</td>
                     <td className="px-3 py-2 text-xs">
                       <details><summary className="cursor-pointer">{c.archiveObjects.replace("{n}", String((item.objects || []).length))}</summary>
@@ -64,7 +64,7 @@ export default async function ReleaseArchivePage({ searchParams }) {
           <h2 className="mb-2 text-sm font-semibold">{c.archived}</h2>
           <ul className="space-y-1 text-sm">{data.archived.map((item) => (
             <li key={item.id} className="flex flex-wrap items-center gap-3">
-              <span className="font-mono">{item.version}</span><span className="font-mono text-xs text-slate-500">{item.platform}</span>
+              <span className="font-mono">{item.version}</span><span className="text-xs text-slate-500">{t.admin.platforms?.[item.platform] || item.platform}</span>
               <span className="text-xs text-slate-500">{new Date(item.archived_at).toLocaleDateString()} · {c.archiveObjects.replace("{n}", String((item.archived_objects || []).length))}</span>
               <form action={restoreReleaseAction}><input type="hidden" name="id" value={item.id} /><Button variant="outline" size="sm">{c.restore}</Button></form>
             </li>

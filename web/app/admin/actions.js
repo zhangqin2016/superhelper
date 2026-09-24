@@ -397,12 +397,11 @@ export async function setReleaseSupportAction(formData) {
     const version = text(formData, "version");
     body = { blockedVersions: op === "block" ? [...new Set([...current, version])] : current.filter((v) => v !== version), reason: op };
   } else {
+    // Only what the form carries changes; the server keeps every other field
+    // (a "require" form must not wipe the pulled versions it does not show).
     const deadline = text(formData, "mandateDeadline");
-    body = {
-      minSupportedVersion: text(formData, "minSupportedVersion"),
-      blockedVersions: text(formData, "blockedVersions").split(",").map((v) => v.trim()).filter(Boolean),
-      mandateDeadline: deadline ? new Date(deadline).toISOString() : "",
-    };
+    body = { minSupportedVersion: text(formData, "minSupportedVersion"), mandateDeadline: deadline ? new Date(deadline).toISOString() : "" };
+    if (formData.has("blockedVersions")) body.blockedVersions = text(formData, "blockedVersions").split(",").map((v) => v.trim()).filter(Boolean);
   }
   let failure = "";
   try {

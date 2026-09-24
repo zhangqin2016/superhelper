@@ -263,9 +263,8 @@ await check("the console can mark a shipped release mandatory, and shows who is 
   assert.match(releases, /\? \{ minSupportedVersion: release\.version \}/, "which sets the platform's minimum supported version");
   const attention = fs.readFileSync(path.join(ROOT, "server/src/services/admin-attention.js"), "utf8");
   assert.match(attention, /kind: "fleetBelowRequired"/, "the dashboard counts active devices below the floor");
-  const tables = fs.readFileSync(path.join(ROOT, "web/components/admin-tables.js"), "utf8");
-  assert.match(tables, /setReleaseForceAction/);
-  assert.match(tables, /<DangerForm action=\{setReleaseForceAction\} confirm=/, "making a release mandatory asks first");
+  const console_ = fs.readFileSync(path.join(ROOT, "web/components/release-rollouts-panel.js"), "utf8");
+  assert.match(console_, /<DangerForm action=\{setReleaseSupportAction\} confirm=\{fill\(copy\.requireConfirm, \{ platform: name, version: picker\.version, n: affected \}\)\}>/, "requiring an update asks first, naming the devices it affects");
   const preload = fs.readFileSync(path.join(ROOT, "src/preload.js"), "utf8");
   assert.match(preload, /deferUpdate: \(\) => ipcRenderer\.invoke\("updates:defer"\)/);
   for (const locale of ["zh-CN", "en", "ar"]) {

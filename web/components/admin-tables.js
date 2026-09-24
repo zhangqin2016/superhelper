@@ -15,8 +15,6 @@ import {
   setLicenseStatusAction,
   setConfigProfileEnabledAction,
   setReleaseEnabledAction,
-  setReleaseForceAction,
-  setReleaseSupportAction,
   setRuntimePackEnabledAction,
   setSkillPackageEnabledAction,
   setWorkspaceAppEnabledAction,
@@ -160,94 +158,69 @@ function fileName(url) {
   return decodeURIComponent(value.split("?")[0].split("/").pop() || "") || "-";
 }
 
+// One row per version — a version ships to several platforms, and three rows
+// for one release made a 415-row list read as 1,245. Each platform is a chip
+// that says what it is to clients now; the rare per-platform switch sits under
+// "more", and the decisions (require / pull) live in the tasks above.
 export function ReleasesTable({ rows, latest = {}, support = {}, empty }) {
   const { t } = useI18n();
-  const copy = t.admin.releasesList;
-  const rollouts = t.admin.rollouts;
+  const copy = t.admin.releaseConsole;
+  const groups = [];
+  const byVersion = new Map();
+  for (const row of rows) {
+    if (!byVersion.has(row.version)) {
+      const group = { version: row.version, rows: [], created_at: row.created_at, notes: row.notes || "" };
+      byVersion.set(row.version, group);
+      groups.push(group);
+    }
+    const group = byVersion.get(row.version);
+    group.rows.push(row);
+    if (new Date(row.created_at) < new Date(group.created_at)) group.created_at = row.created_at;
+  }
+  const chip = (row) => {
+    const policy = support[row.platform] || {};
+    const name = t.admin.platforms?.[row.platform] || row.platform;
+    let label = copy.chipSuperseded;
+    let variant = "default";
+    if (!row.enabled) { label = row.archived_at ? copy.chipArchived : copy.chipDisabled; variant = "default"; }
+    else if ((policy.blockedVersions || []).includes(row.version)) { label = copy.chipPulled; variant = "danger"; }
+    else if (latest[row.platform] === row.version) { label = copy.chipOffered; variant = "success"; }
+    if (policy.minSupportedVersion === row.version && variant !== "danger") label = `${label} · ${copy.chipMinimum}`;
+    return <Badge key={row.id} variant={variant} className="me-1 mb-1" title={row.url}>{`${name}：${label}`}</Badge>;
+  };
   const columns = [
     { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.version}</span> },
-    { accessorKey: "platform", header: t.admin.cols.platform },
+    { id: "platforms", header: copy.colPlatforms, cell: ({ row }) => <div className="flex flex-wrap">{row.original.rows.map(chip)}</div> },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{copy.colReleased}</SortHeader>, cell: ({ row }) => new Date(row.original.created_at).toLocaleDateString() },
+    { id: "notes", header: copy.colNotes, cell: ({ row }) => <span className="line-clamp-2 max-w-md text-xs text-slate-600" title={row.original.notes}>{row.original.notes || "—"}</span> },
     {
-      // 415 rows all read "enabled": the column carried no information. What an
-      // operator needs is which row each platform is offered right now.
-      accessorKey: "enabled",
-      header: t.admin.common.status,
-      cell: ({ row }) => {
-        if (!row.original.enabled) return <Badge variant="danger">{t.admin.common.disabled}</Badge>;
-        if (latest[row.original.platform] === row.original.version) return <Badge variant="success">{copy.current}</Badge>;
-        return <span className="text-slate-400">{copy.superseded}</span>;
-      },
-    },
-    {
-      // "Must update" comes from the platform's support policy, shown on the row it names.
-      id: "support",
-      header: t.admin.cols.force,
-      cell: ({ row }) => {
-        const policy = support[row.original.platform] || {};
-        if ((policy.blockedVersions || []).includes(row.original.version)) return <Badge variant="danger">{rollouts.blocked}</Badge>;
-        if (policy.minSupportedVersion === row.original.version) return <Badge variant="warning" title={copy.mandatoryHint}>{rollouts.minimum}</Badge>;
-        return <span className="text-slate-400">—</span>;
-      },
-    },
-    { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? <span className="tabular-nums">{(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB</span> : "-" },
-    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
-    { accessorKey: "url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.url} title={row.original.url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.url)}</a> },
-    {
-      id: "action",
-      header: t.admin.common.action,
+      id: "more",
+      header: "",
       cell: ({ row }) => (
-        <RowActions>
-          <form action={setReleaseEnabledAction}>
-            <input type="hidden" name="id" value={row.original.id} />
-            <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
-          </form>
-          {(() => {
-            const policy = support[row.original.platform] || {};
-            const isMinimum = policy.minSupportedVersion === row.original.version;
-            const blocked = policy.blockedVersions || [];
-            const isBlocked = blocked.includes(row.original.version);
-            const place = (text) => text.replace("{version}", row.original.version).replace("{platform}", row.original.platform);
-            return (
-              <>
-                {isMinimum ? (
-                  <form action={setReleaseForceAction}>
-                    <input type="hidden" name="id" value={row.original.id} />
-                    <input type="hidden" name="forceUpdate" value="false" />
-                    <Button variant="outline" size="sm">{copy.unmarkMandatory}</Button>
+        <details className="text-xs">
+          <summary className="cursor-pointer text-slate-500">{copy.more}</summary>
+          <div className="mt-2 space-y-2">
+            {row.original.rows.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center gap-2">
+                <span className="w-32">{t.admin.platforms?.[item.platform] || item.platform}</span>
+                <a href={item.url} className="max-w-[200px] truncate font-mono text-slate-500 hover:text-brand" title={item.url}>{fileName(item.url)}</a>
+                <span className="tabular-nums text-slate-400">{item.size_bytes ? `${(Number(item.size_bytes) / 1024 / 1024).toFixed(0)} MB` : ""}</span>
+                {!item.archived_at ? (
+                  <form action={setReleaseEnabledAction}>
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="enabled" value={item.enabled ? "false" : "true"} />
+                    <Button variant="outline" size="sm">{item.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
                   </form>
-                ) : !isBlocked ? (
-                  <DangerForm action={setReleaseForceAction} confirm={place(rollouts.markMinimumConfirm)}>
-                    <input type="hidden" name="id" value={row.original.id} />
-                    <input type="hidden" name="forceUpdate" value="true" />
-                    <Button variant="outline" size="sm">{rollouts.markMinimum}</Button>
-                  </DangerForm>
                 ) : null}
-                {isBlocked ? (
-                  <form action={setReleaseSupportAction}>
-                    <input type="hidden" name="platform" value={row.original.platform} />
-                    <input type="hidden" name="op" value="unblock" />
-                    <input type="hidden" name="version" value={row.original.version} />
-                    <input type="hidden" name="blocked" value={blocked.join(",")} />
-                    <Button variant="outline" size="sm">{rollouts.unblock}</Button>
-                  </form>
-                ) : !isMinimum ? (
-                  <DangerForm action={setReleaseSupportAction} confirm={place(rollouts.blockConfirm)}>
-                    <input type="hidden" name="platform" value={row.original.platform} />
-                    <input type="hidden" name="op" value="block" />
-                    <input type="hidden" name="version" value={row.original.version} />
-                    <input type="hidden" name="blocked" value={blocked.join(",")} />
-                    <Button variant="danger" size="sm">{rollouts.block}</Button>
-                  </DangerForm>
-                ) : null}
-              </>
-            );
-          })()}
-        </RowActions>
+              </div>
+            ))}
+            <p className="text-slate-500">{copy.moreHint}</p>
+          </div>
+        </details>
       ),
     },
   ];
-  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.releases}`} />;
+  return <AdminDataTable columns={columns} data={groups} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.releases}`} />;
 }
 
 export function RuntimePacksTable({ rows, empty }) {
