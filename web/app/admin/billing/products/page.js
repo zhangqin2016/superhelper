@@ -1,4 +1,5 @@
 import { AdminShell } from "../../../../components/admin-shell";
+import { BillingAdminTabs } from "../../../../components/billing-admin-tabs";
 import { AdminPageActions } from "../../../../components/admin-page-actions";
 import { BillingProductsTable } from "../../../../components/billing-admin-panels";
 import { loadAdmin } from "../../../../lib/api";
@@ -10,6 +11,7 @@ export default async function BillingProductsPage() {
 
   return (
     <AdminShell title="商品档位" subtitle="管理官网可购买的日卡、周卡、月卡、Token 包、图片包和视频包。">
+      <BillingAdminTabs active="products" />
       <AdminPageActions
         actions={[
           { href: "/admin/billing/products/new", label: "新增 / 更新商品", variant: "primary" },

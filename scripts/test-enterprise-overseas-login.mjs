@@ -4,7 +4,7 @@ import vm from 'node:vm';
 const nodes = new Map();
 const node = id => { if (!nodes.has(id)) nodes.set(id, { hidden: false, value: '', classList: { toggle() {} }, setAttribute() {} }); return nodes.get(id); };
 const source = fs.readFileSync('src/renderer/modules/account-settings.js', 'utf8').replace(/^import .*;\n/gm, '').replace(/^export /gm, '');
-const context = vm.createContext({ $: node, t: k => k, setInterval, clearInterval });
+const context = vm.createContext({ $: node, t: k => k, setInterval, clearInterval, createPurchaseWatch: () => ({ start() {}, stop() {} }) });
 vm.runInContext(source, context);
 vm.runInContext('applyAccountLoginPolicy({ features: { account: false, accountLogin: false, enterpriseAccountLogin: true, purchase: false } })', context);
 assert.equal(node('accountModeSmsBtn').hidden, true);

@@ -10,7 +10,8 @@
     "smoke": "node scripts/smoke.mjs",
     "integration": "node scripts/integration.mjs",
     "test:agent-packages": "node scripts/test-agent-packages-logic.mjs",
-    "e2e:mobile": "node scripts/mobile-command-e2e.mjs"
+    "e2e:mobile": "node scripts/mobile-command-e2e.mjs",
+    "e2e:payments": "node scripts/payments-e2e.mjs"
   },
   "dependencies": {
     "@alicloud/dysmsapi20170525": "^4.6.0",
@@ -27,6 +28,7 @@
     "kysely": "^0.28.8",
     "nanoid": "^5.1.6",
     "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
     "redis": "^5.12.1",
     "ws": "^8.21.0",
     "zod": "^4.1.13"

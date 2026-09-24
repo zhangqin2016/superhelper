@@ -3,6 +3,7 @@ import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 import { renderEntitlements as paintEntitlements } from "./account-entitlements.js";
+import { createPurchaseWatch } from "./purchase-watch.js";
 
 let accountLoggedIn = false;
 let smsCooldownUntil = 0;
@@ -17,6 +18,18 @@ let currentAccountLoginName = "";
 let loginMode = "sms";
 let passwordChanging = false;
 let smsLoginEnabled = true;
+let shownEntitlements = null;
+
+// Once the buyer is sent to the web checkout, the balance refreshes itself
+// when the purchase lands — no "refresh after paying" chore.
+let watchedAccount = "";
+const purchaseWatch = createPurchaseWatch({
+  fetchEntitlements: () => window.assistantClient.refreshAccountEntitlements(),
+  onArrived: () => {
+    showToast(t("settings.accountPurchaseArrived"), "success");
+    void refreshAccountSettings();
+  },
+});
 
 let billingEnabled = true;
 
@@ -130,6 +143,7 @@ function startSmsCooldown(seconds = 60) {
 // The buy link follows the same policy as the account page's purchase button:
 // enterprise editions have no self-serve purchase, so they get the sentence alone.
 function renderEntitlements(entitlements) {
+  shownEntitlements = entitlements ?? null;
   paintEntitlements(entitlements, { onBuy: billingEnabled ? () => void openBilling() : null });
 }
 
@@ -181,6 +195,7 @@ export async function refreshAccountSettings() {
   renderAccountNickname(status);
   window.dispatchEvent(new CustomEvent("lily:account-status-changed"));
   if (!status?.loggedIn) {
+    purchaseWatch.stop();
     currentAccountPhone = "";
     currentAccountLoginName = "";
     statusEl.hidden = false;
@@ -192,6 +207,8 @@ export async function refreshAccountSettings() {
     return;
   }
   currentAccountPhone = status.user?.phoneE164 || status.user?.phone_e164 || "";
+  // A purchase watched for one account never "arrives" for another.
+  if (watchedAccount !== currentAccountPhone) purchaseWatch.stop();
   currentAccountLoginName = status.user?.loginName || status.user?.login_name || status.user?.displayName || "";
   statusEl.textContent = t("settings.accountLoggedIn", {
     phone: currentAccountPhone,
@@ -405,6 +422,8 @@ async function openBilling() {
       return;
     }
     window.open(result.url, "_blank", "noopener,noreferrer");
+    watchedAccount = currentAccountPhone;
+    purchaseWatch.start(shownEntitlements);
     setStatus(t("settings.accountBillingOpened"), "success");
     showToast(t("settings.accountBillingOpened"), "success");
   } finally {

@@ -1612,6 +1612,7 @@
   "settings.accountBillingFailed": "无法打开购买页面，请先登录。",
   "settings.updateTitle": "版本更新",
   "settings.updateHint": "应用会自动检查新版本，也可在这里手动检查。",
+  "settings.accountPurchaseArrived": "购买的额度已到账。",
   "settings.updateCheck": "检查更新",
   "settings.updateDownload": "打开下载",
   "settings.updateChecking": "正在检查更新…",

@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
-import { getAliyunSmsAdminSettings, getMediaDeliveryMode, getModelDeliveryMode, getPaymentAdminSettings, getQiniuAdminSettings, getQiniuConfig, setAliyunSmsConfig, setAppSetting, setPaymentConfig, setQiniuConfig } from "../../services/app-settings.js";
+import { getAliyunSmsAdminSettings, getMediaDeliveryMode, getModelDeliveryMode, getPaymentAdminSettings, getPaymentConfig, getQiniuAdminSettings, getQiniuConfig, setAliyunSmsConfig, setAppSetting, setPaymentConfig, setQiniuConfig } from "../../services/app-settings.js";
 import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
+import { fakePaymentsAllowed, missingCredentials, providerStatus, readyProviders } from "../../services/payments/providers.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
 import { signLicensePayload } from "../../services/security.js";
 import { zodBody, okResponse } from "../../openapi.js";
@@ -36,6 +37,7 @@ const updateSettingsSchema = z.object({
       notifyUrl: z.string().max(500).optional().default(""),
       returnUrl: z.string().max(500).optional().default(""),
       sandbox: z.boolean().default(false),
+      checkoutMode: z.enum(["redirect", "qrcode"]).optional().default("redirect"),
     }).optional().default({}),
     wechat: z.object({
       enabled: z.boolean().default(false),
@@ -46,6 +48,8 @@ const updateSettingsSchema = z.object({
       privateKey: z.string().max(6000).optional().nullable(),
       notifyUrl: z.string().max(500).optional().default(""),
       sandbox: z.boolean().default(false),
+      platformPublicKey: z.string().max(6000).optional().default(""),
+      platformPublicKeyId: z.string().max(200).optional().default(""),
     }).optional().default({}),
   }).optional(),
 });
@@ -123,20 +127,27 @@ async function buildAdminHealth() {
       : "missing Aliyun SMS configuration",
     { region: aliyunSms.region || "cn-hangzhou" },
   ));
-  checks.push(healthCheck(
-    "payment",
-    Boolean(payment.fakePaymentsEnabled || payment.alipay.enabled || payment.wechat.enabled),
-    payment.fakePaymentsEnabled
-      ? "fake payments enabled"
-      : payment.alipay.enabled || payment.wechat.enabled
-        ? "payment provider configured"
-        : "no payment method enabled",
-    {
-      fakePaymentsEnabled: payment.fakePaymentsEnabled,
-      alipayEnabled: payment.alipay.enabled,
-      wechatEnabled: payment.wechat.enabled,
-    },
-  ));
+  {
+    // Ready means a real charge can complete — not that a toggle is on.
+    const config = await getPaymentConfig();
+    const missing = Object.fromEntries(["alipay", "wechat"].filter((p) => config[p].enabled).map((p) => [p, missingCredentials(p, config)]));
+    const ready = readyProviders(config);
+    checks.push(healthCheck(
+      "payment",
+      ready.length > 0,
+      ready.length
+        ? `ready: ${ready.join(", ")}`
+        : Object.keys(missing).length
+          ? `enabled but incomplete: ${Object.entries(missing).map(([p, m]) => `${p} missing ${m.join("/")}`).join("; ")}`
+          : "no payment method enabled",
+      {
+        ready,
+        missing,
+        fakePaymentsEnabled: payment.fakePaymentsEnabled,
+        fakePaymentsAllowed: fakePaymentsAllowed(config),
+      },
+    ));
+  }
 
   const gatewayProviders = Object.values(listModelGatewayProviders()).map((provider) => ({
     id: provider.id,
@@ -240,6 +251,11 @@ export function registerAdminSystemRoutes(app, { audit }) {
         qiniu: await getQiniuAdminSettings(),
         aliyunSms: await getAliyunSmsAdminSettings(),
         payment: await getPaymentAdminSettings(),
+        paymentStatus: {
+          providers: providerStatus(await getPaymentConfig()),
+          // Fake payments hand out credit for nothing: never where money is real.
+          fakePaymentsAllowedHere: process.env.NODE_ENV !== "production",
+        },
       },
     };
   });
@@ -255,8 +271,13 @@ export function registerAdminSystemRoutes(app, { audit }) {
         response: { 200: okResponse({ settings: { type: "object" } }) },
       },
     },
-    async (request) => {
+    async (request, reply) => {
     const input = updateSettingsSchema.parse(request.body);
+    // Refused before anything is written: fake payments hand out credit for
+    // nothing, and production never takes them.
+    if (input.payment?.fakePaymentsEnabled && process.env.NODE_ENV === "production") {
+      return reply.code(400).send({ ok: false, code: "FAKE_PAYMENTS_FORBIDDEN_IN_PRODUCTION" });
+    }
     await setAppSetting("license_trial_days", input.licenseTrialDays);
     if (input.mediaDeliveryMode) {
       await setAppSetting("media_delivery_mode", input.mediaDeliveryMode);

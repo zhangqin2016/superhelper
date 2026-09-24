@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { paymentErrorMessage } from "../../lib/billing-format.mjs";
 import { redirect } from "next/navigation";
 import { userApiPost } from "../../lib/user-api";
 
@@ -145,12 +146,13 @@ export async function createBillingOrderAction(previousStateOrFormData, maybeFor
       productId,
       payProvider,
     });
-    nextUrl = `/account/orders?created=${encodeURIComponent(result.order?.id || "")}`;
+    // Straight to paying it: the order page starts the checkout.
+    nextUrl = `/account/orders/${encodeURIComponent(result.order?.id || "")}?pay=1`;
   } catch (error) {
     if (error instanceof Error && /USER_LOGIN_REQUIRED|WEB_SESSION/.test(error.message)) {
       nextUrl = "/account/login?next=/account/billing";
     } else {
-      return { ok: false, message: error instanceof Error ? error.message : "创建订单失败。" };
+      return { ok: false, message: paymentErrorMessage(error instanceof Error ? error.message : "") };
     }
   }
   redirect(nextUrl);

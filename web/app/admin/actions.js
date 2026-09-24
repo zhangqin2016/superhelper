@@ -601,6 +601,7 @@ export async function updateSettingsAction(formData) {
         notifyUrl: text(formData, "alipayNotifyUrl"),
         returnUrl: text(formData, "alipayReturnUrl"),
         sandbox: bool(formData, "alipaySandbox"),
+        checkoutMode: text(formData, "alipayCheckoutMode") === "qrcode" ? "qrcode" : "redirect",
       },
       wechat: {
         enabled: bool(formData, "wechatEnabled"),
@@ -610,7 +611,8 @@ export async function updateSettingsAction(formData) {
         apiV3Key: text(formData, "wechatApiV3Key") || null,
         privateKey: text(formData, "wechatPrivateKey") || null,
         notifyUrl: text(formData, "wechatNotifyUrl"),
-        sandbox: bool(formData, "wechatSandbox"),
+        platformPublicKey: text(formData, "wechatPlatformPublicKey"),
+        platformPublicKeyId: text(formData, "wechatPlatformPublicKeyId"),
       },
     };
   }

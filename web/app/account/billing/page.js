@@ -36,7 +36,7 @@ export default async function AccountBillingPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">购买与充值</h1>
-            <p className="mt-2 text-sm text-slate-500">选择权益后使用支付宝或微信完成支付，到账后客户端刷新即可使用。</p>
+            <p className="mt-2 text-sm text-slate-500">选择权益后用支付宝或微信付款，到账后桌面客户端会自动刷新额度。</p>
           </div>
           <Link href="/account/login" className="inline-flex rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white">
             手机号登录

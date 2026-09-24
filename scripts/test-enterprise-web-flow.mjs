@@ -35,6 +35,8 @@ async function load(relative, overrides = {}) {
       requireEnterpriseOrganization: async () => org,
     };
     if (id.endsWith('/actions')) return new Proxy({}, { get: () => () => {} });
+    // A relative import is relative to the file being loaded, not to web/.
+    if (id.startsWith('.')) return requireWeb(new URL(id, new URL('../web/' + relative, import.meta.url)).pathname);
     return requireWeb(id);
   }
   vm.runInNewContext(code, { module, exports: module.exports, require, Buffer, FormData, URL, crypto: globalThis.crypto, process }, { filename: relative });

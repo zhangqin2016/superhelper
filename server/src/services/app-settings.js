@@ -212,6 +212,10 @@ export function normalizePaymentConfig(value, fallback = {}) {
       notifyUrl: String(rawAlipay.notifyUrl || fallbackAlipay.notifyUrl || "").trim(),
       returnUrl: String(rawAlipay.returnUrl || fallbackAlipay.returnUrl || "").trim(),
       sandbox: boolValue(rawAlipay.sandbox, fallbackAlipay.sandbox ?? false),
+      // "redirect": Alipay's own checkout page (PC) / wap (phone) — needs the
+      // 电脑网站支付 / 手机网站支付 products. "qrcode": 当面付 QR on our page.
+      checkoutMode: ["redirect", "qrcode"].includes(rawAlipay.checkoutMode) ? rawAlipay.checkoutMode
+        : ["redirect", "qrcode"].includes(fallbackAlipay.checkoutMode) ? fallbackAlipay.checkoutMode : "redirect",
     },
     wechat: {
       enabled: boolValue(rawWechat.enabled, fallbackWechat.enabled ?? false),
@@ -226,6 +230,9 @@ export function normalizePaymentConfig(value, fallback = {}) {
         : String(rawWechat.privateKey || fallbackWechat.privateKey || "").trim(),
       notifyUrl: String(rawWechat.notifyUrl || fallbackWechat.notifyUrl || "").trim(),
       sandbox: boolValue(rawWechat.sandbox, fallbackWechat.sandbox ?? false),
+      // The WeChat Pay public key ("微信支付公钥") and its id verify what WeChat sends.
+      platformPublicKey: String(rawWechat.platformPublicKey || fallbackWechat.platformPublicKey || "").trim(),
+      platformPublicKeyId: String(rawWechat.platformPublicKeyId || fallbackWechat.platformPublicKeyId || "").trim(),
     },
   };
 }
@@ -246,6 +253,7 @@ export async function getPaymentAdminSettings() {
       notifyUrl: payment.alipay.notifyUrl,
       returnUrl: payment.alipay.returnUrl,
       sandbox: payment.alipay.sandbox,
+      checkoutMode: payment.alipay.checkoutMode,
       hasPrivateKey: Boolean(payment.alipay.privateKey),
     },
     wechat: {
@@ -255,6 +263,8 @@ export async function getPaymentAdminSettings() {
       certSerialNo: payment.wechat.certSerialNo,
       notifyUrl: payment.wechat.notifyUrl,
       sandbox: payment.wechat.sandbox,
+      platformPublicKey: payment.wechat.platformPublicKey,
+      platformPublicKeyId: payment.wechat.platformPublicKeyId,
       hasApiV3Key: Boolean(payment.wechat.apiV3Key),
       hasPrivateKey: Boolean(payment.wechat.privateKey),
     },
@@ -274,6 +284,7 @@ export async function setPaymentConfig(input = {}) {
       notifyUrl: input.alipay?.notifyUrl,
       returnUrl: input.alipay?.returnUrl,
       sandbox: input.alipay?.sandbox,
+      checkoutMode: input.alipay?.checkoutMode,
     },
     wechat: {
       enabled: input.wechat?.enabled,
@@ -284,6 +295,8 @@ export async function setPaymentConfig(input = {}) {
       privateKey: input.wechat?.privateKey || current.wechat.privateKey,
       notifyUrl: input.wechat?.notifyUrl,
       sandbox: input.wechat?.sandbox,
+      platformPublicKey: input.wechat?.platformPublicKey,
+      platformPublicKeyId: input.wechat?.platformPublicKeyId,
     },
   }, current);
   await setAppSetting(PAYMENT_CONFIG_KEY, {
@@ -297,6 +310,7 @@ export async function setPaymentConfig(input = {}) {
       notifyUrl: nextPlain.alipay.notifyUrl,
       returnUrl: nextPlain.alipay.returnUrl,
       sandbox: nextPlain.alipay.sandbox,
+      checkoutMode: nextPlain.alipay.checkoutMode,
     },
     wechat: {
       enabled: nextPlain.wechat.enabled,
@@ -307,6 +321,8 @@ export async function setPaymentConfig(input = {}) {
       privateKeyEncrypted: encryptSecret(nextPlain.wechat.privateKey),
       notifyUrl: nextPlain.wechat.notifyUrl,
       sandbox: nextPlain.wechat.sandbox,
+      platformPublicKey: nextPlain.wechat.platformPublicKey,
+      platformPublicKeyId: nextPlain.wechat.platformPublicKeyId,
     },
   });
   return nextPlain;

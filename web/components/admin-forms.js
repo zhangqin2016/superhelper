@@ -39,11 +39,15 @@ export function SelectField({ label, name, options, defaultValue }) {
         name={name}
         defaultValue={defaultValue}
       >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
+        {options.map((option) => {
+          // A bare string is its own label; { value, label } names one.
+          const { value, label: text } = typeof option === "string" ? { value: option, label: option } : option;
+          return (
+            <option key={value} value={value}>
+              {text}
+            </option>
+          );
+        })}
       </select>
     </label>
   );

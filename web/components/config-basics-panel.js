@@ -1,4 +1,4 @@
-import { Field, SubmitButton, TextAreaField } from "./admin-forms";
+import { Field, SelectField, SubmitButton, TextAreaField } from "./admin-forms";
 import { updateSettingsAction } from "../app/admin/actions";
 
 function HiddenTrialDays({ value }) {
@@ -118,10 +118,29 @@ export function SmsSettingsPanel({ settings, t }) {
   );
 }
 
+// Whether a provider can take money now — "enabled" alone is only an intention.
+function ProviderStatus({ status }) {
+  if (!status) return null;
+  const [tone, text] = status.ready
+    ? ["bg-emerald-50 text-emerald-700", "可以收款"]
+    : status.enabled
+      ? ["bg-amber-50 text-amber-800", `未就绪，缺少：${status.missing.join("、")}`]
+      : ["bg-slate-100 text-slate-600", "未启用，官网不显示此支付方式"];
+  return (
+    <div className="mb-4 space-y-1">
+      <p className={`inline-flex rounded-lg px-3 py-1.5 text-xs font-medium ${tone}`}>{text}</p>
+      {status.notifyUrl ? <p className="text-xs text-slate-500">在商户平台登记的通知地址：<span className="font-mono">{status.notifyUrl}</span></p> : null}
+    </div>
+  );
+}
+
 export function PaymentSettingsPanel({ settings, t }) {
   const payment = settings.payment || {};
   const alipay = payment.alipay || {};
   const wechat = payment.wechat || {};
+  const status = settings.paymentStatus || {};
+  const providers = status.providers || {};
+  const fakeAllowedHere = status.fakePaymentsAllowedHere !== false;
   const s = t.admin.settings;
 
   return (
@@ -129,21 +148,36 @@ export function PaymentSettingsPanel({ settings, t }) {
       <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
         <input type="hidden" name="settingsSection" value="payment" />
         <HiddenTrialDays value={settings.licenseTrialDays} />
-        <label className="lg:col-span-2 flex items-center gap-2 text-sm text-slate-700">
-          <input className="h-4 w-4 rounded border-slate-300 text-brand" name="paymentFakePaymentsEnabled" type="checkbox" defaultChecked={Boolean(payment.fakePaymentsEnabled)} />
-          {s.paymentFakePaymentsEnabled || "启用模拟支付"}
-        </label>
+        <div className="lg:col-span-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input className="h-4 w-4 rounded border-slate-300 text-brand" name="paymentFakePaymentsEnabled" type="checkbox" defaultChecked={Boolean(payment.fakePaymentsEnabled) && fakeAllowedHere} disabled={!fakeAllowedHere} />
+            {s.paymentFakePaymentsEnabled || "启用模拟支付"}
+          </label>
+          <p className="mt-1 ps-6 text-xs text-slate-500">
+            {fakeAllowedHere ? "仅用于测试：不收钱直接发放权益。生产环境会被服务端拒绝。" : "生产环境不允许模拟支付（不收钱就发放权益）。"}
+          </p>
+        </div>
 
         <div className="lg:col-span-2 rounded-xl border border-slate-200 p-4">
           <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
             <input className="h-4 w-4 rounded border-slate-300 text-brand" name="alipayEnabled" type="checkbox" defaultChecked={Boolean(alipay.enabled)} />
             {s.alipayTitle || "支付宝"}
           </label>
+          <ProviderStatus status={providers.alipay} />
           <div className="grid gap-5 lg:grid-cols-2">
             <Field label={s.alipayAppId || "AppId"} name="alipayAppId" defaultValue={alipay.appId || ""} />
             <Field label={s.alipayMerchantId || "商户号 / SellerId"} name="alipayMerchantId" defaultValue={alipay.merchantId || ""} />
-            <Field label={s.alipayNotifyUrl || "异步通知 URL"} name="alipayNotifyUrl" defaultValue={alipay.notifyUrl || ""} />
-            <Field label={s.alipayReturnUrl || "同步返回 URL"} name="alipayReturnUrl" defaultValue={alipay.returnUrl || ""} />
+            <Field label={s.alipayNotifyUrl || "异步通知 URL（留空用默认）"} name="alipayNotifyUrl" defaultValue={alipay.notifyUrl || ""} placeholder={providers.alipay?.notifyUrl || ""} />
+            <Field label={s.alipayReturnUrl || "支付后返回的站点（留空用官网）"} name="alipayReturnUrl" defaultValue={alipay.returnUrl || ""} placeholder={providers.alipay?.returnBase || ""} />
+            <SelectField
+              label="收银方式"
+              name="alipayCheckoutMode"
+              defaultValue={alipay.checkoutMode || "redirect"}
+              options={[
+                { value: "redirect", label: "跳转支付宝收银台（电脑/手机网站支付）" },
+                { value: "qrcode", label: "页面内扫码（当面付）" },
+              ]}
+            />
             <TextAreaField label={s.alipayPublicKey || "支付宝公钥"} name="alipayPublicKey" defaultValue={alipay.publicKey || ""} rows={4} />
             <TextAreaField
               label={alipay.hasPrivateKey ? (s.alipayPrivateKeyKeep || "应用私钥（已配置）") : (s.alipayPrivateKey || "应用私钥")}
@@ -163,11 +197,14 @@ export function PaymentSettingsPanel({ settings, t }) {
             <input className="h-4 w-4 rounded border-slate-300 text-brand" name="wechatEnabled" type="checkbox" defaultChecked={Boolean(wechat.enabled)} />
             {s.wechatTitle || "微信支付"}
           </label>
+          <ProviderStatus status={providers.wechat} />
           <div className="grid gap-5 lg:grid-cols-2">
             <Field label={s.wechatAppId || "AppId"} name="wechatAppId" defaultValue={wechat.appId || ""} />
             <Field label={s.wechatMchId || "商户号 MchId"} name="wechatMchId" defaultValue={wechat.mchId || ""} />
             <Field label={s.wechatCertSerialNo || "商户证书序列号"} name="wechatCertSerialNo" defaultValue={wechat.certSerialNo || ""} />
-            <Field label={s.wechatNotifyUrl || "支付通知 URL"} name="wechatNotifyUrl" defaultValue={wechat.notifyUrl || ""} />
+            <Field label={s.wechatNotifyUrl || "支付通知 URL（留空用默认）"} name="wechatNotifyUrl" defaultValue={wechat.notifyUrl || ""} placeholder={providers.wechat?.notifyUrl || ""} />
+            <Field label="微信支付公钥 ID" name="wechatPlatformPublicKeyId" defaultValue={wechat.platformPublicKeyId || ""} placeholder="PUB_KEY_ID_…" />
+            <TextAreaField label="微信支付公钥（用于验证微信的通知和应答）" name="wechatPlatformPublicKey" defaultValue={wechat.platformPublicKey || ""} rows={4} />
             <Field
               label={wechat.hasApiV3Key ? (s.wechatApiV3KeyKeep || "API v3 Key（已配置）") : (s.wechatApiV3Key || "API v3 Key")}
               name="wechatApiV3Key"
@@ -180,10 +217,6 @@ export function PaymentSettingsPanel({ settings, t }) {
               placeholder={wechat.hasPrivateKey ? (s.paymentSecretPlaceholder || "留空表示不修改") : ""}
               rows={4}
             />
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input className="h-4 w-4 rounded border-slate-300 text-brand" name="wechatSandbox" type="checkbox" defaultChecked={Boolean(wechat.sandbox)} />
-              {s.paymentSandbox || "沙箱模式"}
-            </label>
           </div>
         </div>
         <div className="flex items-end">

@@ -68,6 +68,23 @@ export async function userApiPost(path, body) {
   return json;
 }
 
+/** Like userApiPost, but answers { ok, status, code, data } instead of throwing. */
+export async function userApiPostResult(path, body) {
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      cache: "no-store",
+      headers: await userHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body || {}),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || json?.ok === false) return { ok: false, status: response.status, code: json?.code || `HTTP_${response.status}`, data: null };
+    return { ok: true, status: response.status, code: "", data: json };
+  } catch {
+    return { ok: false, status: 0, code: "NETWORK_ERROR", data: null };
+  }
+}
+
 export async function userApiPatch(path, body) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "PATCH",

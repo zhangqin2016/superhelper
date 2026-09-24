@@ -67,24 +67,6 @@ assert.equal(imageGrant.unit_total, 20);
 assert.equal(billing.grantTypeForProduct({ resource_type: "video_generation" }), "paid_video_generations");
 assert.equal(billing.grantTypeForProduct({ resource_type: "membership" }), "membership");
 
-assert.deepEqual(billing.validatePaymentNotification({
-  order: { id: "ord_1", amount_cents: 990, currency: "CNY", status: "pending" },
-  amountCents: 990,
-  currency: "CNY",
-}), { ok: true });
-
-assert.equal(billing.validatePaymentNotification({
-  order: { id: "ord_1", amount_cents: 990, currency: "CNY", status: "pending" },
-  amountCents: 1,
-  currency: "CNY",
-}).code, "PAYMENT_AMOUNT_MISMATCH");
-
-assert.equal(billing.validatePaymentNotification({
-  order: { id: "ord_1", amount_cents: 990, currency: "CNY", status: "paid" },
-  amountCents: 990,
-  currency: "CNY",
-}).code, "ORDER_ALREADY_PAID");
-
 const pricingRules = [
   { id: "default", feature: "image_generation", provider: null, model: null, spec_key: "default", resource_type: "image_generation", unit_cost: 1, enabled: true },
   { id: "volcengine", feature: "image_generation", provider: "volcengine", model: null, spec_key: "volcengine", resource_type: "image_generation", unit_cost: 2, enabled: true },

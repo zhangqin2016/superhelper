@@ -10,6 +10,7 @@ export const OPENAPI_TAGS = [
   { name: "public:auth", description: "User account authentication" },
   { name: "public:account", description: "User account entitlements" },
   { name: "public:billing", description: "User billing and products" },
+  { name: "public:payments", description: "Payment provider notifications (signature-verified, no user session)" },
   { name: "public:catalog", description: "Public skill/app catalog" },
   { name: "public:contacts", description: "Public contact / support requests" },
   { name: "public:releases", description: "Public app release feed" },

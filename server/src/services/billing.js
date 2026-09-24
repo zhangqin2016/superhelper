@@ -53,19 +53,6 @@ export function createGrantFromPaidOrder({ userId, orderId, product, now = new D
   };
 }
 
-export function validatePaymentNotification({ order, amountCents, currency } = {}) {
-  if (!order) return { ok: false, code: "ORDER_NOT_FOUND" };
-  if (order.status === "paid") return { ok: false, code: "ORDER_ALREADY_PAID" };
-  if (order.status !== "pending") return { ok: false, code: "ORDER_NOT_PAYABLE" };
-  if (Number(order.amount_cents || 0) !== Number(amountCents || 0)) {
-    return { ok: false, code: "PAYMENT_AMOUNT_MISMATCH" };
-  }
-  if (String(order.currency || "CNY") !== String(currency || "CNY")) {
-    return { ok: false, code: "PAYMENT_CURRENCY_MISMATCH" };
-  }
-  return { ok: true };
-}
-
 export function choosePricingRule(rules = [], { feature, provider = "", model = "", specKey = "default" } = {}) {
   const enabled = (rules || []).filter((rule) => rule?.enabled !== false && rule?.feature === feature);
   const norm = (value) => String(value || "");

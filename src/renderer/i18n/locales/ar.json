@@ -1613,6 +1613,7 @@
   "settings.accountBillingFailed": "تعذر فتح الدفع. سجّل الدخول أولاً.",
   "settings.updateTitle": "التحديثات",
   "settings.updateHint": "يتحقق التطبيق من التحديثات تلقائياً، ويمكنك التحقق يدوياً هنا.",
+  "settings.accountPurchaseArrived": "وصلت مشترياتك.",
   "settings.updateCheck": "التحقق من التحديثات",
   "settings.updateDownload": "فتح التنزيل",
   "settings.updateChecking": "جارٍ التحقق من التحديثات…",

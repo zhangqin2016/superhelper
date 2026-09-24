@@ -2,6 +2,7 @@ import { publicCatalogRoutes } from "./public/catalog.js";
 import { registerPublicAccountRoutes } from "./public/account.js";
 import { registerPublicAuthRoutes } from "./public/auth.js";
 import { registerPublicBillingRoutes } from "./public/billing.js";
+import { paymentNotifyRoutes } from "./public/payment-notify.js";
 import { registerPublicWorkspaceAppRoutes } from "./public/apps.js";
 import { registerPublicLegalKnowledgePackRoutes } from "./public/legal-knowledge-packs.js";
 import { registerPublicClientConfigRoutes } from "./public/client-config.js";
@@ -32,6 +33,7 @@ export async function publicRoutes(app) {
   registerPublicAuthRoutes(app);
   registerPublicAccountRoutes(app);
   registerPublicBillingRoutes(app);
+  await app.register(paymentNotifyRoutes);
   await app.register(publicCatalogRoutes);
   registerPublicWorkspaceAppRoutes(app);
   registerPublicLegalKnowledgePackRoutes(app);

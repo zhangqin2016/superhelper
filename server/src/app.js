@@ -96,6 +96,9 @@ export async function buildApp() {
       .catch((err) => app.log.warn({ err }, "rollout guard failed"));
   }, 15 * 60 * 1000);
   rolloutGuardTimer.unref?.();
+  // Payments: recover lost notifications, close expired orders, reconcile daily.
+  const paymentJobs = (await import("./services/payments/jobs.js")).startPaymentJobs({ log: app.log });
+  app.addHook("onClose", async () => paymentJobs.stop());
   await registerRoutes(app);
   // Mobile Command WebSocket relay: attaches to the underlying http server's
   // upgrade event (fastify has no WS server). Gated so it only runs in the full

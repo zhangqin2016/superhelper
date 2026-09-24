@@ -1612,6 +1612,7 @@
   "settings.accountBillingFailed": "Could not open billing. Sign in first.",
   "settings.updateTitle": "Updates",
   "settings.updateHint": "The app checks for updates automatically; you can also check manually here.",
+  "settings.accountPurchaseArrived": "Your purchase has arrived.",
   "settings.updateCheck": "Check updates",
   "settings.updateDownload": "Open download",
   "settings.updateChecking": "Checking for updates…",

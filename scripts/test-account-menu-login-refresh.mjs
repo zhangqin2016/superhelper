@@ -14,7 +14,7 @@ window.assistantClient = { getAccountStatus: async () => { if (nextStatus) { con
 const context = vm.createContext({ window, CustomEvent, document: { getElementById: id => elements.get(id), addEventListener() {} },
   t: key => key, accountFeatureEnabled: () => true, openSettingsPage() {},
   $: id => elements.get(id), setStatus() {}, setLoggedInUi() {}, renderAccountNickname() {}, renderEntitlements() {}, loadOrganizations() {},
-  currentAccountPhone: '', currentAccountLoginName: '', console });
+  currentAccountPhone: '', currentAccountLoginName: '', purchaseWatch: { stop() {} }, watchedAccount: '', console });
 vm.runInContext(`${menu}\n${refresh}`, context);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 vm.runInContext('initAccountMenu()', context); await tick();
