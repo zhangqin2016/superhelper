@@ -27,7 +27,11 @@ const real = new Set([
   // which silently makes every config "the same route" (A→B read as a
   // credential rotation) and every unknown context window an object.
   "runtime/engine-config-facts", "model-context-window",
+  "runtime/compaction-timeout", "compaction-outcome",
 ]);
+// The engine waits the fixture compresses to `sdkTimeoutMs`: the transport
+// bound, and the compaction bound read from its one owner rather than retyped.
+const SDK_WAIT_BOUNDS_MS = new Set([30_000, require("../../src/main/runtime/compaction-timeout.js").DEFAULT_COMPACTION_TIMEOUT_MS]);
 const noop = () => {};
 const serviceStub = new Proxy({}, { get: () => () => ({}) });
 const quiet = { log: noop, info: noop, warn: noop, error: noop, debug: noop };
@@ -132,7 +136,7 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     vm.runInNewContext(fs.readFileSync(filename, "utf8"), {
       module, exports: module.exports, require: requireFixture, console: quiet, Buffer, URL, AbortController,
       process: { env: { LANG: "C.UTF-8", LILY_RUNTIME_IDENTITY_V1: "0" }, platform: process.platform },
-      setTimeout: (fn, ms, ...args) => setTimeout(fn, ms === 30_000 ? sdkTimeoutMs : ms, ...args),
+      setTimeout: (fn, ms, ...args) => setTimeout(fn, SDK_WAIT_BOUNDS_MS.has(ms) ? sdkTimeoutMs : ms, ...args),
       clearTimeout, setImmediate, clearImmediate, queueMicrotask,
     }, { filename });
     return module.exports;

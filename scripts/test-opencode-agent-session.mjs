@@ -19,9 +19,9 @@ import path from "node:path";
 const require = createRequire(import.meta.url);
 const {
   OpencodeAgentSession,
-  runWithTimeout,
-  compactionTimeoutMs,
 } = require("../src/main/opencode-agent-session.js");
+const { compactionTimeoutMs } = require("../src/main/runtime/compaction-timeout.js");
+const { createOpencodeSdkSession } = require("../src/main/runtime/opencode-sdk-session.js");
 const { characterApplicationForTrace } = require("../src/main/character-worlds/application-receipt.js");
 
 assert(
@@ -3101,15 +3101,20 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
 // Pre-turn context compaction must be BOUNDED: a hung model summarize call
 // cannot be allowed to freeze the turn forever at "Preparing to compact…".
 {
-  // Timeout mechanism: fast promise resolves; a hang rejects with the label
-  // within the bound (fail-open catch turns that into "skip compaction").
-  const fast = await runWithTimeout(Promise.resolve("ok"), 1000, "X");
-  assert(fast === "ok", "runWithTimeout passes through a fast result");
-  let caught = "";
+  // The bound lives in the SDK call itself: a summarize that never answers
+  // rejects promptly (fail-open catch turns that into "skip compaction"), and
+  // the error carries the still-running call so its real outcome can be kept.
+  const hung = createOpencodeSdkSession(
+    { session: { summarize: () => new Promise(() => {}) } },
+    "/tmp",
+    { timeouts: { summarize: 100 } },
+  );
+  let caught = null;
   const started = Date.now();
-  try { await runWithTimeout(new Promise(() => {}), 100, "COMPACTION_TIMEOUT"); }
-  catch (err) { caught = err.message; }
-  assert(caught === "COMPACTION_TIMEOUT", "a hung promise rejects with the timeout label");
+  try { await hung.summarize("ses_hung", {}); }
+  catch (err) { caught = err; }
+  assert(caught?.code === "OPENCODE_HTTP_TIMEOUT", "a hung summarize rejects with the timeout code");
+  assert(caught?.settlement && typeof caught.settlement.then === "function", "and carries the call that is still running");
   assert(Date.now() - started < 800, "the timeout fires promptly, not after an unbounded wait");
   // Bound is env-configurable but floored so a legit large summary is not cut short.
   assert(compactionTimeoutMs() === 90000, "default compaction timeout is 90s");

@@ -192,6 +192,9 @@ function compactionBlockedDecision({ capabilities = {}, model = {}, runner = {} 
   }
   if (!runner.alive && !runner.canStart) return { action: "skip", reason: "runner_not_alive" };
   if (runner.busy) return { action: "skip", reason: "runner_busy" };
+  // A summary the engine is still producing: a second one over it would redo
+  // the same work, and its outcome is recorded when it settles.
+  if (runner.compacting) return { action: "skip", reason: "compaction_in_progress" };
   return null;
 }
 

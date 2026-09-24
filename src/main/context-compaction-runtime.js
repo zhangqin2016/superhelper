@@ -48,6 +48,18 @@ function compactOptions(model, reason, runner = null) {
   };
 }
 
+// The wait ended but the engine is still summarizing: not a failure, and the
+// outcome is recorded when it settles (compaction-outcome).
+function stillRunningNotice() {
+  return {
+    notice: engineNotice("compactBoundary", {
+      level: "info",
+      done: true,
+      detail: "Conversation compaction is still finishing; this turn continues with the full context.",
+    }),
+  };
+}
+
 function failureNotice(detail = "Conversation memory maintenance was skipped after a runtime error. The current chat can continue.") {
   return {
     notice: engineNotice("compactFailed", { replaces: "compactBoundary", detail }),
@@ -107,6 +119,7 @@ function createContextCompactionRuntime(options = {}) {
           alive: Boolean(runner.isAlive?.()),
           canStart: true,
           busy: Boolean(runner.isBusy?.()),
+          compacting: Boolean(runner.isCompacting?.()),
         },
         sessionSummary,
         currentPromptTokens: promptEstimate.tokens,
@@ -142,6 +155,10 @@ function createContextCompactionRuntime(options = {}) {
         notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context before this turn." }),
       }, { turnId: null });
       const compacted = await runner.compactContext(compactOptions(model, decision.reason, runner));
+      if (!compacted && runner.isCompacting?.()) {
+        emit(sessionId, "engine.notice", stillRunningNotice(), { turnId: null });
+        return { ...event, compacted: false, compactionPending: true };
+      }
       if (!compacted) {
         recordFalseCompaction(sessionId, sessionSummary, decision, model);
         emit(sessionId, "engine.notice", failureNotice(), { turnId: null });
@@ -179,6 +196,7 @@ function createContextCompactionRuntime(options = {}) {
         runner: {
           alive: Boolean(runner.isAlive?.()),
           busy: Boolean(runner.isBusy?.()),
+          compacting: Boolean(runner.isCompacting?.()),
         },
         sessionSummary,
         contextWindowTokens: model?.contextWindowTokens || undefined,
@@ -210,7 +228,9 @@ function createContextCompactionRuntime(options = {}) {
         notice: engineNotice("compactBoundary", { detail: "Preparing to compact conversation context." }),
       }, { turnId: null });
       const compacted = await runner.compactContext(compactOptions(model, decision.reason, runner));
-      if (!compacted) {
+      if (!compacted && runner.isCompacting?.()) {
+        emit(sessionId, "engine.notice", stillRunningNotice(), { turnId: null });
+      } else if (!compacted) {
         recordFalseCompaction(sessionId, sessionSummary, decision, model);
         emit(sessionId, "engine.notice", failureNotice(), { turnId: null });
       }

@@ -62,6 +62,7 @@ const requiredToolCompletion = require("./required-tool-completion-gate");
 const { rememberExecutionProgress, executionProgressKeys } = require("./task-execution-progress");
 const { observeTurnLoop, stopTurnLoop } = require("./turn-loop-guard");
 const { characterApplicationForTrace } = require("./character-worlds/application-receipt");
+const { compactWithOutcome, isCompacting } = require("./compaction-outcome");
 const log = getLogger("opencode-agent-session");
 function rawToolFromEvent(ev = {}) {
   const p = ev.properties || {};
@@ -620,50 +621,22 @@ class OpencodeAgentSession extends EventEmitter {
   }
 
   async compactContext(body = {}) {
-    if (this.isBusy()) return false;
+    if (this.isBusy() || isCompacting(this)) return false;
+    let server;
     try {
-      const server = this._server || (await this._ensureStarted());
-      if (!server?.summarize) return false; grantOpencodeRuntimeIdentityForCompaction(this, server);
-      // Pre-turn compaction calls the model to summarize a large context. If that
-      // call HANGS (slow/stuck gateway, oversized context), an unbounded await
-      // freezes the turn forever at "Preparing to compact…". Bound it and let the
-      // timeout fall into the catch below → return false → the caller fails open
-      // and runs the turn WITHOUT compaction (baseline), never stuck.
-      await runWithTimeout(server.summarize(body), compactionTimeoutMs(), "COMPACTION_TIMEOUT");
-      try {
-        require("./session-memory").markSessionCompacted(this.sessionId, {
-          runtime: "opencode",
-          mode: "native",
-          reason: body.reason || "",
-        });
-      } catch (err) {
-        log.warn("session compaction memory update failed: %s", err?.message || String(err));
-      }
-      return true;
+      server = this._server || (await this._ensureStarted());
     } catch (err) {
-      const errorMessage = err?.message || String(err);
-      const providerID = body?.providerID || "";
-      const modelID = body?.modelID || "";
-      const reason = body?.reason || "";
-      log.warn(
-        `opencode context compaction failed: session=${this.sessionId} cwd=${this.cwd || ""} provider=${providerID || "-"} model=${modelID || "-"} reason=${reason || "-"} error=${errorMessage}`,
-      );
-      try {
-        require("./session-memory").markSessionCompactionFailed(this.sessionId, {
-          runtime: "opencode",
-          mode: "native",
-          reason,
-          providerID,
-          modelID,
-          code: err?.name || "",
-          error: errorMessage,
-        });
-      } catch (memoryErr) {
-        log.warn(`session compaction failure memory update failed: ${memoryErr?.message || String(memoryErr)}`);
-      }
+      log.warn(`opencode context compaction failed: session=${this.sessionId} could not start the engine: ${err?.message || err}`);
       return false;
     }
+    if (!server?.summarize) return false; grantOpencodeRuntimeIdentityForCompaction(this, server);
+    // Bounded inside the SDK by compaction-timeout, the one owner of that wait;
+    // the outcome is what the engine did, recorded even when it lands late.
+    return compactWithOutcome(this, { sessionId: this.sessionId, server, body, cwd: this.cwd || "" });
   }
+
+  /** A summary is still running in the engine for this session. */
+  isCompacting() { return isCompacting(this); }
 
   updateEnvironmentVariables() {
     // OpenCode reads provider/model/search config when the shared serve starts.
@@ -1913,27 +1886,4 @@ function toOpencodeAnswers(response, questions) {
   });
 }
 
-// Bound for pre-turn context compaction (model summarize call). Configurable via
-// LILY_COMPACTION_TIMEOUT_MS; floored at 15s so a legit large summary is not cut
-// short, defaulting to 90s. Past this we fail open and run the turn uncompacted.
-function compactionTimeoutMs() {
-  const raw = Number(process.env.LILY_COMPACTION_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.max(15_000, raw) : 90_000;
-}
-
-// Await a promise but reject with `label` if it does not settle within timeoutMs.
-// Used so a hung engine call degrades to a caught error (fail-open) instead of an
-// unbounded await that freezes the turn.
-async function runWithTimeout(promise, timeoutMs, label = "TIMEOUT") {
-  let timer;
-  try {
-    return await Promise.race([
-      Promise.resolve(promise),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label)), timeoutMs); }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-module.exports = { OpencodeAgentSession, detectIncompleteDeliverable, runWithTimeout, compactionTimeoutMs };
+module.exports = { OpencodeAgentSession, detectIncompleteDeliverable };

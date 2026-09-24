@@ -1,5 +1,7 @@
 "use strict";
 
+const { compactionTimeoutMs } = require("./compaction-timeout");
+
 /**
  * Thin adapter around the official OpenCode SDK resources.
  *
@@ -58,7 +60,9 @@ const SDK_CALL_TIMEOUTS_MS = Object.freeze({
   get: 10_000,
   create: 30_000,
   promptAsync: 30_000,
-  summarize: 30_000,
+  // No `summarize` entry: summarizing is a model call over the whole context,
+  // bounded by compaction-timeout — its one owner — rather than a transport
+  // number that silently undercut it.
   messages: 15_000,
   message: 10_000,
   abort: 10_000,
@@ -78,7 +82,13 @@ function withCallTimeout(promise, timeoutMs, operation) {
     tracked,
     new Promise((_, reject) => {
       timer = setTimeout(() => {
-        reject(new Error(`${operation} failed: OPENCODE_HTTP_TIMEOUT after ${timeoutMs}ms`));
+        // Giving up waiting is not the operation failing: the engine may still
+        // finish it. The still-running call rides the error so a caller that
+        // owns the outcome can record what actually happened.
+        const error = new Error(`${operation} failed: OPENCODE_HTTP_TIMEOUT after ${timeoutMs}ms`);
+        error.code = "OPENCODE_HTTP_TIMEOUT";
+        error.settlement = tracked;
+        reject(error);
       }, timeoutMs);
     }),
   ]).finally(() => {
@@ -97,7 +107,7 @@ function summarizeParams(directory, sessionID, body = {}) {
 function createOpencodeSdkSession(client, directory, options = {}) {
   if (!client?.session) throw new Error("Lily runtime client has no session resource");
   const timeouts = { ...SDK_CALL_TIMEOUTS_MS, ...(options.timeouts || {}) };
-  const call = (operation, promise) => withCallTimeout(promise, timeouts[operation] || 15_000, operation);
+  const call = (operation, promise, timeoutMs = timeouts[operation] || 15_000) => withCallTimeout(promise, timeoutMs, operation);
   return {
     async get(sessionID) {
       return unwrapSdkResult(
@@ -125,7 +135,11 @@ function createOpencodeSdkSession(client, directory, options = {}) {
         throw new Error("Lily runtime client has no session.summarize resource");
       }
       return unwrapSdkResult(
-        await call("summarize", client.session.summarize(summarizeParams(directory, sessionID, body))),
+        await call(
+          "summarize",
+          client.session.summarize(summarizeParams(directory, sessionID, body)),
+          timeouts.summarize || compactionTimeoutMs(),
+        ),
         "session.summarize",
       );
     },
