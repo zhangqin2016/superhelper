@@ -258,4 +258,22 @@ await check("the console can mark a shipped release mandatory, and shows who is 
   }
 });
 
+await check("only --mandatory makes a release mandatory; --force can no longer do it by accident", async () => {
+  // One --force fed three scripts: "republish unchanged catalog packages" in
+  // one, "force update" in the other two — 20 releases were marked mandatory
+  // that way before the client honoured the flag.
+  const oneClick = fs.readFileSync(path.join(ROOT, "scripts/release-one-click.mjs"), "utf8");
+  assert.ok(!/publishArgs\.push\("--force"\)|serverArgs\.push\("--force"\)/.test(oneClick), "--force is not forwarded to a release step");
+  assert.match(oneClick, /if \(options\.mandatory\) serverArgs\.push\("--mandatory"\)/);
+  assert.match(oneClick, /if \(options\.force\) catalogArgs\.push\("--force"\)/, "--force keeps its catalog meaning");
+  assert.match(fs.readFileSync(path.join(ROOT, "scripts/publish-release-server.mjs"), "utf8"), /forceUpdate: Boolean\(options\.mandatory\)/);
+  assert.match(fs.readFileSync(path.join(ROOT, "scripts/release-admin.mjs"), "utf8"), /force: Boolean\(options\.mandatory\),/);
+  const { spawnSync } = await import("node:child_process");
+  for (const script of ["scripts/publish-release-server.mjs", "scripts/release-admin.mjs"]) {
+    const run = spawnSync(process.execPath, [path.join(ROOT, script), "manifest", "--force"], { encoding: "utf8", env: { ...process.env, RELEASE_ADMIN_TOKEN: "" } });
+    assert.notEqual(run.status, 0, `${script} refuses --force`);
+    assert.match(run.stderr, /--mandatory/, `${script} says what to use instead`);
+  }
+});
+
 console.log(`\n${checks} checks passed (update enforcement)`);

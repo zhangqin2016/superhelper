@@ -45,6 +45,10 @@ release flow:
   build -> immutable artifact upload -> server release rows -> latest pointers -> CDN refresh -> public verification
 
 useful options:
+  --mandatory              every client below this version must update (restart
+                           countdown per the delivered update policy)
+  --force                  republish catalog packages even when unchanged
+                           (never makes the release mandatory)
   --skip-build             reuse existing dist artifacts
   --skip-preflight         do not run dependency/runtime-pack release preflight
   --skip-server-publish    upload Qiniu only, do not write server release rows
@@ -73,6 +77,7 @@ function args() {
         "upload",
         "dry-run",
         "force",
+        "mandatory",
         "skip-build",
         "skip-preflight",
         "skip-server-publish",
@@ -603,7 +608,8 @@ try {
   for (const [platform, file] of artifacts) {
     publishArgs.push("--artifact", `${platform}=${file}`);
   }
-  if (options.force) publishArgs.push("--force");
+  // Mandatory and overwrite are different questions; one flag used to answer both.
+  if (options.mandatory) publishArgs.push("--mandatory");
 
   run(scriptNode, publishArgs);
 
@@ -672,7 +678,7 @@ try {
       );
     }
     if (notes) serverArgs.push("--notes", notes);
-    if (options.force) serverArgs.push("--force");
+    if (options.mandatory) serverArgs.push("--mandatory");
     run(scriptNode, serverArgs);
     keepVersionFiles = true;
   } else if (options.upload && !options["dry-run"]) {

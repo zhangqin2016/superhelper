@@ -54,7 +54,11 @@ function usage() {
     [--token ADMIN_TOKEN | --email admin@example.com --password ADMIN_PASSWORD] \\
     --version 0.2.0 \\
     --artifact darwin-arm64=dist/Lily\\ Workbench-0.2.0-arm64.dmg=https://cdn/app.dmg \\
-    [--notes "release notes"] [--force] [--disabled]
+    [--notes "release notes"] [--mandatory] [--disabled]
+
+  --mandatory  every client below this version must update (a forced release is
+               a floor). There is no --force: it once meant "overwrite" in the
+               catalog step and marked 20 releases mandatory by accident.
 
 env:
   RELEASE_ADMIN_TOKEN
@@ -71,7 +75,11 @@ function args() {
     const key = argv[i];
     if (!key.startsWith("--")) usage();
     const name = key.slice(2);
-    if (["force", "disabled"].includes(name)) {
+    if (name === "force") {
+      console.error("--force is not a release option. To make this release mandatory for every client below it, pass --mandatory.");
+      process.exit(1);
+    }
+    if (["mandatory", "disabled"].includes(name)) {
       out[name] = true;
       continue;
     }
@@ -176,7 +184,7 @@ async function createRelease(artifact) {
       sha256: artifact.sha256,
       sizeBytes: artifact.sizeBytes,
       notes: options.notes || null,
-      forceUpdate: Boolean(options.force),
+      forceUpdate: Boolean(options.mandatory),
       enabled: !options.disabled,
     }),
   });

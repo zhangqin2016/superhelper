@@ -35,7 +35,7 @@ function usage() {
     --artifact darwin-arm64="dist/Lily Workbench-0.2.0-arm64.dmg" \\
     [--artifact darwin-x64="dist/Lily Workbench-0.2.0-x64.dmg"] \\
     [--artifact win32-x64="dist/LilyWorkbench-0.2.0-x64.exe"] \\
-    [--prefix app/updates] [--notes "release notes"] [--force] [--build mac|win|all] [--up-host https://upload.qiniup.com] [--upload] [--dry-run]
+    [--prefix app/updates] [--notes "release notes"] [--mandatory] [--build mac|win|all] [--up-host https://upload.qiniup.com] [--upload] [--dry-run]
 
   node scripts/release-admin.mjs upload \\
     --bucket your-qiniu-bucket \\
@@ -61,7 +61,11 @@ function args() {
       continue;
     }
     const key = item.slice(2);
-    if (["upload", "dry-run", "force"].includes(key)) {
+    if (key === "force") {
+      console.error("--force is not a release option. To make this release mandatory, pass --mandatory.");
+      process.exit(1);
+    }
+    if (["upload", "dry-run", "mandatory"].includes(key)) {
       out[key] = true;
       continue;
     }
@@ -312,7 +316,7 @@ function publish(options) {
 
   const unsigned = {
     version,
-    force: Boolean(options.force),
+    force: Boolean(options.mandatory),
     notes: options.notes || "",
     platforms,
   };
