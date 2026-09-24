@@ -15,8 +15,8 @@ export default async function ConfigProvidersPage() {
   ]);
 
   return (
-    <AdminShell title={t.admin.configTabs.providers} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.providers} subtitle={t.admin.configPurpose.providers}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="providers" />
       <AdminPageActions actions={[{ href: "/admin/config/providers/new", label: "新增 / 更新供应商", variant: "primary" }]} />
       <ModelProvidersPanel providers={data.providers || []} showForm={false}  mediaProviders={mediaData.mediaProviders || []} />
     </AdminShell>

@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { db } from "../db.js";
 import { hashLicenseKey } from "./security.js";
 
@@ -87,4 +88,47 @@ export function targetErrorResponse(result) {
       ? `This rule is scoped to a ${what}, so it needs a target id.`
       : `No ${what} matches "${result.targetId}". A rule that matches nothing would save and never apply, so it is refused. For a license, the license key or its internal id both work.`,
   };
+}
+
+// What a person calls each target — the list shows these instead of ids.
+const NAME_SOURCES = {
+  license: { table: "licenses", name: "customer_name" },
+  group: { table: "config_groups", name: "name" },
+  organization: { table: "organizations", name: "name" },
+  user: { table: "users", name: "coalesce(display_name, login_name)" },
+};
+
+async function defaultFindNames(source, ids) {
+  const rows = await db
+    .selectFrom(source.table)
+    .select(["id", sql.raw(source.name).as("name")])
+    .where("id", "in", ids)
+    .execute();
+  return rows;
+}
+
+/**
+ * The human name of each profile's target, keyed `${scope}:${targetId}`, one
+ * query per scope. A lookup that fails leaves that scope unnamed: the list
+ * falls back to the id it showed before, never to an error.
+ */
+export async function configProfileTargetNames(profiles, deps = {}) {
+  const findNames = deps.findNames || defaultFindNames;
+  const idsByScope = new Map();
+  for (const profile of profiles || []) {
+    if (!NAME_SOURCES[profile?.scope] || !profile.target_id) continue;
+    if (!idsByScope.has(profile.scope)) idsByScope.set(profile.scope, new Set());
+    idsByScope.get(profile.scope).add(String(profile.target_id));
+  }
+  const names = new Map();
+  await Promise.all([...idsByScope].map(async ([scope, ids]) => {
+    try {
+      for (const row of await findNames(NAME_SOURCES[scope], [...ids])) {
+        if (row?.name) names.set(`${scope}:${row.id}`, String(row.name));
+      }
+    } catch {
+      // unnamed, as before
+    }
+  }));
+  return names;
 }

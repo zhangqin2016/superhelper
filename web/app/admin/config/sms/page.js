@@ -11,8 +11,8 @@ export default async function ConfigSmsPage() {
   const data = await loadAdmin("/api/admin/settings", { settings: { licenseTrialDays: 3, qiniu: {} } });
 
   return (
-    <AdminShell title={t.admin.configTabs.sms || "短信登录"} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.sms || "短信登录"} subtitle={t.admin.configPurpose.sms}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="sms" />
       <SmsSettingsPanel settings={data.settings || {}} t={t} />
     </AdminShell>
   );

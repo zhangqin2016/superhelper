@@ -12,8 +12,8 @@ export default async function ConfigGroupsPage() {
   const data = await loadAdmin("/api/admin/config-groups", { groups: [] });
 
   return (
-    <AdminShell title={t.admin.configTabs.groups} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.groups} subtitle={t.admin.configPurpose.groups}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="groups" />
       <AdminPageActions
         actions={[
           { href: "/admin/config/groups/new", label: "新增 / 更新设备组", variant: "primary" },

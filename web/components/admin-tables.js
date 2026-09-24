@@ -8,12 +8,9 @@ import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import { RowActions } from "./row-actions";
 import {
-  deleteConfigProfileAction,
   removeLicenseDeviceAction,
-  rollbackConfigProfileAction,
   setLicenseDeviceStatusAction,
   setLicenseStatusAction,
-  setConfigProfileEnabledAction,
   setReleaseEnabledAction,
   setRuntimePackEnabledAction,
   setSkillPackageEnabledAction,
@@ -301,65 +298,3 @@ export function WorkspaceAppsTable({ rows, empty }) {
   return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${t.admin.nav.apps}`} />;
 }
 
-function configSummary(config) {
-  const value = typeof config === "string" ? tryParseJson(config) : config;
-  if (!value || typeof value !== "object") return "-";
-  const parts = [];
-  const providers = Array.isArray(value.models?.providers)
-    ? value.models.providers.length
-    : Array.isArray(value.models?.presets)
-      ? value.models.presets.length
-      : Array.isArray(value.models?.catalog)
-        ? value.models.catalog.length
-        : 0;
-  if (providers) parts.push(`${providers} providers`);
-  if (value.tools?.pluginRegistryUrl) parts.push("skill registry");
-  if (value.policy?.permissionMode) parts.push(`policy: ${value.policy.permissionMode}`);
-  return parts.length ? parts.join(" · ") : JSON.stringify(value).slice(0, 80);
-}
-
-function tryParseJson(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
-export function ConfigProfilesTable({ rows, empty }) {
-  const { t } = useI18n();
-  const copy = t.admin.configProfiles;
-  const columns = [
-    { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>ID</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.id}</span> },
-    { accessorKey: "name", header: copy.name, cell: ({ row }) => <Link href={`/admin/config/profiles/${encodeURIComponent(row.original.id)}`} className="font-medium text-slate-900 hover:text-brand hover:underline">{row.original.name || row.original.id}</Link> },
-    { accessorKey: "scope", header: copy.scope, cell: ({ row }) => <Badge variant="brand">{row.original.scope}</Badge> },
-    { accessorKey: "target_id", header: copy.targetId, cell: ({ row }) => <span className="font-mono">{row.original.target_id || "-"}</span> },
-    { accessorKey: "priority", header: ({ column }) => <SortHeader column={column}>{copy.priority}</SortHeader> },
-    { accessorKey: "rollout_percent", header: copy.rolloutPercent, cell: ({ row }) => `${Number(row.original.rollout_percent ?? 100)}%` },
-    { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
-    { accessorKey: "config", header: copy.config, cell: ({ row }) => <span className="block max-w-[460px] truncate text-slate-500">{configSummary(row.original.config)}</span> },
-    {
-      id: "action",
-      header: t.admin.common.action,
-      cell: ({ row }) => (
-        <RowActions>
-          <Link href={`/admin/config/profiles/${encodeURIComponent(row.original.id)}`} className="inline-flex h-8 items-center rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 hover:bg-slate-50">{copy.edit}</Link>
-          <form action={setConfigProfileEnabledAction}>
-            <input type="hidden" name="id" value={row.original.id} />
-            <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
-          </form>
-          <DangerForm action={rollbackConfigProfileAction} confirm={copy.rollbackConfirm}>
-            <input type="hidden" name="id" value={row.original.id} />
-            <Button variant="outline" size="sm">{copy.rollback}</Button>
-          </DangerForm>
-          <DangerForm action={deleteConfigProfileAction} confirm={copy.deleteConfirm}>
-            <input type="hidden" name="id" value={row.original.id} />
-            <Button variant="danger" size="sm">{copy.delete}</Button>
-          </DangerForm>
-        </RowActions>
-      ),
-    },
-  ];
-  return <AdminDataTable columns={columns} data={rows} empty={empty} filterPlaceholder={`${t.admin.common.search} ${copy.title}`} />;
-}

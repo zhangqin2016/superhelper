@@ -14,7 +14,7 @@ import { Field } from "./admin-field";
 const labels = {
   zh: {
     title: "设备组",
-    desc: "建立设备组后,把设备或授权放进组里;再用上面的「配置」表单为该组(scope=设备组)下发模型。组内成员会继承组的配置。",
+    desc: "先建一个组，再用「成员归组」把设备或授权放进来；然后到「下发规则」新建一条规则，发给选「设备分组」并选这个组。组里的设备都会用这条规则。",
     createTitle: "新建 / 更新设备组",
     assignTitle: "把成员放进组",
     id: "组 ID",
@@ -35,7 +35,7 @@ const labels = {
   },
   en: {
     title: "Device groups",
-    desc: "Create a group, put devices or licenses into it, then use the form above with scope=device group to deliver a model to everyone in it. Members inherit the group's config.",
+    desc: "Create a group, add devices or licenses with Assign members, then create a delivery rule that goes to this device group. Every device in the group uses that rule.",
     createTitle: "Create / update a group",
     assignTitle: "Put a member into a group",
     id: "Group ID",

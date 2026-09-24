@@ -11,8 +11,8 @@ export default async function ConfigSettingsPage() {
   const data = await loadAdmin("/api/admin/settings", { settings: { licenseTrialDays: 3, qiniu: {} } });
 
   return (
-    <AdminShell title={t.admin.configTabs.basics} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.basics} subtitle={t.admin.configPurpose.basics}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="basics" />
       <ConfigDeliveryPanel settings={data.settings || {}} t={t} />
     </AdminShell>
   );

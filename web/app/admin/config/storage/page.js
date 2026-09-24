@@ -11,8 +11,8 @@ export default async function ConfigStoragePage() {
   const data = await loadAdmin("/api/admin/settings", { settings: { licenseTrialDays: 3, qiniu: {} } });
 
   return (
-    <AdminShell title={t.admin.configTabs.storage || "对象存储"} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.storage || "对象存储"} subtitle={t.admin.configPurpose.storage}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="storage" />
       <QiniuSettingsPanel settings={data.settings || {}} t={t} />
     </AdminShell>
   );

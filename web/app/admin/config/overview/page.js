@@ -15,15 +15,16 @@ export default async function ConfigOverviewPage({ searchParams }) {
   const previewQuery = new URLSearchParams();
   if (deviceId) previewQuery.set("deviceId", deviceId);
   if (licenseId) previewQuery.set("licenseId", licenseId);
-  const [data, health, preview] = await Promise.all([
+  const [data, health, preview, providers] = await Promise.all([
     loadAdmin("/api/admin/config-profiles", { profiles: [] }),
     loadAdmin("/api/admin/health", { checks: [], runtime: {}, status: "unknown" }),
     loadAdmin(`/api/admin/config-profiles/effective-preview${previewQuery.size ? `?${previewQuery.toString()}` : ""}`, null),
+    loadAdmin("/api/admin/model-providers", { providers: [] }),
   ]);
 
   return (
-    <AdminShell title={t.admin.configCenter.title} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={labels} />
+    <AdminShell title={t.admin.configCenter.title} subtitle={t.admin.configPurpose.overview}>
+      <ConfigAdminNav labels={labels} current="overview" />
       <ConfigCenterPanels
         rows={data.profiles || []}
         health={health}
@@ -31,6 +32,8 @@ export default async function ConfigOverviewPage({ searchParams }) {
         locale={locale}
         deviceId={deviceId}
         licenseId={licenseId}
+        ruleCopy={t.admin.configRules}
+        providers={providers.providers || []}
       />
     </AdminShell>
   );

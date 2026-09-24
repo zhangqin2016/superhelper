@@ -11,8 +11,8 @@ export default async function ConfigPaymentPage() {
   const data = await loadAdmin("/api/admin/settings", { settings: { licenseTrialDays: 3, qiniu: {} } });
 
   return (
-    <AdminShell title={t.admin.configTabs.payment || "支付配置"} subtitle={t.admin.configCenter.subtitle}>
-      <ConfigAdminNav labels={t.admin.configTabs} />
+    <AdminShell title={t.admin.configTabs.payment || "支付配置"} subtitle={t.admin.configPurpose.payment}>
+      <ConfigAdminNav labels={t.admin.configTabs} current="payment" />
       <PaymentSettingsPanel settings={data.settings || {}} t={t} />
     </AdminShell>
   );

@@ -47,7 +47,8 @@ const stubFor = (file) => {
   if (rel === "lib/api.js") {
     return {
       loadAdmin: async (apiPath, fallback) => {
-        const hit = [...samples.keys()].find((prefix) => apiPath.startsWith(prefix));
+        // The longest matching prefix: "/x/list" must not answer "/x/list/preview".
+        const hit = [...samples.keys()].filter((prefix) => apiPath.startsWith(prefix)).sort((a, b) => b.length - a.length)[0];
         if (hit) requested.push(apiPath);
         return hit ? samples.get(hit) : fallback;
       },
@@ -314,8 +315,64 @@ await check("a delivery rule can be edited, starting from what is saved", async 
   assert.doesNotMatch(disabledBox(plain), /checked=""/, "and an enabled one stays enabled");
   samples.clear();
 
-  const tablesSource = fs.readFileSync(path.join(WEB, "components/admin-tables.js"), "utf8");
-  assert.match(tablesSource, /href=\{`\/admin\/config\/profiles\/\$\{encodeURIComponent\(row\.original\.id\)\}`\}/, "every rule in the list links to its editor");
+  const listSource = fs.readFileSync(path.join(WEB, "components/config-rules-list.js"), "utf8");
+  assert.match(listSource, /const href = `\/admin\/config\/profiles\/\$\{encodeURIComponent\(rule\.id\)\}`/, "every rule in the list links to its editor");
+});
+
+await check("delivery rules read as who gets what, in merge order, without ids up front", async () => {
+  samples.set("/api/admin/config-profiles", { profiles: [
+    { id: "base", name: "默认配置", scope: "global", target_id: null, priority: -100, rollout_percent: 100, enabled: true,
+      config: { schemaVersion: 1, models: { providers: ["deepseek", "kimi"], activeProvider: "deepseek" }, media: { image: { default: "dashscope", providers: ["dashscope"] } }, runtime: { env: { VISION_MODEL: "qwen3.7-plus" } }, policy: { permissionMode: "default" }, collaboration: { tasks: false }, futureArea: { x: 1 } } },
+    { id: "lic-rule", name: "", scope: "license", target_id: "lic_abc", target_name: "星河科技", priority: 20, rollout_percent: 30, enabled: true, config: { models: { providers: ["kimi"] } } },
+    { id: "off-rule", name: "旧规则", scope: "group", target_id: "grp_1", target_name: null, priority: 0, rollout_percent: 100, enabled: false, config: {} },
+  ] });
+  samples.set("/api/admin/model-providers", { providers: [{ id: "deepseek", label: "DeepSeek" }, { id: "kimi", label: "Kimi K2.7" }] });
+  samples.set("/api/admin/media-providers", { mediaProviders: [{ id: "dashscope", label: "阿里百炼 DashScope" }] });
+  const html = (await renderPage("app/admin/config/profiles/page.js")).replace(/<!-- -->/g, "");
+  const copy = t.admin.configRules;
+  assert.ok(html.includes(t.admin.configPurpose.profiles), "the page says what it is for");
+  assert.match(html, /aria-current="page"[^>]*>下发规则</, "the nav marks where you are");
+  assert.ok(html.includes(copy.how), "how rules stack is stated once, above them");
+  assert.ok(html.includes(`${copy.scope.license}${copy.colon}星河科技`), "a license rule names the customer, not lic_abc");
+  assert.ok(html.includes(copy.scope.global), "a global rule says all devices");
+  assert.ok(html.includes(`${copy.scope.group}${copy.colon}grp_1`), "an unnamed target falls back to its id");
+  assert.ok(html.includes("DeepSeek、Kimi K2.7") && html.includes("默认 DeepSeek"), "models by provider name, with the default");
+  assert.ok(html.includes("阿里百炼 DashScope"), "media by provider name");
+  assert.ok(html.includes("qwen3.7-plus"), "the image-reading model is named");
+  assert.ok(html.includes("远程任务 关"), "collaboration switches in words");
+  assert.ok(html.includes("futureArea"), "a config area the summary does not know still shows");
+  assert.ok(html.includes(copy.partial.replace("{percent}", "30")), "a partial rollout says how partial");
+  assert.ok(html.includes(copy.offNote), "a disabled rule says it reaches nobody");
+  assert.ok(html.indexOf("默认配置") < html.indexOf("星河科技"), "listed in the order delivery merges them");
+  const firstMore = html.indexOf(copy.more);
+  assert.ok(firstMore > 0 && html.indexOf(">base<") > firstMore && html.indexOf(">lic_abc<") > firstMore, "ids live under 更多");
+  assert.ok(!/<th/.test(html), "not a table of raw columns");
+  samples.clear();
+});
+
+await check("the config overview says what is happening in sentences, and names rules and models", async () => {
+  samples.set("/api/admin/config-profiles", { profiles: [
+    { id: "base", name: "默认配置", scope: "global", target_id: null, priority: 0, rollout_percent: 100, enabled: true, updated_at: "2026-09-01T00:00:00Z", config: { models: { providers: ["deepseek"] } } },
+    { id: "lic-rule", name: "星河规则", scope: "license", target_id: "lic_abc", target_name: "星河科技", priority: 20, rollout_percent: 100, enabled: false, updated_at: "2026-09-20T00:00:00Z", config: {} },
+  ] });
+  samples.set("/api/admin/health", { status: "ok", checks: [
+    { name: "model_gateway", ok: true, providers: [{ id: "deepseek", ready: true }, { id: "kimi", ready: false }] },
+    { name: "config_delivery", ok: true },
+  ] });
+  samples.set("/api/admin/config-profiles/effective-preview", { appliedProfiles: [{ id: "base", name: "默认配置", scope: "global", targetId: "", priority: 0, rolloutPercent: 100 }],
+    summary: { activePresetId: "lily-managed:deepseek:gateway--model-abc", modelPresets: [{ id: "lily-managed:deepseek:gateway--model-abc", label: "DeepSeek", model: "deepseek-v4-pro", delivery: "server_gateway" }], pluginRegistryUrl: "/api/skills/registry", runtimeSecretKeys: ["VISION_API_KEY"], riskLevel: "warning", risks: { directModelPresets: 0, longLivedModelKeys: 0, runtimeSecretKeys: 1 } } });
+  samples.set("/api/admin/model-providers", { providers: [{ id: "deepseek", label: "DeepSeek" }, { id: "kimi", label: "Kimi K2.7" }] });
+  const html = (await renderPage("app/admin/config/overview/page.js")).replace(/<!-- -->/g, "");
+  assert.ok(html.includes("1 条生效中，共 2 条"), "rules counted in a sentence");
+  assert.ok(html.includes("Kimi K2.7 还没配好"), "the model that is not usable is named, by its name");
+  assert.ok(html.includes("客户端拉取配置：正常"));
+  assert.ok(!html.includes("/api/client/config") && !html.includes(">/api/skills/registry<"), "no endpoint paths as headline figures");
+  assert.ok(html.includes("全部经服务端网关"), "the model route is judged on models alone, not on runtime keys");
+  assert.ok(html.includes("有长期密钥随配置下发到客户端"), "runtime keys are flagged where they belong");
+  assert.ok(html.includes("DeepSeek · deepseek-v4-pro") && !html.includes("gateway--model-abc</dd>"), "the default model by name, not its internal preset id");
+  assert.ok(html.indexOf("星河规则") < html.lastIndexOf(">默认配置<"), "recent rules are the most recently changed first");
+  assert.ok(html.includes(`${t.admin.configRules.scope.license}${t.admin.configRules.colon}星河科技`), "recent rules say who they go to");
+  samples.clear();
 });
 
 await check("releases read as tasks in plain words, each consequence shown before it is confirmed", async () => {

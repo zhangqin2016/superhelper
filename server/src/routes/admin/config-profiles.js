@@ -17,7 +17,7 @@ import {
   withGatewayRuntimeConfig,
 } from "../../services/client-config.js";
 import { getMediaDeliveryMode, getModelDeliveryMode } from "../../services/app-settings.js";
-import { resolveConfigProfileTarget, targetErrorResponse } from "../../services/config-profile-target.js";
+import { configProfileTargetNames, resolveConfigProfileTarget, targetErrorResponse } from "../../services/config-profile-target.js";
 import { pageOf, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import { compareProfilesForMerge, selectProfilesForTarget } from "../../services/config-profile-selection.js";
 import { createDeliveryTrace } from "../../services/config-delivery-trace.js";
@@ -152,8 +152,9 @@ export function registerAdminConfigProfileRoutes(app, { audit }) {
         cursor,
         limit,
       });
+      const names = await configProfileTargetNames(page.items);
       return {
-        profiles: page.items.sort(compareProfilesForMerge),
+        profiles: page.items.sort(compareProfilesForMerge).map((profile) => ({ ...profile, target_name: names.get(`${profile.scope}:${profile.target_id}`) || null })),
         nextCursor: page.nextCursor,
         total: page.total,
         pageSize: page.pageSize,

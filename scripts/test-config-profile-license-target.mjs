@@ -15,6 +15,7 @@ process.env.DATABASE_URL ||= "postgres://user:pass@localhost:5432/lily_target_te
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const {
+  configProfileTargetNames,
   resolveConfigProfileTarget,
   targetErrorResponse,
   TARGET_NOT_FOUND,
@@ -95,6 +96,31 @@ try {
     // hashLicenseKey is sha256 over the UPPER-cased, trimmed key as UTF-8 text,
     // which is exactly what the SQL expression computes.
     assert.equal(hashLicenseKey(` ${LICENSE_KEY.toLowerCase()} `), hashLicenseKey(LICENSE_KEY));
+  });
+
+  await check("the rules list names each target, one lookup per scope, and falls back to ids when a lookup fails", async () => {
+    const calls = [];
+    const findNames = async (source, ids) => {
+      calls.push([source.table, ids]);
+      if (source.table === "organizations") throw new Error("db down");
+      if (source.table === "licenses") return ids.map((id) => ({ id, name: id === LICENSE_ID ? "星河科技" : null }));
+      return ids.map((id) => ({ id, name: `group ${id}` }));
+    };
+    const names = await configProfileTargetNames([
+      { scope: "global", target_id: null },
+      { scope: "license", target_id: LICENSE_ID },
+      { scope: "license", target_id: "lic_other" },
+      { scope: "group", target_id: "grp_1" },
+      { scope: "group", target_id: "grp_1" },
+      { scope: "organization", target_id: "org_1" },
+      { scope: "device", target_id: "dev_1" },
+    ], { findNames });
+    assert.equal(names.get(`license:${LICENSE_ID}`), "星河科技");
+    assert.equal(names.has("license:lic_other"), false, "a license without a customer name stays unnamed");
+    assert.equal(names.get("group:grp_1"), "group grp_1");
+    assert.equal(names.has("organization:org_1"), false, "a failed lookup leaves that scope unnamed, not an error");
+    assert.deepEqual(calls.map(([table]) => table).sort(), ["config_groups", "licenses", "organizations"], "one query per named scope; devices and global are not looked up");
+    assert.deepEqual(calls.find(([table]) => table === "config_groups")[1], ["grp_1"], "ids are deduplicated");
   });
 
   console.log(`\n${checks} checks passed (config profile target identity)`);

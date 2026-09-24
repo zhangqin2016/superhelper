@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { Badge } from "./ui/badge";
+import { ruleAudience, summarizeRuleConfig } from "../lib/config-rule-summary.mjs";
 
 const labelsByLocale = {
   zh: {
-    overview: "配置中心",
-    overviewDesc: "这里管理客户端启动时拉取的模型、技能包和权限策略。",
+    overview: "最近改过的规则",
+    overviewDesc: "客户端启动时会按这些规则拿到模型、技能和权限。",
     activeProfiles: "启用配置",
     globalProfiles: "全局",
     licenseProfiles: "授权",
     deviceProfiles: "设备",
     gateway: "模型网关",
     providersReady: "可用供应商",
-    pluginRegistry: "技能包入口",
+    pluginRegistry: "技能商店地址", runtimeSecretNames: "随配置下发的密钥",
     delivery: "下发链路",
     ready: "已就绪",
     attention: "需处理",
@@ -20,47 +21,47 @@ const labelsByLocale = {
     target: "目标",
     priority: "优先级",
     rollout: "灰度",
-    latestProfiles: "最近配置",
+    latestProfiles: "最近配置", statusTitle: "现在的状态", rulesLine: "下发规则：{active} 条生效中，共 {total} 条", modelsLine: "模型：{ready} 个能用", modelsBroken: "；{names} 还没配好（缺密钥或地址）", clientOk: "客户端拉取配置：正常", clientBad: "客户端拉取配置：异常，请看健康检查", manageRules: "管理规则", manageProviders: "去配置",
     modelProviders: "模型供应商",
     noProfiles: "还没有配置。先用下面模板创建全局默认配置。",
     noProviders: "没有检测到可用模型供应商。请先到「模型供应商」配置密钥和模型。",
     managePlugins: "管理技能包",
     health: "查看健康检查",
     effectiveTitle: "当前生效配置",
-    effectiveDesc: "默认显示全局配置。输入授权 ID 或设备 ID 后，可以看到该客户端实际会拿到什么。",
+    effectiveDesc: "不填时显示所有设备都会拿到的配置；填授权 ID 或设备 ID，看那台客户端实际拿到什么。",
     deviceId: "设备 ID",
     licenseId: "授权 ID",
     preview: "预览",
-    whoDecided: "字段出处",
+    whoDecided: "每项设置来自哪条规则",
     whoDecidedDesc: "每个字段最后由哪条规则定下；没列出的字段来自默认配置。",
-    droppedTitle: "下发时被改掉或丢掉的",
+    droppedTitle: "下发时被改掉的设置",
     droppedDesc: "规则写了、但投放管线后续环节改写或移除的字段。空即表示规则原样送达。",
     nothingDropped: "没有任何字段被改写或移除",
     stageLabel: "环节",
-    appliedProfiles: "命中的配置层",
-    modelRoute: "模型请求路线",
-    security: "安全状态",
-    pluginIds: "启用技能包",
+    appliedProfiles: "对它生效的规则",
+    modelRoute: "模型怎么连",
+    security: "密钥安全",
+    pluginIds: "预装技能",
     noAppliedProfiles: "当前没有命中任何后台配置，客户端会使用安装包内默认配置。",
     noModels: "没有下发模型供应商。",
     defaultProvider: "默认供应商",
     providerMenu: "可选供应商",
-    noRuntimeSecrets: "没有 runtime 级长期密钥",
-    hasRuntimeSecrets: "存在 runtime 级密钥",
-    safeGateway: "服务端网关 / 短期 token",
-    directRisk: "存在直连或长期 key 风险",
+    noRuntimeSecrets: "没有长期密钥随配置下发",
+    hasRuntimeSecrets: "有长期密钥随配置下发到客户端",
+    safeGateway: "全部经服务端网关，密钥不出服务器",
+    directRisk: "有模型直连，密钥在客户端上",
     deliveredJson: "查看实际下发 JSON",
   },
   en: {
-    overview: "Config center",
-    overviewDesc: "Manage the model, skill package, and policy config fetched by clients at startup.",
+    overview: "Recently changed rules",
+    overviewDesc: "At startup, clients get their models, skills and permissions from these rules.",
     activeProfiles: "Enabled profiles",
     globalProfiles: "Global",
     licenseProfiles: "License",
     deviceProfiles: "Device",
     gateway: "Model gateway",
     providersReady: "Ready providers",
-    pluginRegistry: "Skill registry",
+    pluginRegistry: "Skill store address", runtimeSecretNames: "Keys sent with the config",
     delivery: "Delivery path",
     ready: "Ready",
     attention: "Needs attention",
@@ -69,35 +70,35 @@ const labelsByLocale = {
     target: "Target",
     priority: "Priority",
     rollout: "Rollout",
-    latestProfiles: "Recent profiles",
+    latestProfiles: "Recent profiles", statusTitle: "What is happening now", rulesLine: "Delivery rules: {active} active of {total}", modelsLine: "Models: {ready} usable", modelsBroken: "; {names} not set up yet (missing key or address)", clientOk: "Clients fetching config: working", clientBad: "Clients fetching config: failing — see health", manageRules: "Manage rules", manageProviders: "Set up",
     modelProviders: "Model providers",
     noProfiles: "No config yet. Create the global default with a template below.",
     noProviders: "No ready model provider detected. Configure keys and models under Model providers first.",
     managePlugins: "Manage skill packages",
     health: "Open health",
     effectiveTitle: "Effective client config",
-    effectiveDesc: "Defaults to the global config. Enter a license or device ID to preview what that client will receive.",
+    effectiveDesc: "Blank shows what every device gets; enter a license or device ID to see what that client actually receives.",
     deviceId: "Device ID",
     licenseId: "License ID",
     preview: "Preview",
-    whoDecided: "Field provenance",
+    whoDecided: "Which rule set each setting",
     whoDecidedDesc: "Which rule established each field. Fields not listed come from the packaged defaults.",
-    droppedTitle: "Changed or dropped on delivery",
+    droppedTitle: "Settings changed on delivery",
     droppedDesc: "Fields a rule set that a later stage rewrote or removed. Empty means every rule reached the client intact.",
     nothingDropped: "Nothing was rewritten or removed",
     stageLabel: "stage",
-    appliedProfiles: "Applied layers",
-    modelRoute: "Model route",
-    security: "Security",
+    appliedProfiles: "Rules that apply to it",
+    modelRoute: "How models connect",
+    security: "Key safety",
     pluginIds: "Enabled skill packages",
     noAppliedProfiles: "No admin config applies. The client will use packaged defaults.",
     noModels: "No model provider delivered.",
     defaultProvider: "Default provider",
     providerMenu: "Provider menu",
-    noRuntimeSecrets: "No runtime long-lived secret",
-    hasRuntimeSecrets: "Runtime secrets present",
-    safeGateway: "Server gateway / short-lived token",
-    directRisk: "Direct or long-lived key risk",
+    noRuntimeSecrets: "No long-lived key is sent with the config",
+    hasRuntimeSecrets: "Long-lived keys are sent to the client",
+    safeGateway: "All through the server gateway; keys stay on the server",
+    directRisk: "Some models connect directly, with the key on the client",
     deliveredJson: "View delivered JSON",
   },
   ar: {
@@ -152,17 +153,8 @@ const labelsByLocale = {
 };
 
 function labels(locale) {
-  return labelsByLocale[locale] || labelsByLocale.zh;
-}
-
-function parseConfig(config) {
-  if (!config) return {};
-  if (typeof config === "object") return config;
-  try {
-    return JSON.parse(config);
-  } catch {
-    return {};
-  }
+  // A locale without a line falls back to English for that line only.
+  return { ...labelsByLocale.en, ...(labelsByLocale[locale] || labelsByLocale.zh) };
 }
 
 function gatewayCheck(health) {
@@ -187,15 +179,11 @@ function redactConfig(value) {
   return output;
 }
 
-function countByScope(rows, scope) {
-  return rows.filter((row) => row.enabled && row.scope === scope).length;
-}
-
 function statusBadge(ok, copy) {
   return <Badge variant={ok ? "success" : "danger"}>{ok ? copy.ready : copy.attention}</Badge>;
 }
 
-function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
+function effectivePreviewPanel(preview, copy, deviceId, licenseId, ruleCopy, locale) {
   const summary = preview?.summary || {};
   const profiles = Array.isArray(preview?.appliedProfiles) ? preview.appliedProfiles : [];
   // The delivery receipt: which rule set each field, and what a later stage did
@@ -204,7 +192,10 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
   const decisions = (Array.isArray(preview?.decisions) ? preview.decisions : []).filter((entry) => entry?.reason !== "added");
   const models = Array.isArray(summary.modelPresets) ? summary.modelPresets : [];
   const runtimeSecrets = Array.isArray(summary.runtimeSecretKeys) ? summary.runtimeSecretKeys : [];
-  const riskOk = summary.riskLevel !== "warning";
+  // The route badge speaks for the models only; long-lived runtime keys have
+  // their own badge in the security panel.
+  const riskOk = summary.risks ? !(summary.risks.directModelPresets || summary.risks.longLivedModelKeys) : summary.riskLevel !== "warning";
+  const activeModel = models.find((model) => model.id === summary.activePresetId);
 
   return (
     <section className="table-card p-6">
@@ -232,8 +223,8 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
           <div className="mt-3 space-y-2">
             {profiles.length ? profiles.map((profile) => (
               <div key={profile.id} className="rounded-lg bg-white p-3 text-sm">
-                <div className="font-mono font-semibold text-slate-800">{profile.id}</div>
-                <div className="mt-1 text-xs text-slate-500">{profile.scope} · {copy.priority} {profile.priority} · {copy.rollout} {Number(profile.rolloutPercent ?? 100)}%</div>
+                <div className="font-semibold text-slate-800">{profile.name || profile.id}</div>
+                <div className="mt-1 text-xs text-slate-500">{ruleCopy ? ruleAudience({ scope: profile.scope, target_id: profile.targetId }, ruleCopy) : profile.scope}{Number(profile.rolloutPercent ?? 100) < 100 ? ` · ${copy.rollout} ${Number(profile.rolloutPercent)}%` : ""}</div>
               </div>
             )) : <p className="text-sm text-slate-500">{copy.noAppliedProfiles}</p>}
           </div>
@@ -268,18 +259,20 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
           <dl className="mt-3 space-y-3 text-sm">
             <div className="rounded-lg bg-white p-3">
               <dt className="text-xs text-slate-500">{copy.defaultProvider}</dt>
-              <dd className="mt-1 font-mono text-slate-800">{summary.activePresetId || "-"}</dd>
+              <dd className="mt-1 text-slate-800">{activeModel ? `${activeModel.label || activeModel.id} · ${activeModel.model || ""}` : summary.activePresetId || "-"}</dd>
             </div>
-            <div className="rounded-lg bg-white p-3">
-              <dt className="text-xs text-slate-500">{copy.pluginRegistry}</dt>
-              <dd className="mt-1 break-all font-mono text-slate-800">{summary.pluginRegistryUrl || "-"}</dd>
-            </div>
+            {summary.pluginRegistryUrl && summary.pluginRegistryUrl !== "/api/skills/registry" ? (
+              <div className="rounded-lg bg-white p-3">
+                <dt className="text-xs text-slate-500">{copy.pluginRegistry}</dt>
+                <dd className="mt-1 break-all font-mono text-slate-800">{summary.pluginRegistryUrl}</dd>
+              </div>
+            ) : null}
             <div className="rounded-lg bg-white p-3">
               <dt className="text-xs text-slate-500">{copy.pluginIds}</dt>
               <dd className="mt-1 text-slate-800">{(summary.enabledPluginIds || []).join(", ") || "-"}</dd>
             </div>
             <div className="rounded-lg bg-white p-3">
-              <dt className="text-xs text-slate-500">{copy.security}</dt>
+              <dt className="text-xs text-slate-500">{copy.runtimeSecretNames}</dt>
               <dd className="mt-1 font-mono text-slate-800">{runtimeSecrets.join(", ") || copy.noRuntimeSecrets}</dd>
             </div>
           </dl>
@@ -329,33 +322,42 @@ function effectivePreviewPanel(preview, copy, deviceId, licenseId) {
   );
 }
 
-export function ConfigCenterPanels({ rows = [], health = {}, preview = null, locale = "zh", deviceId = "", licenseId = "" }) {
+const fill = (text, values) => String(text || "").replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
+
+export function ConfigCenterPanels({ rows = [], health = {}, preview = null, locale = "zh", deviceId = "", licenseId = "", ruleCopy = null, providers: providerRows = [] }) {
   const copy = labels(locale);
   const enabledRows = rows.filter((row) => row.enabled);
   const gateway = gatewayCheck(health);
   const delivery = configDeliveryCheck(health);
   const providers = Array.isArray(gateway.providers) ? gateway.providers : [];
   const readyProviders = providers.filter((provider) => provider.ready);
-  const recentRows = rows.slice(0, 4);
+  const notReady = providers.filter((provider) => !provider.ready).map((provider) => provider.id);
+  const providerNames = new Map(providerRows.map((row) => [row.id, row.label || row.id]));
+  const providerName = (id) => providerNames.get(id) || id;
+  const recentRows = [...rows].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)).slice(0, 4);
 
   return (
     <div className="mb-6 space-y-6">
-      <section className="grid gap-4 xl:grid-cols-4">
-        {[
-          [copy.activeProfiles, enabledRows.length, `${copy.globalProfiles} ${countByScope(rows, "global")} · ${copy.licenseProfiles} ${countByScope(rows, "license")} · ${copy.deviceProfiles} ${countByScope(rows, "device")}`],
-          [copy.gateway, `${readyProviders.length}/${providers.length}`, gateway.enabled === false ? "disabled" : copy.providersReady],
-          [copy.pluginRegistry, delivery.pluginRegistryUrl || "/api/skills/registry", copy.delivery],
-          [copy.delivery, delivery.endpoint || "/api/client/config", health.status || "unknown"],
-        ].map(([title, value, detail]) => (
-          <div key={title} className="metric-card rounded-xl p-5">
-            <div className="text-sm font-medium text-slate-500">{title}</div>
-            <div className="mt-3 break-all text-2xl font-semibold text-slate-950">{value}</div>
-            <div className="mt-2 text-xs text-slate-500">{detail}</div>
-          </div>
-        ))}
+      <section className="table-card p-5" aria-label={copy.statusTitle}>
+        <h2 className="text-base font-semibold text-slate-950">{copy.statusTitle}</h2>
+        <ul className="mt-3 space-y-2 text-sm text-slate-800">
+          <li className="flex flex-wrap items-center gap-2">
+            <span>{fill(copy.rulesLine, { active: enabledRows.length, total: rows.length })}</span>
+            <Link className="text-brand hover:underline" href="/admin/config/profiles">{copy.manageRules}</Link>
+          </li>
+          <li className="flex flex-wrap items-center gap-2">
+            {statusBadge(!notReady.length, copy)}
+            <span>{fill(copy.modelsLine, { ready: readyProviders.length })}{notReady.length ? fill(copy.modelsBroken, { names: notReady.map(providerName).join(locale === "zh" ? "、" : ", ") }) : ""}</span>
+            {notReady.length ? <Link className="text-brand hover:underline" href="/admin/config/providers">{copy.manageProviders}</Link> : null}
+          </li>
+          <li className="flex flex-wrap items-center gap-2">
+            {statusBadge(delivery.ok !== false && health.status !== "error", copy)}
+            <span>{delivery.ok !== false && health.status !== "error" ? copy.clientOk : copy.clientBad}</span>
+          </li>
+        </ul>
       </section>
 
-      {effectivePreviewPanel(preview, copy, deviceId, licenseId)}
+      {effectivePreviewPanel(preview, copy, deviceId, licenseId, ruleCopy, locale)}
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="table-card p-6">
@@ -375,26 +377,15 @@ export function ConfigCenterPanels({ rows = [], health = {}, preview = null, loc
           </div>
           <div className="mt-5 space-y-3">
             {recentRows.length ? recentRows.map((row) => {
-              const config = parseConfig(row.config);
-              const activeProvider = config.models?.activeProvider || config.models?.activePresetId || "-";
-              const modelCount = Array.isArray(config.models?.providers)
-                ? config.models.providers.length
-                : Array.isArray(config.models?.presets)
-                  ? config.models.presets.length
-                  : 0;
+              const lines = summarizeRuleConfig(row.config, { locale, providerName }).slice(0, 3);
               return (
                 <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-950">{row.name}</span>
-                    <Badge variant="brand">{row.scope}</Badge>
+                    <Link href={`/admin/config/profiles/${encodeURIComponent(row.id)}`} className="font-semibold text-slate-950 hover:text-brand hover:underline">{row.name || row.id}</Link>
                     {statusBadge(row.enabled, copy)}
                   </div>
-                  <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-4">
-                    <span>{copy.target}: <b className="font-mono">{row.target_id || "global"}</b></span>
-                    <span>{copy.priority}: <b>{row.priority}</b></span>
-                    <span>{copy.rollout}: <b>{Number(row.rollout_percent ?? 100)}%</b></span>
-                    <span>{copy.defaultProvider}: <b>{activeProvider}</b> · {copy.providerMenu} {modelCount}</span>
-                  </div>
+                  {ruleCopy ? <div className="mt-2 text-sm text-slate-700">{ruleCopy.who}{ruleCopy.colon}{ruleAudience(row, ruleCopy)}</div> : null}
+                  <div className="mt-1 text-sm text-slate-600">{lines.map((line) => `${line.label ? `${line.label}${ruleCopy?.colon || ": "}` : ""}${line.value}`).join(" · ")}</div>
                 </div>
               );
             }) : <div className="rounded-xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">{copy.noProfiles}</div>}
