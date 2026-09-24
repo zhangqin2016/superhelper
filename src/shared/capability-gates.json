@@ -2275,6 +2275,18 @@
         "scripts/test-runtime-event-retention.mjs",
         "scripts/test-session-runtime-store.mjs"
       ]
+    },
+    {
+      "id": "timeline-whole-by-reference",
+      "protects": "A reopened turn shows every step it took: the archived timeline is no longer cut to its last 100 entries, because timeline tool entries are stored and sent as references to their exactly-equal record.tools twin (shared/timeline-tool-refs) and made whole wherever they are read (envelope unpack, the renderer's timelineFromRecord); folded step groups build their rows when first opened (lazy-details), and restoring open state builds the groups that reopen first.",
+      "baseline": "Every stored record round-trips deep-equal (909 real records); a field that differs or a missing tool is kept whole; main-process readers see records exactly as before; a group nobody opens is never built.",
+      "failureFallback": "An entry without a resolvable reference keeps whatever it carries; a renderer that received a full record shows it as before.",
+      "tests": [
+        "scripts/test-timeline-tool-refs.mjs",
+        "scripts/test-lazy-details.mjs",
+        "scripts/test-turn-process-group.mjs",
+        "scripts/test-turn-grouped-tools.mjs"
+      ]
     }
   ]
 }

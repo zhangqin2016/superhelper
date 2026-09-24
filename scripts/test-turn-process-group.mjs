@@ -16,6 +16,8 @@ function element(tagName) {
     append(...items) {
       for (const item of items) this.appendChild(item);
     },
+    listeners: {},
+    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
   };
 }
 
@@ -46,7 +48,13 @@ assert.equal(group.open, false);
 assert.equal(group.children[0].tagName, "summary");
 assert.equal(group.children[0].textContent, "tools:1/notices:1");
 assert.equal(group.children[1].className, "assistant-process-group-body");
+// Folded content is built when first opened, not while nobody can see it.
+assert.equal(group.children[1].children.length, 0, "a folded group builds no rows before it is opened");
+group.open = true;
+for (const fn of group.listeners.toggle || []) fn();
 assert.equal(group.children[1].children[0].textContent, "tool_1:notice_1:true:session_1:0");
+for (const fn of group.listeners.toggle || []) fn();
+assert.equal(group.children[1].children.length, 1, "and builds them once");
 
 const rendererSource = readFileSync(
   new URL("../src/renderer/modules/turn-view-renderer.js", import.meta.url),
@@ -107,7 +115,7 @@ assert.equal(
   }, true);
   assert.equal(noSteps.foldNarration, false, "with no step group to fold into, narration is never hidden in an empty one");
 
-  const body = renderProcessGroup({
+  const folded = renderProcessGroup({
     processTools: [{ id: "t1" }],
     narration: [{ kind: "text", id: "text_1" }, { kind: "text", id: "text_3" }],
     sealed: true,
@@ -115,7 +123,9 @@ assert.equal(
     processSummary: () => "summary",
     renderGrouped: (container) => container.appendChild({ textContent: "steps" }),
     renderNarration: (entry) => ({ textContent: entry.id }),
-  }).children[1];
+  });
+  folded.__ensureContent();
+  const body = folded.children[1];
   assert.deepEqual(body.children.map((node) => node.textContent), ["text_1", "text_3", "steps"],
     "inside the group the narration leads, as the outline of the steps below it");
 }

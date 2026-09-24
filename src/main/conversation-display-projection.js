@@ -14,6 +14,7 @@
  */
 
 const { compactProcessEvent } = require("./store/runtime-event-persistence");
+const { dehydrateMessage } = require("../shared/timeline-tool-refs.mjs");
 
 function compactProcessEvents(events) {
   if (!Array.isArray(events) || !events.length) return events;
@@ -23,11 +24,14 @@ function compactProcessEvents(events) {
 }
 
 /** A copy of `message` with a display-sized record; the stored object is never mutated. */
+// Timeline tool entries travel as references too; the renderer restores them
+// where it turns a record into a timeline (turn-record-timeline).
 function projectMessageForDisplay(message) {
-  const record = message?.record;
-  if (!record || !Array.isArray(record.processEvents) || !record.processEvents.length) return message;
-  if (record.processEvents.every((event) => event?.compact)) return message;
-  return { ...message, record: { ...record, processEvents: compactProcessEvents(record.processEvents) } };
+  const sent = dehydrateMessage(message);
+  const record = sent?.record;
+  if (!record || !Array.isArray(record.processEvents) || !record.processEvents.length) return sent;
+  if (record.processEvents.every((event) => event?.compact)) return sent;
+  return { ...sent, record: { ...record, processEvents: compactProcessEvents(record.processEvents) } };
 }
 
 function projectConversationForDisplay(conversation) {

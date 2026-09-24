@@ -4,6 +4,7 @@ import {
   groupToolsByCategory,
 } from "./turn-process-summary-model.js";
 import { renderNoticeEntry } from "./turn-notice-entry.js";
+import { lazyDetails } from "./lazy-details.js";
 
 export function renderGroupedTools(
   container,
@@ -39,11 +40,13 @@ export function renderGroupedTools(
       sub.appendChild(summary);
       const body = document.createElement("div");
       body.className = "assistant-process-subgroup-body";
-      for (const entry of categoryTools) {
-        const node = renderTool?.(entry, sealed, childTools, ctx);
-        if (node) body.appendChild(node);
-      }
       sub.appendChild(body);
+      lazyDetails(sub, () => {
+        for (const entry of categoryTools) {
+          const node = renderTool?.(entry, sealed, childTools, ctx);
+          if (node) body.appendChild(node);
+        }
+      });
       container.appendChild(sub);
     }
   }

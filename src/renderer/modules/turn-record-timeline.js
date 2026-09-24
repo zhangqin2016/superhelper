@@ -1,3 +1,5 @@
+import { rehydrateTimelineTools } from "../../shared/timeline-tool-refs.mjs";
+
 /**
  * Rebuild just enough timeline for a reloaded turn to look like the live one.
  *
@@ -21,7 +23,9 @@
 // model's own and other parts of the renderer depend on that.
 const BLANK_RUN = /\n{3,}/g;
 
-export function timelineFromRecord(record = {}) {
+export function timelineFromRecord(stored = {}) {
+  // Tool entries arrive as references to record.tools; make them whole.
+  const record = rehydrateTimelineTools(stored) || {};
   const existing = Array.isArray(record?.timeline) ? record.timeline : [];
   if (existing.length) return existing;
 

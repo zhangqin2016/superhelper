@@ -80,6 +80,8 @@ assert.equal(groupedContainer.children[0].className, "assistant-process-subgroup
 assert.equal(groupedContainer.children[0].open, false);
 assert.equal(groupedContainer.children[0].children[0].textContent, "summary.read:1");
 assert.equal(groupedContainer.children[0].children[1].className, "assistant-process-subgroup-body");
+assert.equal(groupedContainer.children[0].children[1].children.length, 0, "a folded category builds its rows when opened");
+groupedContainer.children[0].__ensureContent();
 assert.equal(groupedContainer.children[0].children[1].children[0].textContent, "read_1");
 assert.equal(groupedContainer.children[1].children[0].textContent, "summary.write:1");
 

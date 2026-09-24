@@ -10,6 +10,15 @@ const {
   resolveSessionPermissionMode,
 } = require("./permission-settings");
 const { getConversationPageFromSource } = require("./opencode-conversation-source");
+const { projectConversationForDisplay } = require("./conversation-display-projection");
+
+// A page leaves for the renderer in display form (compact process events,
+// timeline tool entries as references), whichever source produced it.
+function sentForDisplay(page) {
+  return page && Array.isArray(page.conversation)
+    ? { ...page, conversation: projectConversationForDisplay(page.conversation) }
+    : page;
+}
 
 const SESSION_SWITCH_WARMUP_DELAY_MS = 150;
 const sessionRunnerWarmups = new WeakMap();
@@ -90,14 +99,14 @@ function registerSessionHandlers(ctx) {
       ? payload
       : payload?.sessionId;
     if (!sessionId) return { ok: false, error: "SESSION_ID_REQUIRED", conversation: [] };
-    return getConversationPageFromSource(ctx, sessionId, {
+    return sentForDisplay(await getConversationPageFromSource(ctx, sessionId, {
       before: Number.isInteger(payload?.before) ? payload.before : undefined,
       limit: Number.isInteger(payload?.limit) ? payload.limit : undefined,
       preferLocal: Boolean(payload?.preferLocal),
       // Passive reads opt OUT of engine boot (default stays true for callers,
       // e.g. the send path, that legitimately need canonical history now).
       allowEngineSpawn: payload?.allowEngineSpawn !== false,
-    });
+    }));
   });
 
   ipcMain.handle("session:create", async (_event, title, projectId) => {
@@ -268,7 +277,7 @@ function registerSessionHandlers(ctx) {
     const removed = sessionManager.deleteMessagesFromTurn(sessionId, turnId);
     // Hand back the truncated transcript so the renderer can resync in lock-step.
     const page = await getConversationPageFromSource(ctx, sessionId, {});
-    return { ok: true, sessionId, turnId, removed, conversation: page?.conversation || [] };
+    return { ok: true, sessionId, turnId, removed, conversation: sentForDisplay(page)?.conversation || [] };
   });
 
   ipcMain.handle("session:set-permission", (_event, payload) => {

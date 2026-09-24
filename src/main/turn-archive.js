@@ -178,7 +178,10 @@ class TurnArchive {
       artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
       resultBlocks,
       resultBlockSchemaVersion: RESULT_BLOCK_SCHEMA_VERSION,
-      timeline: (state.timeline || []).slice(-100),
+      // Every step, not the last 100: tool entries are stored as references to
+      // `tools` (shared/timeline-tool-refs), which removed the duplication the
+      // cap was paying for.
+      timeline: [...(state.timeline || [])],
       activityLabel: state.activityLabel || null,
       // The engine's number when it reports one, otherwise the turn's own clock.
       // It reported 0 for every turn of a real session — including one with 20

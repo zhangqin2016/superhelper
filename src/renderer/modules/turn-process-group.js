@@ -2,6 +2,7 @@ import { t } from "../i18n/index.js";
 import { processGroupSummary } from "./turn-process-summary-model.js";
 import { renderGroupedTools } from "./turn-grouped-tools.js";
 import { renderTimelineEntry, renderToolWithChildren } from "./turn-timeline-entry.js";
+import { lazyDetails } from "./lazy-details.js";
 
 export function renderProcessGroup({
   processTools = [],
@@ -24,13 +25,16 @@ export function renderProcessGroup({
   group.appendChild(summary);
   const body = document.createElement("div");
   body.className = "assistant-process-group-body";
-  // Folded narration leads the body in the order it was written: it is the
-  // outline of the work, and the grouped steps below are its detail.
-  for (const entry of narration) {
-    const node = renderNarration(entry, sealed, entryCtx);
-    if (node) body.appendChild(node);
-  }
-  renderGrouped(body, processTools, notices, sealed, childTools, entryCtx, { renderTool });
   group.appendChild(body);
-  return group;
+  // Built when first opened: the summary says how many steps there were, and
+  // the rows themselves are only worth building once someone looks.
+  return lazyDetails(group, () => {
+    // Folded narration leads the body in the order it was written: it is the
+    // outline of the work, and the grouped steps below are its detail.
+    for (const entry of narration) {
+      const node = renderNarration(entry, sealed, entryCtx);
+      if (node) body.appendChild(node);
+    }
+    renderGrouped(body, processTools, notices, sealed, childTools, entryCtx, { renderTool });
+  });
 }

@@ -13,6 +13,19 @@ export function collectDetailsOpenState(root) {
 }
 
 export function restoreDetailsOpenState(root, openState, { collapseFinishedThinking = false } = {}) {
+  // A folded group builds its content when opened; build the ones that will
+  // reopen first, so the items inside them can have their state restored too.
+  // Repeats while opening a group reveals further groups to reopen.
+  for (let pass = 0; pass < 8; pass += 1) {
+    let built = false;
+    for (const details of root.querySelectorAll("details")) {
+      if (typeof details.__ensureContent !== "function" || details.__contentBuilt) continue;
+      if (openState.get(detailsOpenStateKey(details)) !== true) continue;
+      details.__ensureContent();
+      built = true;
+    }
+    if (!built) break;
+  }
   for (const details of root.querySelectorAll("details")) {
     if (collapseFinishedThinking && details.classList.contains("assistant-process-thinking-group")) {
       details.open = false;

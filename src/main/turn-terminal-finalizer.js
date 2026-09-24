@@ -371,7 +371,7 @@ function createTurnTerminalFinalizer(options = {}) {
       : null;
     if (shouldBufferAssistantAnswer(state.taskContract) && assistant) {
       appendTimelineText(state, assistant, Date.now());
-      if (record) record.timeline = (state.timeline || []).slice(-100);
+      if (record) record.timeline = [...(state.timeline || [])];
     }
     completeShortTurnLifecycle(ctx, sessionId, state, type, payload);
     // Plan-progress reconciliation runs before completion so the sealed
