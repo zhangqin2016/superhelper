@@ -5,6 +5,8 @@ import { zodBody, okResponse } from "../../openapi.js";
 import { artifactErrorResponse, checkReleaseArtifact } from "../../services/release-artifact-check.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import { latestReleases } from "../../services/release-versions.js";
+import { DEFAULT_CHANNEL } from "../../services/release-offer.js";
+import { transitionRollout } from "../../services/release-rollouts.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -15,6 +17,14 @@ const createReleaseSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
   forceUpdate: z.boolean().default(false),
   enabled: z.boolean().default(true),
+  // Published with its own auto-update feed (auto-updates/<platform>/releases/<version>/),
+  // which is what lets a partial rollout point a device at exactly this version.
+  immutableFeed: z.boolean().default(false),
+  // Staged from the first instant: the release and its rollout are written in
+  // one transaction, so there is no moment where a staged release has no
+  // rollout row and is therefore offered to everyone.
+  rolloutPercent: z.number().int().min(1).max(100).optional(),
+  draft: z.boolean().optional(),
 });
 
 // A release can be switched on/off, and marked mandatory after the fact: an
@@ -60,7 +70,7 @@ export function registerAdminReleaseRoutes(app, { audit }) {
         summary: "Create an app release",
         description: "Inserts a new app release record for a version/platform.",
         body: zodBody(createReleaseSchema),
-        response: { 201: okResponse({ id: { type: "string" } }) },
+        response: { 201: okResponse({ id: { type: "string" }, rolloutId: { type: "string" }, rolloutState: { type: "string" } }) },
       },
     },
     async (request, reply) => {
@@ -69,23 +79,43 @@ export function registerAdminReleaseRoutes(app, { audit }) {
     // that guards or cannot answer HEAD must never block a release.
     const artifact = await checkReleaseArtifact(input.url);
     if (!artifact.ok) return reply.code(400).send(artifactErrorResponse(artifact));
+    if (input.draft && input.rolloutPercent !== undefined) {
+      return reply.code(400).send({ ok: false, code: "ROLLOUT_DRAFT_AND_PERCENT", message: "Pass either draft or rolloutPercent, not both." });
+    }
     const id = publicId("rel");
-    await db
-      .insertInto("releases")
-      .values({
-        id,
-        version: input.version,
-        platform: input.platform,
-        url: input.url,
-        sha256: input.sha256,
-        size_bytes: input.sizeBytes || null,
-        notes: input.notes || null,
-        force_update: input.forceUpdate,
-        enabled: input.enabled,
-      })
-      .execute();
-    await audit(request, "release.create", "release", id, { version: input.version, platform: input.platform });
-    return reply.code(201).send({ ok: true, id });
+    const staged = input.draft || input.rolloutPercent !== undefined;
+    let rollout = null;
+    if (staged) {
+      rollout = { id: publicId("rol"), release_id: id, platform: input.platform, version: input.version, channel: DEFAULT_CHANNEL, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
+      if (input.rolloutPercent !== undefined) {
+        const active = await db.selectFrom("release_rollouts").select(["id", "version"])
+          .where("channel", "=", DEFAULT_CHANNEL).where("platform", "=", input.platform)
+          .where("state", "in", ["rolling", "paused"]).executeTakeFirst();
+        const decided = transitionRollout({ ...rollout, immutable_feed: input.immutableFeed }, { action: "start", percent: input.rolloutPercent }, { otherActive: active || null });
+        if (!decided.ok) return reply.code(400).send(decided);
+        rollout = { ...rollout, ...decided.patch };
+      }
+    }
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto("releases")
+        .values({
+          id,
+          version: input.version,
+          platform: input.platform,
+          url: input.url,
+          sha256: input.sha256,
+          size_bytes: input.sizeBytes || null,
+          notes: input.notes || null,
+          force_update: input.forceUpdate,
+          enabled: input.enabled,
+          immutable_feed: input.immutableFeed,
+        })
+        .execute();
+      if (rollout) await trx.insertInto("release_rollouts").values(rollout).execute();
+    });
+    await audit(request, "release.create", "release", id, { version: input.version, platform: input.platform, ...(rollout ? { rollout: { id: rollout.id, state: rollout.state, percent: rollout.percent } } : {}) });
+    return reply.code(201).send({ ok: true, id, ...(rollout ? { rolloutId: rollout.id, rolloutState: rollout.state } : {}) });
     },
   );
 

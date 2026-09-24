@@ -48,7 +48,9 @@ await check("a forced release is a floor, not a flag on the newest row", () => {
   assert.equal(compare("0.1.0-beta", "0.1.0") < 0, true, "a pre-release comes before its release");
   assert.deepEqual([...releaseVersions.forcedFloors([{ platform: "darwin-arm64", version: "0.1.185", force_update: true }, { platform: "darwin-arm64", version: "0.1.190", force_update: false }])], [["darwin-arm64", "0.1.185"]]);
   const catalog = fs.readFileSync(path.join(ROOT, "server/src/routes/public/catalog.js"), "utf8");
-  assert.match(catalog, /requiredVersionFor\(releases, currentVersion\)/, "the update endpoint answers the floor");
+  // The endpoint answers the floor through the one offer decision (release-offer.js).
+  assert.match(catalog, /const \{ release, requiredVersion \} = offerRelease\(/, "the update endpoint answers the floor");
+  assert.match(fs.readFileSync(path.join(ROOT, "server/src/services/release-offer.js"), "utf8"), /requiredVersionFor\(visible, currentVersion\)/);
   assert.match(catalog, /force: Boolean\(requiredVersion\)/);
   assert.ok(!/function compareVersions/.test(catalog), "version order is not re-implemented in the endpoint");
 });

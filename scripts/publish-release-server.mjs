@@ -54,7 +54,12 @@ function usage() {
     [--token ADMIN_TOKEN | --email admin@example.com --password ADMIN_PASSWORD] \\
     --version 0.2.0 \\
     --artifact darwin-arm64=dist/Lily\\ Workbench-0.2.0-arm64.dmg=https://cdn/app.dmg \\
-    [--notes "release notes"] [--mandatory] [--disabled]
+    [--notes "release notes"] [--mandatory] [--disabled] [--immutable-feed] [--rollout N | --draft]
+
+  --immutable-feed  the release has its own feed at auto-updates/<platform>/releases/<version>/
+  --rollout N       offer it to N% of devices (100 = everyone, recorded as a complete rollout)
+  --draft           create the rollout without offering it to anyone yet
+  (neither)         today's behaviour: enabled = offered to everyone
 
   --mandatory  every client below this version must update (a forced release is
                a floor). There is no --force: it once meant "overwrite" in the
@@ -79,7 +84,7 @@ function args() {
       console.error("--force is not a release option. To make this release mandatory for every client below it, pass --mandatory.");
       process.exit(1);
     }
-    if (["mandatory", "disabled"].includes(name)) {
+    if (["mandatory", "disabled", "immutable-feed", "draft"].includes(name)) {
       out[name] = true;
       continue;
     }
@@ -186,24 +191,55 @@ async function createRelease(artifact) {
       notes: options.notes || null,
       forceUpdate: Boolean(options.mandatory),
       enabled: !options.disabled,
+      immutableFeed: Boolean(options["immutable-feed"]),
+      // Written with the release in one transaction: never visible unstaged.
+      ...(rolloutPercent !== null ? { rolloutPercent } : {}),
+      ...(options.draft ? { draft: true } : {}),
     }),
   });
 }
 
+const rolloutPercent = options.rollout === undefined ? null : Number(options.rollout);
+if (rolloutPercent !== null && (!Number.isInteger(rolloutPercent) || rolloutPercent < 1 || rolloutPercent > 100)) {
+  console.error("--rollout must be an integer between 1 and 100");
+  process.exit(1);
+}
+if (rolloutPercent !== null && options.draft) {
+  console.error("--rollout and --draft are exclusive");
+  process.exit(1);
+}
+if (rolloutPercent !== null && rolloutPercent < 100 && !options["immutable-feed"]) {
+  console.error("A partial --rollout needs --immutable-feed: without the release's own feed no device in the slice could reach it.");
+  process.exit(1);
+}
+
+// A re-run finds the release already there. Its rollout was written with it;
+// a release that already exists WITHOUT one is live for everyone, and quietly
+// attaching a draft would take it away from them — so that is left to the console.
+function reportExisting(platform) {
+  if (rolloutPercent === null && !options.draft) return;
+  console.log(`[release-server] ${platform} already existed: its rollout is unchanged here; manage it from the console (版本 → 发布单).`);
+}
+
 for (const artifact of options.artifact.map(parseArtifact)) {
   let lastError = null;
+  let releaseId = "";
+  let createdNow = false;
   for (let attempt = 1; attempt <= DEFAULT_ATTEMPTS; attempt += 1) {
     try {
       const response = await createRelease(artifact);
       const json = await response.json().catch(() => ({}));
       if (response.ok) {
         console.log(`[release-server] ${artifact.platform} -> ${json.id}`);
+        releaseId = json.id;
+        createdNow = true;
         lastError = null;
         break;
       }
       const existing = await findExistingRelease(artifact).catch(() => null);
       if (existing) {
         console.log(`[release-server] ${artifact.platform} already exists -> ${existing.id}`);
+        releaseId = existing.id;
         lastError = null;
         break;
       }
@@ -212,6 +248,7 @@ for (const artifact of options.artifact.map(parseArtifact)) {
       const existing = await findExistingRelease(artifact).catch(() => null);
       if (existing) {
         console.log(`[release-server] ${artifact.platform} already exists -> ${existing.id}`);
+        releaseId = existing.id;
         lastError = null;
         break;
       }
@@ -223,5 +260,10 @@ for (const artifact of options.artifact.map(parseArtifact)) {
   }
   if (lastError) {
     throw lastError;
+  }
+  if (createdNow) {
+    if (rolloutPercent !== null || options.draft) console.log(`[release-server] ${artifact.platform} rollout -> ${options.draft ? "draft" : `${rolloutPercent}%`}`);
+  } else {
+    reportExisting(artifact.platform);
   }
 }

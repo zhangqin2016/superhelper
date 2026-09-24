@@ -2243,6 +2243,15 @@
       "tests": [
         "scripts/test-server-deploy-artifact-hygiene.mjs"
       ]
+    },
+    {
+      "id": "release-rollouts",
+      "protects": "A release can be staged: offered to a stable slice of devices, widened, paused, halted or completed from the console, with its reach and health against the previous version shown — decided in one place (release-offer.js) for the update endpoint, the download page and the console.",
+      "baseline": "With no rollout rows every device is offered the newest enabled release exactly as before, legacy feed URLs are byte-identical, delivery-rule rollouts bucket identically, and release-one-click without --rollout publishes to everyone as it always did.",
+      "failureFallback": "A missing rollout table offers every release as before; a partial rollout without its own feed is refused before anything is written; the shared fallbacks (stable/ feeds, latest.json) only move when the server confirms the rollout is complete.",
+      "tests": [
+        "scripts/test-release-rollouts.mjs"
+      ]
     }
   ]
 }

@@ -294,6 +294,25 @@ export async function setReleaseEnabledAction(formData) {
   revalidatePath("/admin/releases");
 }
 
+// A rollout transition the server refuses (another version already rolling, a
+// partial rollout without its own feed) is an answer, not a crash: it comes
+// back to the page as a notice.
+export async function rolloutAction(formData) {
+  const percent = Number(text(formData, "percent"));
+  let failure = "";
+  try {
+    await apiPatch(`/api/admin/rollouts/${text(formData, "id")}`, {
+      action: text(formData, "action"),
+      ...(Number.isInteger(percent) && percent > 0 ? { percent } : {}),
+    });
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath("/admin/releases");
+  revalidatePath("/admin");
+  if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
+}
+
 export async function setReleaseForceAction(formData) {
   await apiPatch(`/api/admin/releases/${text(formData, "id")}`, { forceUpdate: text(formData, "forceUpdate") === "true" });
   revalidatePath("/admin/releases");

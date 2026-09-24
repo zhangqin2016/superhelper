@@ -45,6 +45,11 @@ release flow:
   build -> immutable artifact upload -> server release rows -> latest pointers -> CDN refresh -> public verification
 
 useful options:
+  --rollout N              offer the release to N% of devices first (1-99); the
+                           shared stable/ feed and latest.json are NOT touched
+                           until the rollout completes (release-promote.mjs).
+                           Omitted = today's behaviour: everyone at once.
+  --draft                  publish everything but offer it to no one yet
   --mandatory              every client below this version must update (restart
                            countdown per the delivered update policy)
   --force                  republish catalog packages even when unchanged
@@ -78,6 +83,7 @@ function args() {
         "dry-run",
         "force",
         "mandatory",
+        "draft",
         "skip-build",
         "skip-preflight",
         "skip-server-publish",
@@ -228,7 +234,12 @@ function uploadItems({ label, items, scriptNode, bucket, domain, qiniuUpHost, dr
   }
 }
 
+// The pointers that every client falls back to: the static manifest and the
+// shared stable/ feeds. A release's own feed (…/releases/<version>/latest.yml)
+// has the same file name but never changes, so it is judged by its key.
 function isMutablePointerUpload(item) {
+  const key = String(item.key || "");
+  if (/\/releases\/[^/]+\/latest(-mac)?\.yml$/.test(key)) return false;
   const name = path.basename(item.file);
   return name === "latest.json" || name === "latest-mac.yml" || name === "latest.yml";
 }
@@ -406,11 +417,15 @@ function yamlString(value) {
   return JSON.stringify(String(value ?? ""));
 }
 
-function writeAutoUpdateYaml({ platform, version, artifact, notes }) {
+function writeAutoUpdateYaml({ platform, version, artifact, notes, artifactBaseUrl = "", subdir = "" }) {
   const metadataName = platform.startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
-  const releaseDir = path.join(ROOT, "release", version, "auto", platform);
+  const releaseDir = path.join(ROOT, "release", version, "auto", platform, subdir);
   fs.mkdirSync(releaseDir, { recursive: true });
-  const artifactName = path.basename(artifact);
+  // The release's own feed points at the installer where it already lives
+  // (stable/, named by version, never overwritten) — no second copy.
+  const artifactName = artifactBaseUrl
+    ? `${artifactBaseUrl.replace(/\/+$/g, "")}/${encodeURIComponent(path.basename(artifact))}`
+    : path.basename(artifact);
   const sha512 = sha512Base64(artifact);
   const size = fileSize(artifact);
   const lines = [
@@ -539,6 +554,19 @@ const key = options.key || DEFAULT_KEY;
 const notes = options.notes || "";
 const qiniuUpHost = options["qiniu-up-host"] || process.env.QINIU_UP_HOST || "https://upload.qiniup.com";
 const publishServerRelease = Boolean(options.upload && !options["dry-run"] && !options["skip-server-publish"]);
+// Staged or draft: the release is published and reachable through its own
+// feed, but the shared fallbacks (stable/ feeds, latest.json) stay on the
+// previous version until the rollout completes — a fallback that ran ahead of
+// the rollout would hand the new build to everyone.
+const rolloutPercent = options.rollout === undefined ? null : Number(options.rollout);
+if (rolloutPercent !== null && (!Number.isInteger(rolloutPercent) || rolloutPercent < 1 || rolloutPercent > 100)) {
+  fail("--rollout must be an integer between 1 and 100");
+}
+if (rolloutPercent !== null && options.draft) fail("--rollout and --draft are exclusive");
+const offerEveryoneNow = !options.draft && (rolloutPercent === null || rolloutPercent === 100);
+if (!offerEveryoneNow && options["skip-server-publish"]) {
+  fail("a staged or draft release needs the server rollout; drop --skip-server-publish");
+}
 const publishLocalCatalog = Boolean(
   options.upload && !options["skip-server-publish"] && !options["skip-catalog-publish"],
 );
@@ -627,9 +655,19 @@ try {
       notes,
     });
     const feedPrefix = `${String(autoPrefix).replace(/^\/+|\/+$/g, "")}/${item.platform}/stable`;
+    const releaseFeed = writeAutoUpdateYaml({
+      platform: item.platform,
+      version: nextVersion,
+      artifact: item.artifact,
+      notes,
+      artifactBaseUrl: `${String(domain).replace(/\/+$/g, "")}/${feedPrefix}`,
+      subdir: "release-feed",
+    });
     autoUploads.push(
       { key: `${feedPrefix}/${path.basename(item.artifact)}`, file: item.artifact },
       { key: `${feedPrefix}/${path.basename(metadata)}`, file: metadata },
+      // This version's own feed: what a staged rollout points a device at.
+      { key: `${String(autoPrefix).replace(/^\/+|\/+$/g, "")}/${item.platform}/releases/${nextVersion}/${path.basename(releaseFeed)}`, file: releaseFeed },
     );
     if (item.blockmap) {
       autoUploads.push({ key: `${feedPrefix}/${path.basename(item.blockmap)}`, file: item.blockmap });
@@ -679,6 +717,10 @@ try {
     }
     if (notes) serverArgs.push("--notes", notes);
     if (options.mandatory) serverArgs.push("--mandatory");
+    // Every release now ships its own feed, so any later rollout can target it.
+    serverArgs.push("--immutable-feed");
+    if (options.draft) serverArgs.push("--draft");
+    else if (rolloutPercent !== null) serverArgs.push("--rollout", String(rolloutPercent));
     run(scriptNode, serverArgs);
     keepVersionFiles = true;
   } else if (options.upload && !options["dry-run"]) {
@@ -715,7 +757,11 @@ try {
     { key: `${String(prefix).replace(/^\/+|\/+$/g, "")}/latest.json`, file: latestManifestPath(nextVersion) },
     ...autoPointerUploads,
   ];
-  if (options.upload || options["dry-run"]) {
+  if (!offerEveryoneNow) {
+    console.log(`[release-one] ${options.draft ? "draft" : `staged ${rolloutPercent}%`}: stable/ feeds and latest.json are unchanged.`);
+    console.log(`[release-one] when the rollout completes: npm run release:promote -- --version ${nextVersion}`);
+    keepVersionFiles = true;
+  } else if (options.upload || options["dry-run"]) {
     if (options.upload && !options["dry-run"]) {
       const latestUrl = `${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`;
       const remoteManifest = JSON.parse(fetchUrl(latestUrl));
@@ -734,12 +780,12 @@ try {
   }
 
   if (options.upload && !options["dry-run"]) {
-    const cdnUrls = [
+    const cdnUrls = offerEveryoneNow ? [
       `${domain.replace(/\/+$/g, "")}/${prefix.replace(/^\/+|\/+$/g, "")}/latest.json`,
-      ...autoUploads
+      ...autoPointerUploads
         .filter((item) => path.basename(item.file) === "latest-mac.yml" || path.basename(item.file) === "latest.yml")
         .map((item) => `${domain.replace(/\/+$/g, "")}/${item.key}`),
-    ];
+    ] : [];
     if (options["skip-cdn-refresh"]) {
       console.log("[release-one] CDN refresh skipped by --skip-cdn-refresh.");
     } else {
@@ -748,6 +794,14 @@ try {
 
     if (options["skip-verify"]) {
       console.log("[release-one] public verification skipped by --skip-verify.");
+    } else if (!offerEveryoneNow) {
+      // Only the release's own feeds are public yet; the shared ones must not have moved.
+      for (const item of autoUploads.filter((upload) => /\/releases\/[^/]+\/latest(-mac)?\.yml$/.test(upload.key))) {
+        withRetry(`release feed ${item.key}`, () => {
+          const text = fetchUrl(`${domain.replace(/\/+$/g, "")}/${item.key}`);
+          if (!text.includes(`version: "${nextVersion}"`)) throw new Error(`${item.key} does not announce ${nextVersion}`);
+        });
+      }
     } else {
       const artifactPlatforms = artifacts.map(([platform]) => platform);
       withRetry("static manifest verification", () =>

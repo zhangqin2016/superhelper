@@ -16,6 +16,7 @@ import {
   appVersionAtLeast,
 } from "./character-worlds-policy.js";
 import { UPDATE_POLICY_DEFAULT } from "./update-policy.js";
+import { rolloutBucket } from "./rollout-bucket.js";
 import { DEFAULT_COLLABORATION_POLICY, resolveServerCollaborationPolicy } from "./collaboration/policy.js";
 import { availableMediaProviders, mediaProviderStatus } from "./media-provider-catalog.js";
 
@@ -603,9 +604,7 @@ export function rolloutAllows(profile, deviceId) {
   if (!Number.isFinite(percent)) return true;
   if (percent <= 0) return false;
   if (percent >= 100) return true;
-  const hash = sha256(`${profile.id}:${deviceId}`).slice(0, 8);
-  const bucket = Number.parseInt(hash, 16) % 100;
-  return bucket < percent;
+  return rolloutBucket(profile.id, deviceId) < percent;
 }
 
 function requestBaseUrl(request) {

@@ -43,6 +43,7 @@
     "release:catalog": "node scripts/publish-local-catalog-server.mjs",
     "release:preflight": "node scripts/release-preflight.mjs",
     "release:one": "node scripts/release-one-click.mjs",
+    "release:promote": "node scripts/release-promote.mjs",
     "release:all": "node scripts/release-one-click.mjs --target all --upload",
     "release:runtime-pack": "node scripts/publish-common-runtime-pack.mjs",
     "release:libreoffice-runtime": "node scripts/publish-libreoffice-runtime.mjs",

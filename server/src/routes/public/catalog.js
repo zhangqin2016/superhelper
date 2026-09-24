@@ -8,7 +8,8 @@ import {
   normalizeFeedbackAttachmentInput,
   normalizeSubmittedAttachment,
 } from "../../services/qiniu-upload.js";
-import { compareVersions, newestRelease, requiredVersionFor } from "../../services/release-versions.js";
+import { compareVersions, newestRelease } from "../../services/release-versions.js";
+import { DEFAULT_CHANNEL, offerRelease, releaseFeedUrl } from "../../services/release-offer.js";
 
 const contactRequestSchema = z.object({
   name: z.string().min(1).max(120),
@@ -78,12 +79,6 @@ async function createContactAttachmentUploadToken(request, reply) {
   }
 }
 
-function releaseFeedUrl(platform, version) {
-  const base = String(config.qiniuPublicBaseUrl || "").replace(/\/+$/g, "");
-  const file = String(platform || "").startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
-  return `${base}/app/auto-updates/${encodeURIComponent(platform)}/stable/${file}?v=${encodeURIComponent(version)}`;
-}
-
 export async function publicCatalogRoutes(app) {
   app.post(
     "/api/contact-requests",
@@ -134,20 +129,24 @@ export async function publicCatalogRoutes(app) {
   }, async (request) => {
     const platform = String(request.query?.platform || "");
     const currentVersion = String(request.query?.version || "");
-    const releases = await db
-      .selectFrom("releases")
-      .selectAll()
-      .where("platform", "=", platform)
-      .where("enabled", "=", true)
-      .orderBy("created_at", "desc")
-      .limit(200)
-      .execute();
+    const deviceId = String(request.headers["x-lily-device-id"] || "").trim();
+    const [releases, rollouts] = await Promise.all([
+      db.selectFrom("releases").selectAll()
+        .where("platform", "=", platform)
+        .where("enabled", "=", true)
+        .orderBy("created_at", "desc")
+        .limit(200)
+        .execute(),
+      db.selectFrom("release_rollouts").selectAll()
+        .where("platform", "=", platform)
+        .where("channel", "=", DEFAULT_CHANNEL)
+        .execute()
+        .catch(() => []), // before the rollout migration: every release is offered, as before
+    ]);
 
-    const release = newestRelease(releases);
+    // What this device may see is decided in one place (release-offer.js).
+    const { release, requiredVersion } = offerRelease({ releases, rollouts, deviceId, currentVersion });
     if (!release) return { hasUpdate: false };
-    // Mandatory is a floor, not a flag on the newest row: a client below any
-    // forced release must update even when a newer ordinary release followed.
-    const requiredVersion = currentVersion ? requiredVersionFor(releases, currentVersion) : "";
     return {
       hasUpdate: compareVersions(release.version, currentVersion) > 0,
       version: release.version,
@@ -158,7 +157,7 @@ export async function publicCatalogRoutes(app) {
       notes: release.notes || "",
       force: Boolean(requiredVersion),
       requiredVersion,
-      feedUrl: releaseFeedUrl(release.platform, release.version),
+      feedUrl: releaseFeedUrl(config.qiniuPublicBaseUrl, release),
     };
   });
 

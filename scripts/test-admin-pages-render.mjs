@@ -313,6 +313,26 @@ await check("a delivery rule can be edited, starting from what is saved", async 
   assert.match(tablesSource, /href=\{`\/admin\/config\/profiles\/\$\{encodeURIComponent\(row\.original\.id\)\}`\}/, "every rule in the list links to its editor");
 });
 
+await check("releases open on who is offered what, with only the rollout moves that exist", async () => {
+  samples.set("/api/admin/rollouts", { platforms: [
+    { platform: "darwin-arm64", activeWeek: 80, full: { id: "r1", version: "0.1.183", installed: 60 },
+      active: { id: "rol_a", version: "0.1.184", platform: "darwin-arm64", state: "rolling", percent: 25, installed: 9,
+        health: { verdict: "worse", rate: 0.4, baseRate: 0.1, baseline: { version: "0.1.183" } } },
+      drafts: [], halted: [] },
+    { platform: "win32-x64", activeWeek: 40, full: { id: "r2", version: "0.1.182", installed: 30 }, active: null,
+      drafts: [{ id: "rol_b", version: "0.1.184", immutableFeed: true }], halted: [{ id: "rol_c", version: "0.1.183", percent: 10 }] },
+  ] });
+  samples.set("/api/admin/releases", { releases: [], nextCursor: "", total: 0, latest: {} });
+  const html = await renderPage("app/admin/releases/page.js", { rolloutError: "0.1.9 is already rolling" });
+  const copy = t.admin.rollouts;
+  assert.ok(html.includes(copy.widenTo.replace("{n}", "50")) && !html.includes(copy.widenTo.replace("{n}", "10")), "only widening steps above 25% are offered");
+  assert.ok(html.includes(copy.healthWorse), "a worse version says so next to its rollout");
+  assert.ok(html.includes(copy.start) && html.includes('value="start"'), "a draft can be started");
+  assert.ok(html.includes(copy.reopen), "a halted rollout can be reopened");
+  assert.match(html, /role="alert"[^>]*>(?:[^<]|<!-- -->)*0\.1\.9 is already rolling/, "a refused move comes back as a notice");
+  samples.clear();
+});
+
 await check("no toggle is labelled with a state word", () => {
   const offenders = [];
   for (const dir of ["web/components", "web/app/admin"]) {

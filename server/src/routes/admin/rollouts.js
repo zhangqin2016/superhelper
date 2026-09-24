@@ -1,0 +1,144 @@
+import { z } from "zod";
+import { sql } from "kysely";
+import { db } from "../../db.js";
+import { publicId } from "../../services/ids.js";
+import { zodBody, okResponse } from "../../openapi.js";
+import { DEFAULT_CHANNEL, offerRelease } from "../../services/release-offer.js";
+import { ROLLOUT_ACTIONS, transitionRollout } from "../../services/release-rollouts.js";
+import { baselineFor, judgeHealth, versionHealth } from "../../services/release-health.js";
+
+const createRolloutSchema = z.object({
+  // Omitted: a draft that reaches no one until started.
+  percent: z.number().int().min(1).max(100).optional(),
+  notes: z.string().max(2000).optional().nullable(),
+});
+const updateRolloutSchema = z.object({
+  action: z.enum(ROLLOUT_ACTIONS),
+  percent: z.number().int().min(1).max(100).optional(),
+  reason: z.string().max(500).optional().nullable(),
+});
+
+const ACTIVE = ["rolling", "paused"];
+
+async function otherActive(rollout) {
+  return db.selectFrom("release_rollouts").select(["id", "version"])
+    .where("channel", "=", rollout.channel)
+    .where("platform", "=", rollout.platform)
+    .where("state", "in", ACTIVE)
+    .where("id", "!=", rollout.id)
+    .executeTakeFirst();
+}
+
+export function registerAdminRolloutRoutes(app, { audit }) {
+  app.get(
+    "/api/admin/rollouts",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Release rollouts by platform",
+        description: "Per platform on the stable channel: the version everyone is offered, the rollout in progress with its reach and health against the previous version, and recent rollouts.",
+        response: { 200: okResponse({ platforms: { type: "array", items: { type: "object", additionalProperties: true } } }) },
+      },
+    },
+    async () => {
+      const [releases, rollouts, health, adoption] = await Promise.all([
+        db.selectFrom("releases").selectAll().where("enabled", "=", true).execute(),
+        db.selectFrom("release_rollouts").selectAll().where("channel", "=", DEFAULT_CHANNEL).orderBy("created_at", "desc").execute(),
+        versionHealth(),
+        db.selectFrom("devices")
+          .select([sql`platform || '-' || arch`.as("platform"), "app_version", sql`count(*)::int`.as("devices")])
+          .where("last_seen_at", ">", sql`now() - interval '7 days'`)
+          .groupBy([sql`platform || '-' || arch`, "app_version"])
+          .execute(),
+      ]);
+      const platforms = [...new Set(releases.map((r) => r.platform))].sort();
+      return {
+        platforms: platforms.map((platform) => {
+          const own = releases.filter((r) => r.platform === platform);
+          const ownRollouts = rollouts.filter((r) => r.platform === platform);
+          // What an anonymous device (the download page) and everyone gets.
+          const full = offerRelease({ releases: own, rollouts: ownRollouts }).release;
+          const active = ownRollouts.find((r) => ACTIVE.includes(r.state)) || null;
+          const activeWeek = adoption.filter((row) => row.platform === platform).reduce((sum, row) => sum + row.devices, 0);
+          const onVersion = (version) => adoption.filter((row) => row.platform === platform && row.app_version === version).reduce((sum, row) => sum + row.devices, 0);
+          const withHealth = (rollout) => {
+            if (!rollout) return null;
+            const candidate = health.get(`${platform}@${rollout.version}`) || null;
+            const baseline = baselineFor(health, platform, rollout.version);
+            return {
+              ...rollout,
+              installed: onVersion(rollout.version),
+              health: { ...judgeHealth(candidate, baseline), candidate, baseline },
+            };
+          };
+          return {
+            platform,
+            full: full ? { id: full.id, version: full.version, installed: onVersion(full.version) } : null,
+            active: withHealth(active),
+            activeWeek,
+            // Published but offered to no one yet: what "start" acts on.
+            drafts: ownRollouts.filter((r) => r.state === "draft").map((r) => ({ ...r, immutableFeed: Boolean(own.find((rel) => rel.id === r.release_id)?.immutable_feed) })),
+            halted: ownRollouts.filter((r) => r.state === "halted").slice(0, 3),
+            recent: ownRollouts.slice(0, 8),
+          };
+        }),
+      };
+    },
+  );
+
+  app.post(
+    "/api/admin/releases/:id/rollout",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Create a rollout for a release",
+        description: "Creates the release's stable-channel rollout: a draft when percent is omitted, a staged rollout below 100, complete at 100.",
+        body: zodBody(createRolloutSchema),
+        response: { 201: okResponse({ id: { type: "string" }, state: { type: "string" } }) },
+      },
+    },
+    async (request, reply) => {
+      const input = createRolloutSchema.parse(request.body || {});
+      const release = await db.selectFrom("releases").selectAll().where("id", "=", request.params.id).executeTakeFirst();
+      if (!release) return reply.code(404).send({ ok: false, code: "RELEASE_NOT_FOUND" });
+      const existing = await db.selectFrom("release_rollouts").select("id").where("release_id", "=", release.id).where("channel", "=", DEFAULT_CHANNEL).executeTakeFirst();
+      if (existing) return reply.code(409).send({ ok: false, code: "ROLLOUT_EXISTS", id: existing.id, message: "This release already has a rollout; act on it instead." });
+      const draft = { id: publicId("rol"), release_id: release.id, platform: release.platform, version: release.version, channel: DEFAULT_CHANNEL, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
+      let row = draft;
+      if (input.percent !== undefined) {
+        const decided = transitionRollout({ ...draft, immutable_feed: release.immutable_feed }, { action: "start", percent: input.percent }, { otherActive: await otherActive(draft) });
+        if (!decided.ok) return reply.code(400).send(decided);
+        row = { ...draft, ...decided.patch };
+      }
+      await db.insertInto("release_rollouts").values(row).execute();
+      await audit(request, "rollout.create", "release_rollout", row.id, { release: release.id, version: release.version, platform: release.platform, state: row.state, percent: row.percent });
+      return reply.code(201).send({ ok: true, id: row.id, state: row.state });
+    },
+  );
+
+  app.patch(
+    "/api/admin/rollouts/:id",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Advance, pause, resume, halt, reopen or complete a rollout",
+        description: "Applies one state-machine action. The percentage only widens; stopping is pause or halt.",
+        body: zodBody(updateRolloutSchema),
+        response: { 200: okResponse({ id: { type: "string" }, state: { type: "string" }, percent: { type: "number" } }) },
+      },
+    },
+    async (request, reply) => {
+      const input = updateRolloutSchema.parse(request.body || {});
+      const rollout = await db.selectFrom("release_rollouts").selectAll().where("id", "=", request.params.id).executeTakeFirst();
+      if (!rollout) return reply.code(404).send({ ok: false, code: "ROLLOUT_NOT_FOUND" });
+      const release = await db.selectFrom("releases").select(["immutable_feed"]).where("id", "=", rollout.release_id).executeTakeFirst();
+      const decided = transitionRollout({ ...rollout, immutable_feed: Boolean(release?.immutable_feed) }, input, { otherActive: await otherActive(rollout) });
+      if (!decided.ok) return reply.code(400).send(decided);
+      await db.updateTable("release_rollouts").set({ ...decided.patch, updated_at: new Date() }).where("id", "=", rollout.id).execute();
+      await audit(request, `rollout.${input.action}`, "release_rollout", rollout.id, {
+        version: rollout.version, platform: rollout.platform, from: { state: rollout.state, percent: rollout.percent }, to: decided.patch, reason: input.reason || null,
+      });
+      return { ok: true, id: rollout.id, state: decided.patch.state, percent: decided.patch.percent ?? rollout.percent };
+    },
+  );
+}
