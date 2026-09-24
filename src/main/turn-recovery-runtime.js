@@ -263,6 +263,10 @@ function createTurnRecoveryRuntime(options = {}) {
           recovery: {
             kind: strategy.kind,
             mode: continueInstead ? "continuation" : "replay",
+            // Only a replay sends the user's own words; any other `content` is
+            // the platform's, so the turn carries the user's request forward.
+            objective: lastUser ? ""
+              : String(sourceTurn?.userText || ctx.sessionManager?.getLastUserMessage?.(sessionId)?.content || "").trim(),
             guidance: hint || "",
             evidenceContext: strategy.kind === "evidence_verify_retry" || strategy.kind === "source_coverage_retry"
               ? failure?.evidenceRecoveryContext || null
@@ -307,9 +311,16 @@ function createTurnRecoveryRuntime(options = {}) {
   }
 
   /** Blame-free "we already retried N times" suffix for the terminal copy. */
-  function rescueRetryNotice(sessionId, wasRescueAttempt) {
+  // The rescue that ran says what kind of problem it was. A model slip (a
+  // leaked tool call) is not an outage, and "服务恢复后" sent the user waiting
+  // for nothing; every other failure keeps the service wording.
+  function rescueRetryNotice(sessionId, wasRescueAttempt, code = "") {
     if (!wasRescueAttempt) return "";
-    const attempts = Math.max(1, require("./tool-call-rescue").rescueAttemptCount(sessionId));
+    const rescue = require("./tool-call-rescue");
+    const attempts = Math.max(1, rescue.rescueAttemptCount(sessionId));
+    if (rescue.rescueStrategyFor(code)?.modelOutputSlip) {
+      return `\n\n（平台已自动修复重试 ${attempts} 次仍未恢复。已完成的步骤都已保留，发送“继续”即可接着做。）`;
+    }
     return `\n\n（平台已自动修复重试 ${attempts} 次仍未恢复，判定为持续性故障。服务恢复后可随时继续。）`;
   }
 

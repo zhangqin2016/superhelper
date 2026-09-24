@@ -142,9 +142,24 @@ function isSelfCheckPromptText(text) {
  * against Lily's own, where these are hidden. A run of self-checks pushed the
  * real messages out of the comparison window, the guard read a mismatch, and
  * the conversation lost its resume for no reason.)
+ *
+ * A recovery TURN is platform-authored too. It carries its own marker — the
+ * `<lily_internal_turn>` execution-constraints layer every `opts.recovery` send
+ * gets — rather than this module's tag, and the question here is authorship,
+ * not which marker said so. (2026-09-24: a tool-call rescue sent its correction
+ * as a recovery turn; the engine was then recycled for a token rotation, the
+ * next turn's resume check read that correction as the user's latest message,
+ * and a 1,746-step engine session was discarded for a summary.)
  */
 function isPlatformAuthoredPromptText(text) {
-  return isMarkedInternalPrompt(text) || isSelfCheckPromptText(text);
+  if (isMarkedInternalPrompt(text) || isSelfCheckPromptText(text)) return true;
+  try {
+    return require("./turn-recovery-context").isInternalRecoveryPromptText(text);
+  } catch (err) {
+    // Unrecognised is the previous behaviour: the message still counts.
+    console.warn("[internal-prompt-marker] recovery-turn check failed open:", err?.message || err);
+    return false;
+  }
 }
 
 module.exports = {

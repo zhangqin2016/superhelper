@@ -153,7 +153,12 @@ function restoreEvidenceRecoveryContext(context = null) {
   return restored;
 }
 
+// What a recovery turn inherits from the turn it recovers: the evidence already
+// gathered, and the user's request. A rescue that CONTINUES sends a correction
+// the platform wrote, not the user's words; without the inherited request, a
+// later recovery of that turn took the correction as the task's objective.
 function initializeTurnEvidenceState(state, recovery = null) {
+  state.recoveryObjective = String(recovery?.objective || "").trim();
   const tools = restoreEvidenceRecoveryContext(recovery?.evidenceContext);
   state.evidenceLedger = new EvidenceLedger();
   state.inheritedEvidenceTools = tools;

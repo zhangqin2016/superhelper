@@ -1715,7 +1715,7 @@ class TurnOrchestrator {
       let friendly = failure.message || normalized.text || sanitizeError(collectFailureTextFromState(state)) || "The assistant engine encountered an error. Please retry.";
       // Make the invisible self-heal visible: a retried turn that still fails
       // must say so — two naked failures read as "no recovery".
-      friendly += this.turnRecoveryRuntime.rescueRetryNotice(sessionId, state.wasRescueAttempt);
+      friendly += this.turnRecoveryRuntime.rescueRetryNotice(sessionId, state.wasRescueAttempt, failure.code);
       const rawFailureText = collectFailureTextFromState(state) || normalized.text || payload?.error || payload?.message || friendly;
       const failedTurnId = state.turnId;
       finalizeDone = this._finalize(sessionId, "turn.failed", turnFailure({

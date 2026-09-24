@@ -144,6 +144,10 @@ const RESCUE_STRATEGIES = Object.freeze({
   MALFORMED_TOOL_CALL_TEXT: Object.freeze({
     kind: "tool_call_rescue",
     hint: CORRECTIVE_HINT,
+    // The model's own output slipped; the service is fine and the work so far
+    // stands. When the rescue also fails, the user is told to continue, not to
+    // wait for a recovery that is not coming (see rescueRetryNotice).
+    modelOutputSlip: true,
     enabled: () => process.env.LILY_TOOL_CALL_RESCUE !== "0",
   }),
   // Evidence gate found unsupported strong claims → one silent retry that steers
