@@ -112,11 +112,9 @@ function safeAppVersion() {
 }
 
 function setState(patch) {
-  updateState = {
-    ...updateState,
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  };
+  const previous = updateState;
+  updateState = { ...updateState, ...patch, updatedAt: new Date().toISOString() };
+  require("./update-funnel").observe(previous, updateState);
   broadcastState();
   return getUpdateState();
 }

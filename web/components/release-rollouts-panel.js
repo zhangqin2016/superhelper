@@ -4,7 +4,7 @@ import { DangerForm } from "./danger-form";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useI18n } from "../lib/use-i18n";
-import { rolloutAction, setReleaseSupportAction } from "../app/admin/actions";
+import { rolloutAction, setAutoPauseAction, setReleaseSupportAction } from "../app/admin/actions";
 
 // The widening steps offered from a given percentage. Only upward: stopping is pause/halt.
 const STEPS = [1, 5, 10, 25, 50, 100];
@@ -56,6 +56,12 @@ function ActiveRollout({ rollout, copy }) {
         <span className="text-xs text-slate-500">{copy.installed.replace("{n}", String(rollout.installed || 0))}</span>
       </div>
       <HealthLine health={rollout.health} copy={copy} />
+      <p className="mt-1 text-xs tabular-nums text-slate-500">{copy.funnel
+        .replace("{started}", String(rollout.funnel?.download_started || 0))
+        .replace("{downloaded}", String(rollout.funnel?.downloaded || 0))
+        .replace("{failed}", String(rollout.funnel?.download_failed || 0))
+        .replace("{installing}", String(rollout.funnel?.install_started || 0))
+        .replace("{running}", String(rollout.installed || 0))}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {next.filter((step) => step < 100).map((step) => (
           <ActionButton key={step} id={rollout.id} action="raise" percent={step} label={copy.widenTo.replace("{n}", String(step))} />
@@ -137,12 +143,31 @@ function SupportEditor({ platform, support = {}, copy }) {
   );
 }
 
+function AutoPauseSettings({ autoPause = {}, copy }) {
+  return (
+    <details className="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+      <summary className="cursor-pointer"><span className="font-medium">{copy.autoPause}</span>: {autoPause.enabled ? copy.autoPauseOn : copy.autoPauseOff}
+        <span className="ms-2 text-xs text-slate-500">×{autoPause.worseRatio} · ≥{autoPause.minDevices} · {autoPause.windowHours}h</span></summary>
+      <form action={setAutoPauseAction} className="mt-2 flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2"><input type="checkbox" name="enabled" defaultChecked={Boolean(autoPause.enabled)} />{copy.autoPauseEnabled}</label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.minDevices}<input name="minDevices" type="number" defaultValue={autoPause.minDevices} className="w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.worseRatio}<input name="worseRatio" type="number" step="0.1" defaultValue={autoPause.worseRatio} className="w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.windowHours}<input name="windowHours" type="number" defaultValue={autoPause.windowHours} className="w-24 rounded-md border border-slate-300 px-2 py-1" /></label>
+        <Button variant="outline" size="sm">{copy.saveAutoPause}</Button>
+      </form>
+      <p className="mt-2 text-xs text-slate-500">{copy.autoPauseHelp}</p>
+    </details>
+  );
+}
+
 /** Per platform: who gets what now, the rollout in progress, and how it is doing. */
-export function ReleaseRolloutsPanel({ platforms = [] }) {
+export function ReleaseRolloutsPanel({ platforms = [], autoPause = null }) {
   const { t } = useI18n();
   const copy = t.admin.rollouts;
   if (!platforms.length) return null;
   return (
+    <>
+    {autoPause ? <AutoPauseSettings autoPause={autoPause} copy={copy} /> : null}
     <div className="mb-4 grid gap-3 lg:grid-cols-3">
       {platforms.map((entry) => (
         <section key={entry.platform} className="table-card p-4">
@@ -166,5 +191,6 @@ export function ReleaseRolloutsPanel({ platforms = [] }) {
         </section>
       ))}
     </div>
+    </>
   );
 }

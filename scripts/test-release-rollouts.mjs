@@ -190,6 +190,51 @@ await check("promotion refuses until the rollout is complete, from the prepared 
   }
 });
 
+await check("health guard: flags a worse version always, pauses it only when the console says so", async () => {
+  const { normalizeAutoPause, guardDecisions, AUTO_PAUSE_DEFAULT } = await import("../server/src/services/rollout-guard.js");
+  assert.equal(AUTO_PAUSE_DEFAULT.enabled, false, "off by default: nothing changes until an operator turns it on");
+  assert.deepEqual(normalizeAutoPause({ enabled: true, minDevices: 1, worseRatio: 99, windowHours: "x" }), { enabled: true, minDevices: 5, worseRatio: 10, windowHours: 24 });
+  const health = new Map([
+    ["darwin-arm64@0.1.183", { platform: "darwin-arm64", version: "0.1.183", devices: 100, errors: 10, reporting: true }],
+    ["darwin-arm64@0.1.184", { platform: "darwin-arm64", version: "0.1.184", devices: 40, errors: 20, reporting: true }],
+  ]);
+  const rollouts = [{ id: "a", platform: "darwin-arm64", version: "0.1.184", state: "rolling" }, { id: "b", platform: "darwin-arm64", version: "0.1.184", state: "paused" }];
+  const off = guardDecisions({ rollouts, health, settings: normalizeAutoPause({ enabled: false }) });
+  assert.deepEqual(off.map((d) => [d.rollout.id, d.judgement.verdict, d.pause]), [["a", "worse", false]], "off: flagged, not paused; a paused rollout is not re-judged");
+  const on = guardDecisions({ rollouts, health, settings: normalizeAutoPause({ enabled: true }) });
+  assert.equal(on[0].pause, true);
+  const lenient = guardDecisions({ rollouts, health, settings: normalizeAutoPause({ enabled: true, worseRatio: 6 }) });
+  assert.equal(lenient[0].pause, false, "the threshold is the console's, not a constant");
+  const app = read("server/src/app.js");
+  assert.match(app, /runRolloutGuard\(\)[\s\S]*15 \* 60 \* 1000\);\n  rolloutGuardTimer\.unref\?\.\(\);/, "the guard runs every 15 minutes without holding the process");
+  assert.match(read("server/src/services/admin-attention.js"), /kind: "rolloutUnhealthy"/);
+});
+
+await check("update funnel: stages come from the update manager's own transitions, once each", async () => {
+  const { createRequire } = await import("node:module");
+  const funnel = createRequire(import.meta.url)("../src/main/update-funnel.js");
+  funnel._resetForTests();
+  const calls = [];
+  const service = { devicePayload: () => ({ deviceId: "dev_x" }), serviceFetch: async (url, init) => { calls.push([url, JSON.parse(init.body)]); return { ok: true }; } };
+  const base = { currentVersion: "0.1.183", latestVersion: "0.1.184" };
+  assert.deepEqual(funnel.observe({ ...base, phase: "available" }, { ...base, phase: "downloading" }, { service }).map((r) => r.stage), ["download_started"]);
+  assert.deepEqual(funnel.observe({ ...base, phase: "downloading" }, { ...base, phase: "downloading" }, { service }), [], "no transition, no report");
+  funnel.observe({ ...base, phase: "downloading" }, { ...base, phase: "available", error: { code: "AUTO_FEED_FAILED" } }, { service });
+  funnel.observe({ ...base, phase: "available" }, { ...base, phase: "downloading" }, { service });
+  assert.deepEqual(funnel.observe({ ...base, phase: "downloading" }, { ...base, phase: "downloaded" }, { service }).map((r) => r.stage), ["downloaded"]);
+  assert.deepEqual(funnel.observe({ ...base, phase: "downloaded" }, { ...base, phase: "installing" }, { service }).map((r) => r.stage), ["install_started"]);
+  assert.deepEqual(funnel.observe({ phase: "idle", currentVersion: "0.1.184", latestVersion: "0.1.184" }, { phase: "downloading", currentVersion: "0.1.184", latestVersion: "0.1.184" }, { service }), [], "nothing to report without a newer target");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls.map(([url, body]) => [url, body.stage, body.toVersion, body.errorCode || ""]), [
+    ["/api/updates/events", "download_started", "0.1.184", ""],
+    ["/api/updates/events", "download_failed", "0.1.184", "AUTO_FEED_FAILED"],
+    ["/api/updates/events", "downloaded", "0.1.184", ""],
+    ["/api/updates/events", "install_started", "0.1.184", ""],
+  ], "each stage once per version, the retry's second start is not double-counted");
+  assert.match(read("src/main/update-manager.js"), /require\("\.\/update-funnel"\)\.observe\(previous, updateState\);/, "every state change is observed, so no path can forget to report");
+  assert.ok(funnel.observe({ ...base, phase: "idle" }, { ...base, latestVersion: "0.1.185", phase: "downloading" }, { service: { devicePayload() { throw new Error("x"); }, serviceFetch: async () => { throw new Error("offline"); } } }).length === 1, "a failing reporter does not throw into the update flow");
+});
+
 await check("the real-database closed loop runs when a scratch Postgres is provided", () => {
   // server/scripts/release-rollouts-integration.mjs: real migrations, real routes, 200 devices.
   const url = process.env.LILY_TEST_DATABASE_URL || "";

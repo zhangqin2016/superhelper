@@ -116,6 +116,21 @@ export async function adminAttention() {
       detail: [...floors].map(([platform, version]) => `${platform} ≥ ${version}`).join(" · ") });
   }
 
+  // A version in flight doing clearly worse than the one before it: flagged
+  // whether or not auto-pause is on (with it on, the guard has paused it).
+  const rolling = await many(db.selectFrom("release_rollouts").selectAll().where("state", "=", "rolling"));
+  if (rolling.length) {
+    const { guardDecisions, loadAutoPause } = await import("./rollout-guard.js");
+    const { versionHealth } = await import("./release-health.js");
+    const settings = await loadAutoPause();
+    const worse = guardDecisions({ rollouts: rolling, health: await versionHealth({ windowHours: settings.windowHours }), settings })
+      .filter((decision) => decision.judgement.verdict === "worse");
+    if (worse.length) {
+      items.push({ kind: "rolloutUnhealthy", severity: "danger", count: worse.length, href: "/admin/releases",
+        detail: worse.map((d) => `${d.rollout.platform} ${d.rollout.version}`).join(" · ") });
+    }
+  }
+
   return {
     items,
     fleet: { active1d: n(fleet.d1), active7d: activeWeek, active30d: n(fleet.d30), installed: n(fleet.installed) },

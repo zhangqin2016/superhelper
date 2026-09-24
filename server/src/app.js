@@ -89,6 +89,13 @@ export async function buildApp() {
       .catch((err) => app.log.warn({ err }, "model catalog refresh failed"));
   }, 24 * 60 * 60 * 1000);
   catalogTimer.unref?.();
+  // Rollouts in flight are judged every 15 minutes; pausing is a console setting, off by default.
+  const rolloutGuardTimer = setInterval(() => {
+    import("./services/rollout-guard.js")
+      .then(({ runRolloutGuard }) => runRolloutGuard())
+      .catch((err) => app.log.warn({ err }, "rollout guard failed"));
+  }, 15 * 60 * 1000);
+  rolloutGuardTimer.unref?.();
   await registerRoutes(app);
   // Mobile Command WebSocket relay: attaches to the underlying http server's
   // upgrade event (fastify has no WS server). Gated so it only runs in the full

@@ -8,6 +8,8 @@ import { compareVersions } from "../../services/release-versions.js";
 import { ROLLOUT_ACTIONS, transitionRollout } from "../../services/release-rollouts.js";
 import { baselineFor, judgeHealth, versionHealth } from "../../services/release-health.js";
 import { RELEASE_CHANNELS, normalizeSupport, supportPolicyError } from "../../services/release-support.js";
+import { AUTO_PAUSE_SETTING, loadAutoPause, normalizeAutoPause } from "../../services/rollout-guard.js";
+import { setAppSetting } from "../../services/app-settings.js";
 
 const createRolloutSchema = z.object({
   channel: z.enum(["stable", "beta"]).optional(),
@@ -40,23 +42,30 @@ export function registerAdminRolloutRoutes(app, { audit }) {
         tags: ["admin:releases"],
         summary: "Release rollouts by platform",
         description: "Per platform on the stable channel: the version everyone is offered, the rollout in progress with its reach and health against the previous version, and recent rollouts.",
-        response: { 200: okResponse({ platforms: { type: "array", items: { type: "object", additionalProperties: true } } }) },
+        response: { 200: okResponse({ platforms: { type: "array", items: { type: "object", additionalProperties: true } }, autoPause: { type: "object", additionalProperties: true } }) },
       },
     },
     async () => {
-      const [releases, rollouts, health, adoption, supportRows] = await Promise.all([
+      const autoPause = await loadAutoPause();
+      const [releases, rollouts, health, adoption, supportRows, funnelRows] = await Promise.all([
         db.selectFrom("releases").selectAll().where("enabled", "=", true).execute(),
         db.selectFrom("release_rollouts").selectAll().orderBy("created_at", "desc").execute(),
-        versionHealth(),
+        versionHealth({ windowHours: autoPause.windowHours }),
         db.selectFrom("devices")
           .select([sql`platform || '-' || arch`.as("platform"), "app_version", sql`count(*)::int`.as("devices")])
           .where("last_seen_at", ">", sql`now() - interval '7 days'`)
           .groupBy([sql`platform || '-' || arch`, "app_version"])
           .execute(),
         db.selectFrom("release_support").selectAll().execute().catch(() => []),
+        db.selectFrom("update_events").select(["platform", "to_version", "stage", sql`count(*)::int`.as("devices")])
+          .groupBy(["platform", "to_version", "stage"]).execute().catch(() => []),
       ]);
+      const funnelFor = (platform, version) => Object.fromEntries(funnelRows
+        .filter((row) => row.platform === platform && row.to_version === version)
+        .map((row) => [row.stage, row.devices]));
       const platforms = [...new Set(releases.map((r) => r.platform))].sort();
       return {
+        autoPause,
         platforms: platforms.map((platform) => {
           const own = releases.filter((r) => r.platform === platform);
           const allRollouts = rollouts.filter((r) => r.platform === platform);
@@ -79,7 +88,8 @@ export function registerAdminRolloutRoutes(app, { audit }) {
             return {
               ...rollout,
               installed: onVersion(rollout.version),
-              health: { ...judgeHealth(candidate, baseline), candidate, baseline },
+              funnel: funnelFor(platform, rollout.version),
+              health: { ...judgeHealth(candidate, baseline, autoPause), candidate, baseline },
             };
           };
           return {
@@ -209,6 +219,36 @@ export function registerAdminReleaseSupportRoutes(app, { audit }) {
       const result = await writeReleaseSupport({ channel, platform: String(request.params.platform || ""), patch: supportSchema.parse(request.body || {}), audit, request });
       if (!result.ok) return reply.code(400).send(result);
       return result;
+    },
+  );
+}
+
+const autoPauseSchema = z.object({
+  enabled: z.boolean(),
+  minDevices: z.number().int().min(5).max(10_000).optional(),
+  worseRatio: z.number().min(1.1).max(10).optional(),
+  windowHours: z.number().int().min(1).max(168).optional(),
+});
+
+export function registerAdminReleaseSettingsRoutes(app, { audit }) {
+  app.patch(
+    "/api/admin/release-settings/auto-pause",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Turn rollout auto-pause on or off and set its thresholds",
+        description: "A rolling version whose error rate per active device is at least worseRatio times the previous version's, with at least minDevices on both, is paused automatically when enabled.",
+        body: zodBody(autoPauseSchema),
+        response: { 200: okResponse({ autoPause: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async (request) => {
+      const input = autoPauseSchema.parse(request.body || {});
+      const before = await loadAutoPause();
+      const next = normalizeAutoPause({ ...before, ...input });
+      await setAppSetting(AUTO_PAUSE_SETTING, next);
+      await audit(request, "release_settings.auto_pause", "app_setting", AUTO_PAUSE_SETTING, { from: before, to: next });
+      return { ok: true, autoPause: next };
     },
   );
 }

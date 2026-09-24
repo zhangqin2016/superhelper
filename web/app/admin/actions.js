@@ -313,6 +313,22 @@ export async function rolloutAction(formData) {
   if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
 }
 
+export async function setAutoPauseAction(formData) {
+  let failure = "";
+  try {
+    await apiPatch("/api/admin/release-settings/auto-pause", {
+      enabled: bool(formData, "enabled"),
+      minDevices: Number(text(formData, "minDevices")) || undefined,
+      worseRatio: Number(text(formData, "worseRatio")) || undefined,
+      windowHours: Number(text(formData, "windowHours")) || undefined,
+    });
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath("/admin/releases");
+  if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
+}
+
 // A channel × platform support policy: minimum supported version, blocked
 // versions, deadline. "block"/"unblock" edit the list for one version.
 export async function setReleaseSupportAction(formData) {

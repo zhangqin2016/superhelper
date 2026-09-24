@@ -12,6 +12,7 @@ import { registerPublicMobileRoutes } from "./public/mobile.js";
 import { registerPublicSkillRoutes } from "./public/skills.js";
 import { registerPublicAgentRoutes } from "./public/agents.js";
 import { registerPublicTelemetryRoutes } from "./public/telemetry.js";
+import { registerPublicUpdateEventRoutes } from "./public/update-events.js";
 import { registerPublicWishRoutes } from "./public/wishes.js";
 import { registerCollaborationRoutes } from "./public/collaboration.js";
 import { okResponse } from "../openapi.js";
@@ -42,6 +43,7 @@ export async function publicRoutes(app) {
   registerPublicSkillRoutes(app);
   registerPublicAgentRoutes(app);
   registerPublicTelemetryRoutes(app);
+  registerPublicUpdateEventRoutes(app);
   registerPublicWishRoutes(app);
   registerCollaborationRoutes(app);
 }

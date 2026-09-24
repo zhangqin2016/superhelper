@@ -195,6 +195,52 @@ try {
   assert.equal(await share("0.1.190"), 0, "no stable device sees it");
   assert.equal((await offered("")).version, "0.1.187", "nor the download page");
 
+  step("update funnel: signed device reports, one row per stage, shown on the rollout");
+  const { stableStringify, sha256 } = await import("../src/services/security.js");
+  const key = crypto.generateKeyPairSync("ed25519");
+  await pool.query("insert into devices (id, platform, arch, app_version) values ('dev_funnel_1', 'darwin', 'arm64', '0.1.187')");
+  await pool.query("insert into device_public_keys (device_id, public_key) values ($1, $2)", ["dev_funnel_1", key.publicKey.export({ type: "spki", format: "pem" })]);
+  const signed = (pathname, body) => {
+    const timestamp = new Date().toISOString(), nonce = crypto.randomUUID(), bodyHash = sha256(stableStringify(body));
+    const signature = crypto.sign(null, Buffer.from(stableStringify({ method: "POST", pathname, timestamp, nonce, bodyHash })), key.privateKey).toString("base64url");
+    return { "x-lily-device-id": "dev_funnel_1", "x-lily-timestamp": timestamp, "x-lily-nonce": nonce, "x-lily-body-sha256": bodyHash, "x-lily-signature": signature };
+  };
+  const unsigned = await call("POST", "/api/updates/events", { deviceId: "dev_funnel_1", platform: "darwin", arch: "arm64", appVersion: "0.1.187", toVersion: "0.1.191", stage: "downloaded" });
+  assert.equal(unsigned.status, 401, "an unsigned report is refused");
+  const staged2 = await call("POST", "/api/admin/releases", release("0.1.191", { immutableFeed: true, rolloutPercent: 20 }), asAdmin);
+  assert.equal(staged2.status, 201, JSON.stringify(staged2.body));
+  for (const stage of ["download_started", "downloaded", "downloaded"]) {
+    const body = { deviceId: "dev_funnel_1", platform: "darwin", arch: "arm64", appVersion: "0.1.187", toVersion: "0.1.191", stage };
+    const res = await call("POST", "/api/updates/events", body, signed("/api/updates/events", body));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  }
+  const funnelCard = (await call("GET", "/api/admin/rollouts", undefined, asAdmin)).body.platforms.find((p) => p.platform === platform).active;
+  assert.deepEqual([funnelCard.version, funnelCard.funnel], ["0.1.191", { download_started: 1, downloaded: 1 }], "a repeat is not a second device");
+
+  step("health guard: off flags a worse version; on pauses it, and the pause is audited");
+  const seedVersion = async (version, count, errors) => {
+    for (let i = 0; i < count; i += 1) {
+      const id = `dev_h_${version}_${i}`;
+      await pool.query("insert into devices (id, platform, arch, app_version, last_seen_at) values ($1, 'darwin', 'arm64', $2, now()) on conflict do nothing", [id, version]);
+      if (i < errors) await pool.query("insert into runtime_diagnostics (id, device_id, platform, arch, app_version, severity, normalized_kind, created_at) values ($1, $2, 'darwin', 'arm64', $3, 'error', 'MODEL_NO_RESPONSE', now())", [`diag_${id}`, id, version]);
+    }
+  };
+  await seedVersion("0.1.187", 30, 3);   // baseline: 0.1 errors per device
+  await seedVersion("0.1.191", 25, 10);  // candidate: 0.4 errors per device
+  const { runRolloutGuard } = await import("../src/services/rollout-guard.js");
+  const offRun = await runRolloutGuard();
+  assert.equal(offRun.decisions.find((d) => d.rollout.version === "0.1.191").judgement.verdict, "worse");
+  assert.equal((await pool.query("select state from release_rollouts where id=$1", [staged2.body.rolloutId])).rows[0].state, "rolling", "off by default: flagged, not paused");
+  const attention = await call("GET", "/api/admin/attention", undefined, asAdmin);
+  assert.ok(attention.body.attention.items.some((item) => item.kind === "rolloutUnhealthy"), "the dashboard says so");
+  assert.equal((await call("PATCH", "/api/admin/release-settings/auto-pause", { enabled: true, minDevices: 20, worseRatio: 1.5 }, asAdmin)).status, 200);
+  await runRolloutGuard();
+  assert.equal((await pool.query("select state from release_rollouts where id=$1", [staged2.body.rolloutId])).rows[0].state, "paused");
+  const pauseAudit = (await pool.query("select actor from audit_logs where action='rollout.auto_pause' and target_id=$1", [staged2.body.rolloutId])).rows;
+  assert.deepEqual(pauseAudit.map((r) => r.actor), ["rollout-guard"]);
+  await runRolloutGuard();
+  assert.equal((await pool.query("select count(*)::int n from audit_logs where action='rollout.auto_pause'")).rows[0].n, 1, "a paused rollout is not paused twice");
+
   step("every move is audited");
   const actions = (await pool.query("select action from audit_logs where target_id=$1 order by id", [rolloutId])).rows.map((r) => r.action);
   assert.deepEqual(actions, ["rollout.raise", "rollout.halt", "rollout.reopen", "rollout.resume", "rollout.complete"]);
