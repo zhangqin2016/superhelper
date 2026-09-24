@@ -607,6 +607,20 @@ try {
   ok(projectedConversation[0].role === "user" && projectedConversation[0].content === "生成报告", "projected user message is readable");
   ok(projectedConversation[1].role === "assistant" && projectedConversation[1].content === "已生成完整报告", "projected assistant message is readable");
   ok(projectedConversation[1].record.meta.projected === true, "projected assistant is marked for diagnostics");
+  {
+    // Past `limit` turns, the NEWEST come back (oldest-first). The query used to
+    // order ascending before LIMIT and hand back a long session's first turns.
+    const events = [];
+    for (let i = 0; i < 5; i += 1) {
+      events.push(
+        { id: `lim_s_${i}`, type: "turn.started", sessionId: "S_LIMIT", turnId: `lt_${i}`, seq: i * 2 + 1, ts: 10_000 + i * 100, source: "orchestrator", payload: { text: `问题 ${i}` } },
+        { id: `lim_c_${i}`, type: "turn.completed", sessionId: "S_LIMIT", turnId: `lt_${i}`, seq: i * 2 + 2, ts: 10_050 + i * 100, source: "orchestrator", payload: { assistant: `回答 ${i}` } },
+      );
+    }
+    store.appendRuntimeEvents("S_LIMIT", events);
+    const newest = store.getProjectedConversation("S_LIMIT", { limit: 2 });
+    ok(JSON.stringify(newest.map((m) => m.content)) === JSON.stringify(["问题 3", "回答 3", "问题 4", "回答 4"]), "limit keeps the newest turns, in order");
+  }
   const terminalInput = store.markTurnInputTerminal({
     ownerScope: "owner-terminal-a",
     sessionId: "S4",

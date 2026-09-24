@@ -41,27 +41,39 @@ function formatDate(value) {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString();
+  try {
+    return new Intl.DateTimeFormat(getLocale(), { dateStyle: "long" }).format(d);
+  } catch {
+    return d.toLocaleDateString();
+  }
+}
+
+function paintLicenseStatus(el, text, tone) {
+  el.textContent = text;
+  el.classList.toggle("is-valid", tone === "valid");
+  el.classList.toggle("is-invalid", tone === "invalid");
 }
 
 export async function refreshLicenseStatus() {
   const el = $("licenseStatusText");
   if (!el) return;
   const status = await window.assistantClient.getLicenseStatus();
+  const clearBtn = $("licenseClearBtn");
+  if (clearBtn) clearBtn.hidden = !status?.activated;
   if (!status?.activated) {
-    el.textContent = t("settings.licenseInactive");
+    paintLicenseStatus(el, t("settings.licenseInactive"), "");
     return;
   }
   if (status.valid) {
-    el.textContent = t("settings.licenseValid", {
+    paintLicenseStatus(el, t("settings.licenseValid", {
       customer: status.license?.customer || status.license?.licenseId || "",
       expiresAt: formatDate(status.license?.expiresAt),
       plan: status.license?.plan || "",
-    });
+    }), "valid");
   } else {
-    el.textContent = t("settings.licenseInvalid", {
+    paintLicenseStatus(el, t("settings.licenseInvalid", {
       error: licenseErrorMessage(status.error),
-    });
+    }), "invalid");
   }
 }
 

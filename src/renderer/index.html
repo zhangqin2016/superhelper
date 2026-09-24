@@ -574,16 +574,13 @@
             </section>
             <section id="settingsPageAccount" class="settings-page account-settings-page" data-settings-page="account" hidden>
               <div class="account-settings-hero">
-                <div>
-                  <h3 class="settings-page-title" data-i18n="settings.accountTitle">用户账户</h3>
-                  <p class="settings-section-desc" data-i18n="settings.accountDesc">登录后同步官网购买的会员、Token 和生成额度。</p>
-                </div>
-                <p id="accountStatusText" class="account-status-pill" data-i18n="settings.accountLoading">正在读取账户状态…</p>
+                <h3 class="settings-page-title" data-account-section-title data-i18n="settings.nav.account">账户</h3>
+                <p id="accountStatusText" class="settings-section-desc account-status-line" data-i18n="settings.accountLoading">正在读取账户状态…</p>
               </div>
 
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
-                  <span data-i18n="settings.nav.account">账户</span>
+                  <span data-i18n="settings.account.tabOverview">概览</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
                   <span data-i18n="settings.nav.usage">用量</span>
@@ -603,10 +600,10 @@
                   </div>
 
                   <div id="accountSignedInPanel" class="account-signed-in-panel" hidden>
-                    <div class="account-signed-in-mark">✓</div>
+                    <div class="account-signed-in-mark" aria-hidden="true">✓</div>
                     <div>
-                      <strong data-i18n="settings.accountSignedInTitle">账户已登录</strong>
-                      <p id="accountSignedInPhone"></p>
+                      <strong id="accountSignedInPhone"></strong>
+                      <p data-i18n="settings.accountSignedInHint">当前账号已和客户端绑定，可直接购买、刷新额度或退出登录。</p>
                     </div>
                   </div>
 
@@ -660,11 +657,15 @@
 
                   <p id="accountFormStatus" class="settings-form-status account-form-status" hidden></p>
 
-                  <div id="accountNicknamePanel" class="settings-field" hidden>
-                    <label class="settings-field-label" for="accountNicknameInput" data-i18n="settings.nickname">昵称</label>
-                    <input id="accountNicknameInput" class="settings-input" type="text" autocomplete="nickname" maxlength="64" />
-                    <button id="accountNicknameSaveBtn" class="settings-action-btn" type="button" data-i18n="settings.nicknameSave">保存昵称</button>
-                    <p id="accountNicknameStatus" class="settings-form-status" role="status" hidden></p>
+                  <div id="accountNicknamePanel" class="account-nickname-panel" hidden>
+                    <div class="account-login-grid">
+                      <label class="settings-field account-phone-field">
+                        <span class="settings-field-label" data-i18n="settings.nickname">昵称</span>
+                        <input id="accountNicknameInput" class="settings-input" type="text" autocomplete="nickname" maxlength="64" />
+                      </label>
+                      <button id="accountNicknameSaveBtn" class="settings-action-btn account-inline-btn" type="button" data-i18n="settings.nicknameSave">保存昵称</button>
+                    </div>
+                    <p id="accountNicknameStatus" class="settings-form-status account-form-status" role="status" hidden></p>
                   </div>
                   <div class="account-management-actions">
                     <button id="accountBillingBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.accountBilling">购买 / 充值</button>
@@ -675,10 +676,10 @@
 
             </section>
             <section id="settingsPageUsage" class="settings-page" data-settings-page="usage" hidden>
-              <h3 class="settings-page-title" data-i18n="settings.nav.usage">用量</h3>
+              <h3 class="settings-page-title" data-account-section-title data-i18n="settings.nav.account">账户</h3>
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
-                  <span data-i18n="settings.nav.account">账户</span>
+                  <span data-i18n="settings.account.tabOverview">概览</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
                   <span data-i18n="settings.nav.usage">用量</span>
@@ -687,18 +688,17 @@
                   <span data-i18n="settings.nav.license">授权</span>
                 </button>
               </div>
-              <section class="account-settings-card account-settings-card--entitlements account-usage-balance">
-                <div class="account-card-head">
+              <section class="account-section account-usage-balance" id="accountEntitlementsSection" hidden>
+                <div class="account-section-head">
                   <div>
                     <h4 data-i18n="settings.accountEntitlementsTitle">权益概览</h4>
                     <p data-i18n="settings.accountEntitlementsHint">官网购买和免费额度会汇总到这里。</p>
                   </div>
-                  <button id="accountRefreshBtn" class="settings-action-btn account-card-action" type="button" data-i18n="settings.accountRefresh">刷新额度</button>
                 </div>
                 <div id="accountEntitlements" class="account-entitlements" aria-live="polite"></div>
               </section>
-              <section class="account-settings-card account-org-select-card" id="accountOrgSelectCard" hidden>
-                <div class="account-card-head">
+              <section class="account-section" id="accountOrgSelectCard" hidden>
+                <div class="account-section-head">
                   <div>
                     <h4 data-i18n="settings.accountOrgTitle">当前组织</h4>
                     <p data-i18n="settings.accountOrgHint">选择后模型消耗将优先使用企业额度；不选则使用个人额度。</p>
@@ -709,20 +709,22 @@
                 </select>
               </section>
               <!-- Usage details start -->
-              <div id="usageContent" class="usage-content">
-                <div class="usage-heading">
-                  <h4 data-i18n="settings.usage.deviceScope">本设备用量</h4>
-                  <button id="usageRefresh" class="usage-icon-btn" type="button" data-i18n-title="settings.usage.refresh" data-i18n-aria-label="settings.usage.refresh" title="刷新用量" aria-label="刷新用量"><span aria-hidden="true">&#8635;</span></button>
+              <div id="usageContent" class="usage-content account-section">
+                <div class="usage-heading account-section-head">
+                  <div>
+                    <h4 data-i18n="settings.usage.deviceScope">本设备用量</h4>
+                    <p id="usageDataSource" class="usage-data-source" role="status" hidden></p>
+                  </div>
+                  <button id="usageRefresh" class="settings-action-btn usage-refresh-btn" type="button" data-i18n="settings.usage.refresh" data-i18n-title="settings.usage.refreshHint" title="刷新额度与本设备用量">刷新</button>
                 </div>
                 <p id="usageStatus" class="usage-status" role="status" hidden></p>
-                <p id="usageDataSource" class="usage-data-source" role="status" hidden></p>
                 <div id="usageTodayStats" class="usage-today-stats"></div>
                 <div class="usage-toolbar">
+                  <p id="usageRangeTotals" class="usage-range-summary"></p>
                   <div class="usage-view-switch" role="group" data-i18n-aria-label="settings.usage.groupBy">
                     <button type="button" data-usage-view="dates" aria-pressed="true" aria-controls="usageDatesView" data-i18n="settings.usage.byDate">按日期</button>
                     <button type="button" data-usage-view="models" aria-pressed="false" aria-controls="usageModelsView" data-i18n="settings.usage.byModel">按模型</button>
                   </div>
-                  <p id="usageRangeTotals" class="usage-range-summary"></p>
                 </div>
                 <div id="usageDatesView" aria-describedby="usageRangeTotals">
                   <div id="usageDateHeader" class="usage-day-row usage-day-header" aria-hidden="true">
@@ -748,36 +750,78 @@
             </section>
             <section id="settingsPageMobile" class="settings-page" data-settings-page="mobile" hidden>
               <h3 class="settings-page-title" data-i18n="settings.nav.mobile">手机控制</h3>
-              <p class="settings-section-desc" data-i18n="settings.mobileDesc">用手机扫码配对本机，配对成功后可以从手机把任务发送到当前对话。</p>
-              <div class="settings-actions settings-page-actions">
-                <button id="mobilePairStartBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.mobilePairStart">生成配对码</button>
-                <button id="mobilePairDirectBtn" class="settings-action-btn" type="button" data-i18n="settings.mobilePairDirectStart">生成直控码</button>
-                <span id="mobilePairBridgeStatus" class="settings-section-desc" hidden></span>
-              </div>
-              <div id="mobilePairDirect" class="settings-field" hidden>
-                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairDirectTitle">在手机上输入以下授权码 + 密码，直接连接（无需批准）</h4>
-                <div class="mobile-pair-direct-grid">
-                  <div><span class="settings-section-desc" data-i18n="settings.mobilePairDirectCode">授权码</span><div id="mobilePairDirectCode" class="mobile-pair-code" role="textbox" aria-readonly="true"></div></div>
-                  <div><span class="settings-section-desc" data-i18n="settings.mobilePairDirectPassword">密码</span><div id="mobilePairDirectPassword" class="mobile-pair-code" role="textbox" aria-readonly="true"></div></div>
+              <p class="settings-section-desc" data-i18n="settings.mobileDesc">在手机上给这台电脑上的 Lily 派任务、看回复、随时停止——不用登录，扫一下码就好。</p>
+
+              <div class="mobile-hub">
+                <div class="mobile-hub-summary">
+                  <span class="mobile-hub-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
+                  </span>
+                  <div class="mobile-hub-text">
+                    <div id="mobilePairSummaryTitle" class="mobile-hub-title" data-i18n="settings.mobileSummaryNone">还没有配对手机</div>
+                    <div id="mobilePairBridgeStatus" class="mobile-hub-sub" data-i18n="settings.mobileSummaryHint">配对后，手机就能把任务发到这台电脑。</div>
+                  </div>
                 </div>
-                <p id="mobilePairDirectExpiry" class="settings-section-desc"></p>
+                <div class="mobile-hub-actions">
+                  <button id="mobilePairStartBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.mobilePairStart">扫码配对</button>
+                  <button id="mobilePairDirectBtn" class="settings-action-btn" type="button" data-i18n="settings.mobilePairDirectStart">直控码</button>
+                </div>
               </div>
-              <p id="mobilePairCapabilityStatus" class="settings-section-desc" hidden></p>
-              <div id="mobilePairChallenge" class="settings-field" hidden>
-                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairScan">用手机相机扫码打开配对页</h4>
-                <img id="mobilePairQr" class="mobile-pair-qr" alt="" hidden />
-                <p class="settings-section-desc" data-i18n="settings.mobilePairCodeHint">扫不了？在手机上打开配对页，手动粘贴下面的配对码：</p>
-                <div id="mobilePairCode" class="mobile-pair-code" role="textbox" aria-readonly="true"></div>
-                <p id="mobilePairExpiry" class="settings-section-desc"></p>
+
+              <div id="mobilePairChallenge" class="mobile-pair-panel" hidden>
+                <div class="mobile-pair-qr-frame">
+                  <img id="mobilePairQr" class="mobile-pair-qr" alt="" hidden />
+                </div>
+                <div class="mobile-pair-panel-body">
+                  <h4 class="mobile-pair-panel-title" data-i18n="settings.mobilePairScan">用手机相机扫这个二维码</h4>
+                  <ol class="mobile-pair-steps">
+                    <li data-i18n="settings.mobilePairStep1">打开手机相机，对准二维码</li>
+                    <li data-i18n="settings.mobilePairStep2">在手机上打开弹出的链接</li>
+                    <li data-i18n="settings.mobilePairStep3">回到这里点「批准」</li>
+                  </ol>
+                  <div id="mobilePairInlinePending" class="mobile-pair-inline-pending" hidden></div>
+                  <p id="mobilePairExpiry" class="mobile-pair-expiry"></p>
+                  <details class="mobile-pair-manual">
+                    <summary data-i18n="settings.mobilePairCodeHint">扫不了码？手动粘贴配对码</summary>
+                    <div class="mobile-pair-code-row">
+                      <div id="mobilePairCode" class="mobile-pair-code" role="textbox" aria-readonly="true"></div>
+                      <button id="mobilePairCopyCode" class="settings-action-btn settings-action-btn--compact" type="button" data-i18n="settings.mobilePairCopy">复制</button>
+                    </div>
+                  </details>
+                </div>
+                <button id="mobilePairChallengeClose" class="mobile-pair-panel-close" type="button" data-i18n-title="settings.mobilePairClose" title="关闭">×</button>
               </div>
-              <div class="settings-field">
-                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairPending">待批准的配对请求</h4>
-                <div id="mobilePairPendingList" class="settings-memory-list"></div>
+
+              <div id="mobilePairDirect" class="mobile-pair-panel mobile-pair-panel--direct" hidden>
+                <div class="mobile-pair-panel-body">
+                  <h4 class="mobile-pair-panel-title" data-i18n="settings.mobilePairDirectTitle">在手机上输入授权码和密码，直接连接</h4>
+                  <p class="mobile-pair-note" data-i18n="settings.mobilePairDirectNote">手机打开配对页，选「授权码直连」。直连不需要在这里批准，请只告诉你信任的人。</p>
+                  <div class="mobile-pair-direct-grid">
+                    <div class="mobile-pair-secret">
+                      <span class="mobile-pair-secret-label" data-i18n="settings.mobilePairDirectCode">授权码</span>
+                      <div id="mobilePairDirectCode" class="mobile-pair-secret-value" role="textbox" aria-readonly="true"></div>
+                    </div>
+                    <div class="mobile-pair-secret">
+                      <span class="mobile-pair-secret-label" data-i18n="settings.mobilePairDirectPassword">密码</span>
+                      <div id="mobilePairDirectPassword" class="mobile-pair-secret-value" role="textbox" aria-readonly="true"></div>
+                    </div>
+                  </div>
+                  <p id="mobilePairDirectExpiry" class="mobile-pair-expiry"></p>
+                </div>
+                <button id="mobilePairDirectClose" class="mobile-pair-panel-close" type="button" data-i18n-title="settings.mobilePairClose" title="关闭">×</button>
               </div>
-              <div class="settings-field">
-                <h4 class="settings-subsection-title" data-i18n="settings.mobilePairPaired">已配对的手机</h4>
-                <div id="mobilePairDeviceList" class="settings-memory-list"></div>
+
+              <div id="mobilePairPendingSection" class="mobile-pair-section" hidden>
+                <h4 class="mobile-pair-section-title" data-i18n="settings.mobilePairPending">等待批准</h4>
+                <div id="mobilePairPendingList" class="mobile-pair-list"></div>
               </div>
+
+              <div class="mobile-pair-section">
+                <h4 class="mobile-pair-section-title" data-i18n="settings.mobilePairPaired">已配对的手机</h4>
+                <div id="mobilePairDeviceList" class="mobile-pair-list"></div>
+              </div>
+
+              <p id="mobilePairCapabilityStatus" class="mobile-pair-capabilities" hidden></p>
             </section>
 
             <section id="settingsPageMemory" class="settings-page" data-settings-page="memory" hidden>
@@ -1129,10 +1173,10 @@
               </div>
             </section>
             <section id="settingsPageLicense" class="settings-page" data-settings-page="license" hidden>
-              <h3 class="settings-page-title" data-i18n="settings.nav.license">授权</h3>
+              <h3 class="settings-page-title" data-account-section-title data-i18n="settings.nav.account">账户</h3>
               <div class="settings-subnav-tabs" role="tablist" data-i18n-aria-label="settings.account.tabLabel" aria-label="账户内容">
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="account">
-                  <span data-i18n="settings.nav.account">账户</span>
+                  <span data-i18n="settings.account.tabOverview">概览</span>
                 </button>
                 <button type="button" class="settings-subnav-tab" role="tab" aria-selected="false" data-settings-link="usage">
                   <span data-i18n="settings.nav.usage">用量</span>
@@ -1141,18 +1185,21 @@
                   <span data-i18n="settings.nav.license">授权</span>
                 </button>
               </div>
-              <p id="licenseStatusText" class="settings-section-desc" data-i18n="settings.licenseLoading">正在读取授权状态…</p>
-              <textarea
-                id="licenseTokenInput"
-                class="skills-registry-input"
-                rows="3"
-                data-i18n-placeholder="settings.licensePlaceholder"
-                placeholder="粘贴激活码"
-                spellcheck="false"
-              ></textarea>
-              <div class="settings-actions settings-form-actions">
-                <button id="licenseActivateBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseActivate">激活</button>
-                <button id="licenseClearBtn" class="settings-action-btn" type="button" data-i18n="settings.licenseClear">移除授权</button>
+              <p id="licenseStatusText" class="license-status" role="status" data-i18n="settings.licenseLoading">正在读取授权状态…</p>
+              <label class="settings-field license-token-field">
+                <span class="settings-field-label" data-i18n="settings.licenseCodeLabel">激活码</span>
+                <textarea
+                  id="licenseTokenInput"
+                  class="settings-input license-token-input"
+                  rows="3"
+                  data-i18n-placeholder="settings.licensePlaceholder"
+                  placeholder="粘贴激活码"
+                  spellcheck="false"
+                ></textarea>
+              </label>
+              <div class="settings-actions settings-form-actions license-actions">
+                <button id="licenseClearBtn" class="settings-action-btn settings-action-btn--danger" type="button" data-i18n="settings.licenseClear" hidden>移除授权</button>
+                <button id="licenseActivateBtn" class="settings-action-btn settings-action-btn--primary" type="button" data-i18n="settings.licenseActivate">激活</button>
               </div>
             </section>
             <section id="settingsPageFeedback" class="settings-page" data-settings-page="feedback" hidden>
@@ -1201,6 +1248,13 @@
                   <p class="settings-field-hint" data-i18n="settings.feedbackAttachmentHint">最多 5 张，单张不超过 10MB。</p>
                   <div id="feedbackAttachmentList" class="feedback-attachment-list" hidden></div>
                 </div>
+                <label class="settings-check-row" for="feedbackIncludeDiagnostics">
+                  <input id="feedbackIncludeDiagnostics" type="checkbox" checked />
+                  <span>
+                    <span data-i18n="settings.feedbackIncludeDiagnostics">附带诊断信息与运行日志</span>
+                    <small data-i18n="settings.feedbackIncludeDiagnosticsDesc">帮助我们定位问题。包含本机诊断结果和最近的运行日志（约 1.5MB），发送前会去除密钥、令牌、手机号和用户目录；日志里可能含有对话片段，仅后台管理员可查看。</small>
+                  </span>
+                </label>
                 <p id="feedbackFormStatus" class="settings-form-status" hidden></p>
                 <div class="settings-actions settings-form-actions">
                   <button id="feedbackSubmitBtn" class="settings-action-btn settings-action-btn--primary" type="submit" data-i18n="settings.feedbackSubmit">提交反馈</button>

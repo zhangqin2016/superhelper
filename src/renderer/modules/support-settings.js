@@ -146,7 +146,10 @@ async function submitFeedback(event) {
     return;
   }
 
-  setFormStatus(statusEl, null, "");
+  // Only what the user could see and leave ticked; a form without the box
+  // never sends a log.
+  const includeDiagnostics = $("feedbackIncludeDiagnostics")?.checked === true;
+  setFormStatus(statusEl, includeDiagnostics ? "info" : null, includeDiagnostics ? t("settings.feedback.collecting") : "");
   if (submitBtn) submitBtn.disabled = true;
 
   const result = await window.assistantClient.submitFeedback({
@@ -156,6 +159,7 @@ async function submitFeedback(event) {
     subject: category ? `${t("settings.feedback.subjectPrefix")}: ${category}` : t("settings.feedback.subjectPrefix"),
     message,
     attachments: await serializeFeedbackAttachments(),
+    includeDiagnostics,
   });
 
   if (submitBtn) submitBtn.disabled = false;
@@ -167,8 +171,10 @@ async function submitFeedback(event) {
 
   $("feedbackForm")?.reset();
   clearFeedbackAttachments();
-  setFormStatus(statusEl, "success", t("settings.feedback.success"));
-  showToast(t("settings.feedback.success"), "success");
+  // Claim the log arrived only when the server says it kept one.
+  const successKey = result.diagnostics?.stored?.log ? "settings.feedback.successWithDiagnostics" : "settings.feedback.success";
+  setFormStatus(statusEl, "success", t(successKey));
+  showToast(t(successKey), "success");
 }
 
 async function submitContact(event) {

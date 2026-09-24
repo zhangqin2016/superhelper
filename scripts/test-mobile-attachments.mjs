@@ -13,7 +13,7 @@ const {
   MAX_FILES,
   MAX_BYTES,
   DEFAULT_ATTACHMENT_TTL_MS,
-} = require("../src/main/mobile-attachments.js");
+} = require("../src/main/mobile/attachments.js");
 
 const b64 = (s) => Buffer.from(s).toString("base64");
 

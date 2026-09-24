@@ -472,6 +472,8 @@ function registerAll(ctx) {
       message: payload?.message,
       source: "desktop-feedback",
       appendContext: support.getFeedbackContext(category),
+      attachments: payload?.attachments,
+      includeDiagnostics: payload?.includeDiagnostics === true,
     });
   });
 

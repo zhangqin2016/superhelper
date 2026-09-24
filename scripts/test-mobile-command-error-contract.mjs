@@ -38,8 +38,9 @@ const runtimeFiles = [
   'server/src/services/mobile-command-file-transfer.js',
   'server/src/services/mobile-command-remote-session.js',
   'server/src/routes/public/mobile-command-surface.js',
-  'src/main/mobile-agent-bridge.js',
-  'src/main/mobile-attachments.js',
+  'src/main/mobile/phone-controller.js',
+  'src/main/mobile/protocol.js',
+  'src/main/mobile/attachments.js',
   'src/main/external-command-admission.js',
 ];
 

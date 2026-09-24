@@ -128,6 +128,13 @@ export function applyAppPolicyToSettings(policy = {}) {
       accountNav.textContent = t("settings.nav.license");
     }
   }
+  // The three account pages share one section title. When the edition has no
+  // account, the section is whatever remains, same as the nav item above.
+  const sectionTitleKey = accountEnabled ? "settings.nav.account" : usageEnabled ? "settings.nav.usage" : "settings.nav.license";
+  document.querySelectorAll("[data-account-section-title]").forEach((el) => {
+    el.dataset.i18n = sectionTitleKey;
+    el.textContent = t(sectionTitleKey);
+  });
   document.querySelectorAll('[data-settings-link="account"]').forEach((btn) => {
     btn.hidden = !accountEnabled;
   });

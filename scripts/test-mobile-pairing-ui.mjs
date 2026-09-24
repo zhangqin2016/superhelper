@@ -33,7 +33,7 @@ const app = read("src/renderer/app.js");
 assert.match(app, /initMobilePairingSettings/, "app initializes the mobile pairing UI");
 
 const mod = read("src/renderer/modules/mobile-pairing-settings.js");
-for (const call of ["mobilePairingCreateChallenge", "mobilePairingCreateDirectCode", "mobilePairingPollPending", "mobilePairingListDevices", "mobilePairingApprove", "mobilePairingDeny", "mobilePairingRevoke", "mobilePairingStatus"]) {
+for (const call of ["mobileGetState", "mobileCreateChallenge", "mobileCreateDirectCode", "mobileApprove", "mobileDeny", "mobileRevoke", "onMobileState"]) {
   assert.match(mod, new RegExp(call), `renderer calls preload ${call}`);
 }
 // Feature-off / kill-switch hides the nav entry instead of showing a dead page.
@@ -48,16 +48,31 @@ assert.match(mod, /caps\.voice\?\.enabled/, "voice is rendered from server capab
 const keys = [
   "settings.nav.mobile", "settings.mobileDesc", "settings.mobilePairStart", "settings.mobilePairScan", "settings.mobilePairCodeHint",
   "settings.mobilePairDirectStart", "settings.mobilePairDirectTitle", "settings.mobilePairDirectCode", "settings.mobilePairDirectPassword",
-  "settings.mobilePairExpiry", "settings.mobilePairPending", "settings.mobilePairNoPending",
+  "settings.mobilePairPending",
   "settings.mobilePairDevice", "settings.mobilePairApprove", "settings.mobilePairDeny",
-  "settings.mobilePairApproved", "settings.mobilePairBridged", "settings.mobilePairLoginRequired",
+  "settings.mobilePairApproved", "settings.mobilePairLoginRequired",
   "settings.mobilePairCapabilitiesDemo", "settings.mobilePairCapabilitiesLive",
   "settings.mobilePairChallengeFailed", "settings.mobilePairActionFailed",
   "settings.mobilePairPaired", "settings.mobilePairNoPaired", "settings.mobilePairRevoke", "settings.mobilePairRevoked",
 ];
+// …and every key actually referenced (markup of the mobile page + t() calls in
+// the module), so a new label can never ship untranslated.
+const section = index.slice(index.indexOf('id="settingsPageMobile"'), index.indexOf('id="settingsPageMemory"'));
+for (const m of section.matchAll(/data-i18n(?:-title)?="([^"]+)"/g)) keys.push(m[1]);
+for (const m of mod.matchAll(/\bt\("([^"]+)"/g)) keys.push(m[1]);
 for (const loc of ["zh-CN", "en", "ar"]) {
   const messages = JSON.parse(read(`src/renderer/i18n/locales/${loc}.json`));
-  for (const k of keys) assert.ok(messages[k], `${loc} missing ${k}`);
+  for (const k of new Set(keys)) assert.ok(messages[k], `${loc} missing ${k}`);
 }
+
+// Live, not polled-only: the page listens for main-process change pushes and
+// renders presence + a readable phone name, and asks before unpairing.
+assert.match(mod, /onMobileState\?\.\(applyState\)/, "the page renders pushed state");
+assert.doesNotMatch(mod, /setInterval\(\(\) => \{ void refresh/, "the page never polls the main process");
+assert.match(mod, /CHANNEL_NOTICE/, "a signed-out / outdated / offline channel is said, not hidden");
+assert.match(mod, /grant\.online/, "each paired phone shows whether it is on the line");
+assert.match(mod, /mobileLabel/, "phones are named by model, not only an opaque id");
+assert.match(mod, /ui\.confirmingRevoke/, "unpairing asks for an inline confirmation");
+assert.match(mod, /mobilePairInlinePending/, "a scanning phone's approval appears inside the QR panel");
 
 console.log("mobile-pairing-ui: ok");

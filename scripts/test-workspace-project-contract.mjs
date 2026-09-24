@@ -101,7 +101,7 @@ try {
 
   const ipcSource = read("src/main/ipc-projects.js");
   const preloadSource = read("src/preload.js");
-  const mobilePairingSource = read("src/main/ipc-mobile-pairing.js");
+  const mobilePairingSource = read("src/main/mobile/desktop-port.js");
   assert.equal(ipcSource.includes("project:pin"), false, "project:pin is removed from main IPC");
   assert.equal(ipcSource.includes("togglePin"), false, "togglePin is removed from main IPC");
   assert.equal(preloadSource.includes("pinProject"), false, "pinProject is removed from preload");

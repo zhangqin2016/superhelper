@@ -1,4 +1,5 @@
 "use strict";
+const { messageText } = require("./conversation-message-text");
 
 const { extractUserOriginalRequest, hasLayeredEngineText } = require("./engine-message-layers");
 const { isInternalRecoveryPromptText } = require("./turn-recovery-context");
@@ -77,14 +78,6 @@ function stripInternalContinuationTurns(conversation = []) {
   return (Array.isArray(conversation) ? conversation : [])
     .filter((m) => !drop.has(m))
     .map((m) => rewrites.get(m) || m);
-}
-
-function messageText(message = {}) {
-  // Fall back to the record's assistant text: a rich assistant turn can carry an
-  // empty top-level `content` while its answer lives in `record.assistantText`.
-  // Without this, such a turn fails to dedup against the official OpenCode copy
-  // (which has the plain text in `content`) and shows up twice on reopen.
-  return String(message.content || message.text || message.record?.assistantText || "");
 }
 
 function normalizedText(value) {

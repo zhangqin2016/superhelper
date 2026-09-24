@@ -518,9 +518,9 @@ app.whenReady().then(async () => {
   }
   require("./main/voice-dictation-service").registerVoiceDictationIpc();
   try {
-    require("./main/ipc-mobile-pairing").registerMobilePairingIpc(appContext);
+    require("./main/mobile").registerMobileCommand(appContext);
   } catch (err) {
-    console.warn("[mobile-pairing] IPC registration skipped:", err?.message || err);
+    console.warn("[mobile-command] registration skipped:", err?.message || err);
   }
   // Restored queued inputs are durably outcome-unknown. Unrelated schedulers
   // also stay paused on this first recovered boot so the user can review.

@@ -402,6 +402,15 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` means "not rendered", app-wide. Almost every component sets its own
+   `display`, which outranks the UA's `[hidden] { display: none }`; that is how
+   a SearXNG URL row stayed on screen under 阿里 IQS, how the login-mode toggle
+   lingered after sign-in, and how the collaboration panel needed its own copy
+   of this rule twice. 86 per-class `[hidden]` patches later, the fix belongs
+   here once. `!important` is right: nothing ever wants a hidden element laid
+   out; anything that must be shown clears the attribute. */
+[hidden] { display: none !important; }
+
 h1, h2, h3, h4 { letter-spacing: 0; }
 
 html, body {

@@ -37,28 +37,34 @@ The current web/mobile command demo supports:
 
 Representative code owners:
 
-- Desktop pairing orchestration: `src/main/mobile-pairing-manager.js`
-- Desktop IPC and bridge wiring: `src/main/ipc-mobile-pairing.js`
-- Relay-to-agent bridge: `src/main/mobile-agent-bridge.js`
+- Desktop, layered under `src/main/mobile/` (composition root `index.js`):
+  - `protocol.js` — the one wire definition (control channel + phone frames; phone layer evolves additively)
+  - `control-channel.js` — the desktop's ONE relay connection (fresh token per connect, typed events, envelopes)
+  - `phone-directory.js` — paired phones / pending requests / presence, pushed to the settings page
+  - `pairing-api.js` — the user's pairing actions (QR, direct code, approve, deny, unpair)
+  - `phone-controller.js` — one per phone: its own target session, commands via admission, stop, selection
+  - `session-mirror.js` + `conversation-view.js` — runtime events → phone frames; the conversation as the desktop shows it
+  - `desktop-port.js` — the only adapter to sessions / orchestrator / conversation source
 - External command admission: `src/main/external-command-admission.js`
-- Phone attachment materialization: `src/main/mobile-attachments.js`
-- Server pairing and relay services: `server/src/services/mobile-pairing.js`, `server/src/services/mobile-relay.js`
-- Phone web pairing/command page: `web/app/m/pair/page.js`
+- Phone attachment materialization: `src/main/mobile/attachments.js`
+- Server pairing and relay services: `server/src/services/mobile-pairing.js`, `server/src/services/mobile-relay.js` (control channel, pushed pairing events), `server/src/services/mobile-relay-core.js` (pure routing)
+- Phone web page, layered: `web/lib/mobile/` (`protocol.mjs`, `relay-client.mjs` connection state machine, `conversation.mjs` pure model), `web/components/mobile/` (views + hooks), `web/app/m/pair/page.js` (composition)
 - Pairing migrations: `server/migrations/025_mobile_pairing.sql`, `server/migrations/026_mobile_pairing_vouched.sql`
 
 Representative automated checks:
 
 - `server/scripts/mobile-command-e2e.mjs`: real server plus Postgres pairing -> relay -> command/projection round trip, including desktop-vouched no-login phone pairing, re-scan supersession, and revoke refusal.
-- `scripts/test-mobile-command-e2e.mjs`: no-DB integration smoke for relay -> desktop bridge -> external admission -> mobile admission projection.
-- `scripts/test-mobile-agent-bridge.mjs`: command admission, interrupt handling, session context, and attachment materialization behavior.
-- `scripts/test-mobile-agent-bridge.mjs`: mobile session-list and session-select frames return bounded context and fail safe when unavailable.
+- `scripts/test-mobile-command-e2e.mjs`: whole chain in one process — real relay, real desktop composition root, real phone socket: hello, presence, command → admission → ack, turn frames with the phone's commandId, pushed pending/active/ended.
+- `scripts/test-mobile-control-channel.mjs`, `test-mobile-phone-directory.mjs`, `test-mobile-phone-controller.mjs`, `test-mobile-session-mirror.mjs`, `test-mobile-pairing-api.mjs`, `test-mobile-conversation-view.mjs`: each desktop layer on its own.
+- `scripts/test-mobile-command-wiring.mjs`: layering held by source (only the port touches Lily internals; no polling; admission seam only).
+- `scripts/test-mobile-relay-client.mjs`, `test-mobile-conversation-reducer.mjs`: the phone's connection state machine and conversation model.
+- `scripts/test-mobile-protocol-contract.mjs`: desktop and phone protocols hold the same names; real desktop frames feed the real phone model.
 - `scripts/test-external-command-admission.mjs`: durable admission decisions retain the command correlation id in records and mobile responses.
 - `scripts/test-mobile-attachments.mjs`: bounded phone attachment decoding and temp-file materialization.
 - `scripts/test-mobile-attachments.mjs`: expired mobile temp attachment cleanup deletes only old `mcmd_` files.
 - `scripts/test-mobile-pair-web.mjs`: phone page command frame includes optional attachment payload.
 - `scripts/test-mobile-pair-web.mjs`: phone page renders queued send, desktop offline, reconnect failure, disconnected send/stop, and dropped/partial attachment states.
 - `scripts/test-mobile-relay-auth.mjs`: peer-offline feedback preserves command correlation ids when the relay can parse them.
-- `scripts/test-mobile-protocol-version.mjs`: unsupported protocol and oversized command frames do not reach desktop admission.
 - `scripts/test-mobile-command-spec-closure.mjs`: MC-TC manifest rows match the canonical fixture object pointers, byte lengths, and SHA-256 hashes.
 - `scripts/test-mobile-server-final-shape.mjs`: final Mobile Command HTTP routes are registered, chat-level remote sessions and file transfer routes work, and evidence-gated capabilities fail safe as typed disabled responses.
 - `scripts/test-mobile-command-error-contract.mjs`: runtime Mobile Command error codes stay aligned with the canonical error catalog and OpenAPI `ErrorCode` enum.
@@ -68,7 +74,7 @@ Representative automated checks:
 - `scripts/test-mobile-command-observability-contracts.mjs`: observability/support schema contracts compile, accept bounded telemetry/status/diagnostics manifests, enforce status fallback invariants, and reject sensitive/free-text fields.
 - `scripts/test-mobile-file-transfer.mjs`: server-local upload/artifact service verifies chunk hashes, full-file hashes, idempotent retries, risk classification, and descriptor/download-token generation.
 - `scripts/test-mobile-remote-session.mjs`: server-local remote session service creates, refreshes, ends, and rejects unsupported protocol or wrong-device access.
-- `scripts/test-mobile-pairing-manager.mjs`, `scripts/test-mobile-pairing-ui.mjs`, `scripts/test-mobile-pairing-wiring.mjs`: desktop pairing UI/IPC/manager wiring plus shared server capability status rendering.
+- `scripts/test-mobile-pairing-ui.mjs`, `scripts/test-mobile-pairing-visual.cjs`: desktop settings page renders pushed state (both themes), in-panel approval, confirmed unpair, channel notices.
 - `scripts/test-mobile-relay-auth.mjs`, `scripts/test-mobile-relay-core.mjs`: relay authorization and grant isolation.
 
 ## 4. Boundaries That Still Matter

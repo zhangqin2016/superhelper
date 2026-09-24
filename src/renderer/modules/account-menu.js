@@ -17,7 +17,9 @@ let accountMenuRefreshGeneration = 0;
 const PERSON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
 function maskPhone(phone) {
-  const digits = String(phone || "").replace(/[^\d]/g, "");
+  let digits = String(phone || "").replace(/[^\d]/g, "");
+  // E.164 mainland numbers carry the 86 prefix; the person reads 138****1234, not 861****1234.
+  if (digits.length === 13 && digits.startsWith("86")) digits = digits.slice(2);
   if (digits.length >= 7) return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
   return String(phone || "").trim();
 }
@@ -27,6 +29,37 @@ function maskPhone(phone) {
 function phoneMonogram(phone) {
   const digits = String(phone || "").replace(/[^\d]/g, "");
   return digits.length >= 2 ? digits.slice(-2) : "";
+}
+
+// A name gives a better monogram than a phone tail: one CJK character, or the
+// first two letters of a latin name.
+function nameMonogram(name) {
+  const text = String(name || "").trim();
+  if (!text) return "";
+  if (/^[\p{Script=Han}]/u.test(text)) return text.slice(0, 1);
+  const letters = text.replace(/[^\p{L}\p{N}]/gu, "");
+  return letters.slice(0, 2).toUpperCase();
+}
+
+// Footer identity: who (display name → phone → login name) on the first line,
+// and on the second line the membership, or whatever else identifies the
+// account that the first line did not already say. Never the same words twice.
+function footerIdentity(status) {
+  const user = status?.user || {};
+  const phone = maskPhone(user.phoneE164 || user.phone_e164 || "");
+  const displayName = String(user.displayName || user.display_name || "").trim();
+  const loginName = String(user.loginName || user.login_name || "").trim();
+  const name = displayName || phone || loginName || t("account.menu.signedIn");
+  const expires = status?.entitlements?.membershipExpiresAt;
+  const member = !!expires;
+  let sub;
+  if (member) {
+    const date = formatExpiry(expires);
+    sub = date ? `${t("account.menu.member")} · ${date}` : t("account.menu.member");
+  } else {
+    sub = [phone, loginName].find((value) => value && value !== name) || t("account.menu.personal");
+  }
+  return { name, sub, member, monogram: nameMonogram(displayName) || phoneMonogram(user.phoneE164 || user.phone_e164 || "") };
 }
 
 function formatExpiry(value) {
@@ -104,17 +137,10 @@ export async function refreshAccountMenu() {
     const status = await window.assistantClient?.getAccountStatus?.();
     if (generation !== accountMenuRefreshGeneration) return;
     if (status?.loggedIn) {
-      const phone = status.user?.phoneE164 || status.user?.phone_e164 || "";
-      const expires = status.entitlements?.membershipExpiresAt;
-      const member = !!expires;
-      if (nameEl) nameEl.textContent = maskPhone(phone) || t("account.menu.signedIn");
-      if (subEl) {
-        const date = member ? formatExpiry(expires) : "";
-        subEl.textContent = member
-          ? (date ? `${t("account.menu.member")} · ${date}` : t("account.menu.member"))
-          : t("account.menu.signedIn");
-      }
-      setAvatar({ signedIn: true, member, monogram: phoneMonogram(phone) });
+      const identity = footerIdentity(status);
+      if (nameEl) nameEl.textContent = identity.name;
+      if (subEl) subEl.textContent = identity.sub;
+      setAvatar({ signedIn: true, member: identity.member, monogram: identity.monogram });
     }
   } catch {
     /* keep the signed-out default (fail-open) */

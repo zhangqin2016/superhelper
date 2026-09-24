@@ -5,6 +5,7 @@ import { $ } from "./dom.js";
 import { t, getLocale, onLocaleChange } from "../i18n/index.js";
 import { formatTokenCount } from "./turn-usage-summary.js";
 import { showToast } from "./toast.js";
+import { refreshEntitlements } from "./account-settings.js";
 
 let currentData = null;
 let currentView = "dates";
@@ -33,6 +34,23 @@ function cost(row) {
 
 function tokens(value) {
   return formatTokenCount(value) || "0";
+}
+
+/** Some gateways stream usage with input 0 and total == output. That is a
+ *  missing number, not a zero, and the page must not claim otherwise. */
+function inputUnreported(row) {
+  return !Number(row?.inputTokens) && Number(row?.outputTokens) > 0;
+}
+
+function inOutText(row) {
+  return inputUnreported(row)
+    ? t("settings.usage.inOutUnreported", { output: tokens(row.outputTokens) })
+    : t("settings.usage.inOut", { input: tokens(row.inputTokens), output: tokens(row.outputTokens) });
+}
+
+function inOutTitle(row) {
+  const format = (value) => new Intl.NumberFormat(getLocale()).format(value || 0);
+  return (inputUnreported(row) ? t("settings.usage.inputUnreported") : format(row.inputTokens)) + " / " + format(row.outputTokens);
 }
 
 function tokenNode(value) {
@@ -79,11 +97,8 @@ function modelTable(models, label) {
     const connection = ["managed", "custom"].includes(row.connectionType) ? row.connectionType : "unknown";
     cells[1].append(node("span", "", t("settings.usage.connection." + connection)));
     if (row.providerID !== "unknown") cells[1].append(node("code", "usage-connection-id", row.providerID));
-    cells[2].append(tokenNode(row.totalTokens), node("span", "usage-in-out", t("settings.usage.inOut", {
-      input: tokens(row.inputTokens), output: tokens(row.outputTokens),
-    })));
-    cells[2].title = new Intl.NumberFormat(getLocale()).format(row.inputTokens) + " / " +
-      new Intl.NumberFormat(getLocale()).format(row.outputTokens);
+    cells[2].append(tokenNode(row.totalTokens), node("span", "usage-in-out", inOutText(row)));
+    cells[2].title = inOutTitle(row);
     const share = new Intl.NumberFormat(getLocale(), { style: "percent", maximumFractionDigits: 1 }).format(row.share || 0);
     cells[3].append(node("span", "usage-number", share));
     const bar = node("progress", "usage-share");
@@ -129,10 +144,10 @@ function renderDays(summary, expanded) {
     if (modelCount && row.hasUnattributed) names.append(node("small", "", t("settings.usage.partialAttribution")));
     const total = tokenNode(row.totalTokens);
     total.dataset.label = t("settings.usage.colTokens");
-    const inOut = node("span", "usage-number usage-day-in-out", tokens(row.inputTokens) + " / " + tokens(row.outputTokens));
+    const inOut = node("span", "usage-number usage-day-in-out",
+      (inputUnreported(row) ? "—" : tokens(row.inputTokens)) + " / " + tokens(row.outputTokens));
     inOut.dataset.label = t("settings.usage.colInOut");
-    inOut.title = new Intl.NumberFormat(getLocale()).format(row.inputTokens) + " / " +
-      new Intl.NumberFormat(getLocale()).format(row.outputTokens);
+    inOut.title = inOutTitle(row);
     const fee = node("span", "usage-number", cost(row));
     fee.dataset.label = t("settings.usage.colCost");
     toggle.append(date, names, total, inOut, fee);
@@ -193,9 +208,7 @@ function renderUsageSummary(data) {
 
   const grid = node("div", "usage-stat-grid");
   for (const [title, value, meta] of [
-    ["tokensToday", tokens(summary.today.totalTokens), t("settings.usage.inOut", {
-      input: tokens(summary.today.inputTokens), output: tokens(summary.today.outputTokens),
-    })],
+    ["tokensToday", tokens(summary.today.totalTokens), inOutText(summary.today)],
     ["costToday", cost(summary.today), t("settings.usage.referenceOnly")],
   ]) {
     const stat = node("div", "usage-stat-card");
@@ -243,7 +256,12 @@ export async function refreshUsageSettings() {
 export function initUsageSettings() {
   if (initialized) return;
   initialized = true;
-  $("usageRefresh")?.addEventListener("click", refreshUsageSettings);
+  // One refresh for the page: account credits (no-op while signed out) and
+  // this device's usage together.
+  $("usageRefresh")?.addEventListener("click", () => {
+    void refreshEntitlements();
+    void refreshUsageSettings();
+  });
   document.querySelectorAll("[data-usage-view]").forEach(button => {
     button.addEventListener("click", () => {
       currentView = button.dataset.usageView;

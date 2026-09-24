@@ -2,6 +2,7 @@ import { initAccountNickname, renderAccountNickname } from "./account-nickname.j
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
+import { renderEntitlements as paintEntitlements } from "./account-entitlements.js";
 
 let accountLoggedIn = false;
 let smsCooldownUntil = 0;
@@ -17,13 +18,16 @@ let loginMode = "sms";
 let passwordChanging = false;
 let smsLoginEnabled = true;
 
+let billingEnabled = true;
+
 export function applyAccountLoginPolicy(policy = {}) {
   const features = policy.features || {};
   smsLoginEnabled = features.account !== false && features.accountLogin !== false;
   const smsTab = $("accountModeSmsBtn");
   if (smsTab) smsTab.hidden = !smsLoginEnabled;
+  billingEnabled = smsLoginEnabled && features.purchase !== false && features.billing !== false;
   const billing = $("accountBillingBtn");
-  if (billing) billing.hidden = !smsLoginEnabled || features.purchase === false || features.billing === false;
+  if (billing) billing.hidden = !billingEnabled;
   if (!smsLoginEnabled) setLoginMode("password");
 }
 
@@ -123,42 +127,10 @@ function startSmsCooldown(seconds = 60) {
   }, 1000);
 }
 
-function formatCount(value) {
-  return Number(value || 0).toLocaleString();
-}
-
-/** Membership expiry arrives as an ISO timestamp (e.g. 2027-01-01T00:00:00.000Z);
- *  show a readable local date instead of the raw string. */
-function formatDate(value) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString();
-}
-
+// The buy link follows the same policy as the account page's purchase button:
+// enterprise editions have no self-serve purchase, so they get the sentence alone.
 function renderEntitlements(entitlements) {
-  const root = $("accountEntitlements");
-  if (!root) return;
-  if (!entitlements) {
-    root.replaceChildren();
-    return;
-  }
-  const items = [
-    [t("settings.accountTokens"), formatCount(entitlements.tokenBalance)],
-    [t("settings.accountImages"), formatCount(entitlements.imageGenerationsRemaining)],
-    [t("settings.accountVideos"), formatCount(entitlements.videoGenerationsRemaining)],
-    [t("settings.accountMembership"), entitlements.membershipExpiresAt ? formatDate(entitlements.membershipExpiresAt) : t("settings.accountInactive")],
-  ];
-  root.replaceChildren(...items.map(([label, value]) => {
-    const card = document.createElement("div");
-    card.className = "account-entitlement-card";
-    const labelEl = document.createElement("span");
-    labelEl.textContent = label;
-    const valueEl = document.createElement("strong");
-    valueEl.textContent = value;
-    card.append(labelEl, valueEl);
-    return card;
-  }));
+  paintEntitlements(entitlements, { onBuy: billingEnabled ? () => void openBilling() : null });
 }
 
 function setLoggedInUi(loggedIn) {
@@ -174,6 +146,8 @@ function setLoggedInUi(loggedIn) {
   if (passwordContent) passwordContent.hidden = accountLoggedIn || loginMode !== "password";
   const modes = $("accountLoginModes");
   if (modes) modes.hidden = accountLoggedIn;
+  const head = document.querySelector("#accountLoginForm .account-card-head");
+  if (head) head.hidden = accountLoggedIn;
   if (signedInPanel) signedInPanel.hidden = !accountLoggedIn;
   if (actions) actions.hidden = !accountLoggedIn;
   // The card's heading describes the door being used; the SMS wording is wrong
@@ -182,11 +156,7 @@ function setLoggedInUi(loggedIn) {
   if (title) title.textContent = accountLoggedIn ? t("settings.accountSignedInTitle") : t(passwordMode ? "settings.accountLoginTitlePassword" : "settings.accountLoginTitle");
   if (hint) hint.textContent = accountLoggedIn ? t("settings.accountSignedInHint") : t(passwordMode ? "settings.accountLoginHintPassword" : "settings.accountLoginHint");
   if (signedInPhone) {
-    signedInPhone.textContent = currentAccountPhone
-      ? t("settings.accountLoggedIn", { phone: currentAccountPhone })
-      : currentAccountLoginName
-        ? t("settings.accountLoggedInName", { name: currentAccountLoginName })
-        : "";
+    signedInPhone.textContent = currentAccountPhone || currentAccountLoginName || t("settings.accountSignedInTitle");
   }
   updateAccountButtons();
   $("accountRefreshBtn") && ($("accountRefreshBtn").disabled = !loggedIn || entitlementsRefreshing);
@@ -201,6 +171,7 @@ export async function refreshAccountSettings() {
   try {
     status = await window.assistantClient.getAccountStatus();
   } catch {
+    statusEl.hidden = false;
     statusEl.textContent = t("settings.accountStatusFailed");
     setStatus(t("settings.accountStatusFailed"), "error");
     setLoggedInUi(false);
@@ -212,6 +183,7 @@ export async function refreshAccountSettings() {
   if (!status?.loggedIn) {
     currentAccountPhone = "";
     currentAccountLoginName = "";
+    statusEl.hidden = false;
     statusEl.textContent = t("settings.accountLoggedOut");
     renderEntitlements(null);
     setLoggedInUi(false);
@@ -224,6 +196,7 @@ export async function refreshAccountSettings() {
   statusEl.textContent = t("settings.accountLoggedIn", {
     phone: currentAccountPhone,
   });
+  statusEl.hidden = true;
   renderEntitlements(status.entitlements);
   setLoggedInUi(true);
   void loadOrganizations();
@@ -357,7 +330,7 @@ async function changePassword() {
   }
 }
 
-async function refreshEntitlements() {
+export async function refreshEntitlements() {
   if (entitlementsRefreshing || !accountLoggedIn) return;
   entitlementsRefreshing = true;
   setLoggedInUi(accountLoggedIn);
@@ -426,11 +399,14 @@ async function openBilling() {
   try {
     const result = await window.assistantClient.createAccountBillingLink();
     if (!result?.ok || !result.url) {
-      setStatus(accountErrorMessage(result, "settings.accountBillingFailed"), "error");
+      const message = accountErrorMessage(result, "settings.accountBillingFailed");
+      setStatus(message, "error");
+      showToast(message, "error");
       return;
     }
     window.open(result.url, "_blank", "noopener,noreferrer");
     setStatus(t("settings.accountBillingOpened"), "success");
+    showToast(t("settings.accountBillingOpened"), "success");
   } finally {
     billingOpening = false;
     setLoggedInUi(accountLoggedIn);

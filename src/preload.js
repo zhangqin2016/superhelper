@@ -418,14 +418,18 @@ contextBridge.exposeInMainWorld("assistantClient", {
   ),
   uninstallRuntimePack: (id) => ipcRenderer.invoke("runtime-packs:uninstall", { id }),
 
-  mobilePairingCreateChallenge: () => ipcRenderer.invoke("mobile-pairing:create-challenge"),
-  mobilePairingCreateDirectCode: () => ipcRenderer.invoke("mobile-pairing:create-direct-code"),
-  mobilePairingPollPending: () => ipcRenderer.invoke("mobile-pairing:poll-pending"),
-  mobilePairingListDevices: () => ipcRenderer.invoke("mobile-pairing:list-devices"),
-  mobilePairingApprove: (grantId) => ipcRenderer.invoke("mobile-pairing:approve", grantId),
-  mobilePairingDeny: (grantId) => ipcRenderer.invoke("mobile-pairing:deny", grantId),
-  mobilePairingRevoke: (payload) => ipcRenderer.invoke("mobile-pairing:revoke", payload),
-  mobilePairingStatus: () => ipcRenderer.invoke("mobile-pairing:status"),
+  // Mobile Command: the main process owns the state and pushes every change.
+  mobileGetState: () => ipcRenderer.invoke("mobile:get-state"),
+  mobileCreateChallenge: () => ipcRenderer.invoke("mobile:create-challenge"),
+  mobileCreateDirectCode: () => ipcRenderer.invoke("mobile:create-direct-code"),
+  mobileApprove: (grantId) => ipcRenderer.invoke("mobile:approve", grantId),
+  mobileDeny: (grantId) => ipcRenderer.invoke("mobile:deny", grantId),
+  mobileRevoke: (grantId) => ipcRenderer.invoke("mobile:revoke", grantId),
+  onMobileState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("mobile:state", listener);
+    return () => ipcRenderer.removeListener("mobile:state", listener);
+  },
 
   voiceDictationStart: () => ipcRenderer.invoke("voice:start"),
   voiceDictationStop: () => ipcRenderer.invoke("voice:stop"),

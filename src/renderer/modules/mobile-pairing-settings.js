@@ -1,226 +1,313 @@
 import { $ } from "./dom.js";
-import { t } from "../i18n/index.js";
+import { getLocale, t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 
-// Desktop "Mobile Command" settings panel: generate a pairing code (rendered as
-// a code the mobile web page consumes), poll for pending requests a mobile has
-// raised, and approve/deny them. On approval the main process brings the relay
-// bridge online. Pure renderer over the preload mobilePairing* IPC surface.
-//
-// NOTE (device-validation pending): the visual/UX of this panel and the phone
-// flow need validation against a running app + server + phone. The wiring and
-// IPC contract are exercised by unit/e2e tests; the pixels are not.
+// Desktop "手机控制" settings page — a render of the main process's Mobile
+// Command state. The main process owns that state (the control channel feeds
+// its phone directory) and PUSHES every change; nothing here polls. Local UI
+// state is only what the user has open: the QR panel, the direct-code panel,
+// and which unpair is awaiting confirmation.
 
-let pollTimer = null;
+const PHONE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>';
+
+const ui = {
+  state: { channel: "idle", phones: [], pending: [], capabilities: null },
+  visible: false,
+  challengeExpiresAt: 0,
+  direct: null, // { expiresAt, known: Set<grantId> }
+  confirmingRevoke: "",
+  countdown: null,
+  unsubscribe: null,
+};
 
 function api() {
   return window.assistantClient || {};
 }
 
-function stopPolling() {
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
 }
 
-function renderPendingList(grants = []) {
-  const host = $("mobilePairPendingList");
-  if (!host) return;
-  host.replaceChildren();
-  if (!grants.length) {
-    const empty = document.createElement("p");
-    empty.className = "settings-section-desc";
-    empty.textContent = t("settings.mobilePairNoPending");
-    host.appendChild(empty);
-    return;
-  }
-  for (const g of grants) {
-    const row = document.createElement("div");
-    row.className = "settings-memory-item";
-    const label = document.createElement("span");
-    label.className = "mobile-pair-pending-device";
-    label.textContent = t("settings.mobilePairDevice", { id: String(g.mobileDeviceId || "").slice(0, 12) });
-    const actions = document.createElement("div");
-    actions.className = "settings-memory-item-actions";
-    const approve = document.createElement("button");
-    approve.type = "button";
-    approve.className = "settings-action-btn settings-action-btn--primary settings-action-btn--compact";
-    approve.textContent = t("settings.mobilePairApprove");
-    approve.addEventListener("click", () => void decide("approve", g.grantId, approve));
-    const deny = document.createElement("button");
-    deny.type = "button";
-    deny.className = "settings-action-btn settings-action-btn--compact";
-    deny.textContent = t("settings.mobilePairDeny");
-    deny.addEventListener("click", () => void decide("deny", g.grantId, deny));
-    actions.append(approve, deny);
-    row.append(label, actions);
-    host.appendChild(row);
+function button(label, variant, onClick) {
+  const btn = el("button", `settings-action-btn settings-action-btn--compact${variant ? ` settings-action-btn--${variant}` : ""}`, label);
+  btn.type = "button";
+  btn.addEventListener("click", () => onClick(btn));
+  return btn;
+}
+
+function phoneIcon() {
+  const icon = el("span", "mobile-pair-row-icon");
+  icon.innerHTML = PHONE_ICON;
+  return icon;
+}
+
+function phoneName(grant) {
+  // The start of the browser id — what people saw before, so they recognise it.
+  const id = String(grant?.mobileDeviceId || "").replace(/^mweb_/, "").slice(0, 6);
+  const name = String(grant?.mobileLabel || "").trim() || t("settings.mobilePairUnknownPhone");
+  return t("settings.mobilePairDevice", { name, id });
+}
+
+function formatDate(value) {
+  const ms = Date.parse(String(value || ""));
+  if (!Number.isFinite(ms)) return "";
+  try {
+    return new Intl.DateTimeFormat(getLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  } catch {
+    return new Date(ms).toLocaleString();
   }
 }
 
-async function decide(kind, grantId, btn) {
-  if (!grantId) return;
+function formatRemaining(ms) {
+  const total = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+// --- actions ------------------------------------------------------------------
+
+async function run(btn, action, { success } = {}) {
   btn.disabled = true;
   try {
-    const res = kind === "approve"
-      ? await api().mobilePairingApprove?.(grantId)
-      : await api().mobilePairingDeny?.(grantId);
+    const res = await action();
     if (!res?.ok) {
-      showToast(t("settings.mobilePairActionFailed"), "warning");
-      return;
+      const login = res?.code === "ACCOUNT_LOGIN_REQUIRED";
+      showToast(t(login ? "settings.mobilePairLoginRequired" : "settings.mobilePairActionFailed"), login ? "info" : "warning");
+      return null;
     }
-    if (kind === "approve") {
-      showToast(t("settings.mobilePairApproved"), "success");
-      await refreshBridgeStatus();
-      await refreshDevices();
-    }
-    await refreshPending();
+    if (success) showToast(t(success), "success");
+    return res;
   } catch {
     showToast(t("settings.mobilePairActionFailed"), "warning");
+    return null;
   } finally {
     btn.disabled = false;
   }
 }
 
-async function refreshPending() {
-  const res = await api().mobilePairingPollPending?.();
-  if (res?.ok) renderPendingList(res.grants || []);
+async function approve(grantId, btn) {
+  // The phone joins the list when the server pushes the activation.
+  if (await run(btn, () => api().mobileApprove(grantId), { success: "settings.mobilePairApproved" })) closeChallenge();
 }
 
-function renderDeviceList(grants = []) {
-  const host = $("mobilePairDeviceList");
-  if (!host) return;
-  host.replaceChildren();
-  const active = grants.filter((g) => g.status === "active");
-  if (!active.length) {
-    const empty = document.createElement("p");
-    empty.className = "settings-section-desc";
-    empty.textContent = t("settings.mobilePairNoPaired");
-    host.appendChild(empty);
-    return;
-  }
-  for (const g of active) {
-    const row = document.createElement("div");
-    row.className = "settings-memory-item";
-    const label = document.createElement("span");
-    label.className = "mobile-pair-pending-device";
-    label.textContent = t("settings.mobilePairDevice", { id: String(g.mobileDeviceId || "").slice(0, 12) });
-    const revoke = document.createElement("button");
-    revoke.type = "button";
-    revoke.className = "settings-action-btn settings-action-btn--danger settings-action-btn--compact";
-    revoke.textContent = t("settings.mobilePairRevoke");
-    revoke.addEventListener("click", () => void doRevoke(g.grantId, revoke));
-    const actions = document.createElement("div");
-    actions.className = "settings-memory-item-actions";
-    actions.append(revoke);
-    row.append(label, actions);
-    host.appendChild(row);
-  }
+async function deny(grantId, btn) {
+  await run(btn, () => api().mobileDeny(grantId));
 }
 
-async function doRevoke(grantId, btn) {
-  if (!grantId) return;
-  btn.disabled = true;
-  try {
-    const res = await api().mobilePairingRevoke?.({ grantId, reason: "user_action" });
-    if (!res?.ok) { showToast(t("settings.mobilePairActionFailed"), "warning"); return; }
-    showToast(t("settings.mobilePairRevoked"), "success");
-    await refreshDevices();
-    await refreshBridgeStatus();
-  } catch {
-    showToast(t("settings.mobilePairActionFailed"), "warning");
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function refreshDevices() {
-  const res = await api().mobilePairingListDevices?.();
-  if (res?.ok) renderDeviceList(res.grants || []);
-}
-
-async function refreshBridgeStatus() {
-  const el = $("mobilePairBridgeStatus");
-  const capEl = $("mobilePairCapabilityStatus");
-  if (!el && !capEl) return;
-  const res = await api().mobilePairingStatus?.();
-  const bridged = Boolean(res?.bridged);
-  if (el) {
-    el.hidden = !bridged;
-    if (bridged) el.textContent = t("settings.mobilePairBridged");
-  }
-  if (capEl) {
-    const caps = res?.capabilities || {};
-    const liveDisabled = caps.observeControl?.enabled === false && caps.voice?.enabled === false;
-    capEl.hidden = !res?.ok;
-    capEl.textContent = liveDisabled
-      ? t("settings.mobilePairCapabilitiesDemo")
-      : t("settings.mobilePairCapabilitiesLive");
-  }
+async function revoke(grantId, btn) {
+  if (await run(btn, () => api().mobileRevoke(grantId), { success: "settings.mobilePairRevoked" })) ui.confirmingRevoke = "";
 }
 
 async function startPairing(btn) {
-  btn.disabled = true;
-  try {
-    const res = await api().mobilePairingCreateChallenge?.();
-    if (!res?.ok) {
-      const key = res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "settings.mobilePairLoginRequired" : "settings.mobilePairChallengeFailed";
-      showToast(t(key), res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "info" : "warning");
-      return;
-    }
-    const wrap = $("mobilePairChallenge");
-    const code = $("mobilePairCode");
-    if (code) {
-      // The mobile page consumes this compact payload (server url + token).
-      code.textContent = `${res.qr?.url || ""}#${res.qr?.token || ""}`;
-    }
-    const qrImg = $("mobilePairQr");
-    if (qrImg) {
-      // Scannable QR when the main process could render it; otherwise stay
-      // hidden and let the text code below carry the manual-paste path.
-      if (res.qr?.image) { qrImg.src = res.qr.image; qrImg.hidden = false; }
-      else { qrImg.removeAttribute("src"); qrImg.hidden = true; }
-    }
-    if (wrap) wrap.hidden = false;
-    const expiry = $("mobilePairExpiry");
-    if (expiry && res.expiresAt) {
-      expiry.textContent = t("settings.mobilePairExpiry", { time: new Date(res.expiresAt).toLocaleTimeString() });
-    }
-    await refreshPending();
-  } catch {
-    showToast(t("settings.mobilePairChallengeFailed"), "warning");
-  } finally {
-    btn.disabled = false;
+  const res = await run(btn, () => api().mobileCreateChallenge());
+  if (!res) return;
+  closeDirect();
+  const code = $("mobilePairCode");
+  if (code) code.textContent = `${res.qr?.url || ""}#${res.qr?.token || ""}`;
+  const qr = $("mobilePairQr");
+  if (qr) {
+    if (res.qr?.image) { qr.src = res.qr.image; qr.hidden = false; }
+    else { qr.removeAttribute("src"); qr.hidden = true; }
   }
+  const panel = $("mobilePairChallenge");
+  if (panel) panel.hidden = false;
+  const manual = panel?.querySelector(".mobile-pair-manual");
+  if (manual) manual.open = !res.qr?.image;
+  ui.challengeExpiresAt = Date.parse(String(res.expiresAt || "")) || 0;
+  render();
 }
 
 async function startDirectCode(btn) {
-  btn.disabled = true;
+  const res = await run(btn, () => api().mobileCreateDirectCode());
+  if (!res) return;
+  closeChallenge();
+  const codeEl = $("mobilePairDirectCode");
+  const passEl = $("mobilePairDirectPassword");
+  if (codeEl) codeEl.textContent = res.code || "";
+  if (passEl) passEl.textContent = res.password || "";
+  const panel = $("mobilePairDirect");
+  if (panel) panel.hidden = false;
+  ui.direct = {
+    expiresAt: Date.parse(String(res.expiresAt || "")) || 0,
+    known: new Set(ui.state.phones.map((p) => p.grantId)),
+  };
+  render();
+}
+
+function closeChallenge() {
+  const panel = $("mobilePairChallenge");
+  if (panel) panel.hidden = true;
+  ui.challengeExpiresAt = 0;
+  render();
+}
+
+function closeDirect() {
+  const panel = $("mobilePairDirect");
+  if (panel) panel.hidden = true;
+  ui.direct = null;
+  render();
+}
+
+async function copyText(text) {
   try {
-    const res = await api().mobilePairingCreateDirectCode?.();
-    if (!res?.ok) {
-      const key = res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "settings.mobilePairLoginRequired" : "settings.mobilePairChallengeFailed";
-      showToast(t(key), res?.code === "ACCOUNT_LOGIN_REQUIRED" ? "info" : "warning");
-      return;
-    }
-    const wrap = $("mobilePairDirect");
-    const codeEl = $("mobilePairDirectCode");
-    const passEl = $("mobilePairDirectPassword");
-    if (codeEl) codeEl.textContent = res.code || "";
-    if (passEl) passEl.textContent = res.password || "";
-    if (wrap) wrap.hidden = false;
-    const expiry = $("mobilePairDirectExpiry");
-    if (expiry && res.expiresAt) {
-      expiry.textContent = t("settings.mobilePairExpiry", { time: new Date(res.expiresAt).toLocaleTimeString() });
-    }
+    await navigator.clipboard.writeText(String(text || ""));
+    showToast(t("settings.mobilePairCopied"), "success");
   } catch {
-    showToast(t("settings.mobilePairChallengeFailed"), "warning");
-  } finally {
-    btn.disabled = false;
+    showToast(t("settings.mobilePairActionFailed"), "warning");
   }
 }
 
+// --- render -------------------------------------------------------------------
+
+// The channel's own trouble outranks any phone count.
+const CHANNEL_NOTICE = {
+  "signed-out": ["settings.mobileChannelSignedOut", "warn"],
+  "server-outdated": ["settings.mobileChannelOutdated", "warn"],
+  offline: ["settings.mobileChannelOffline", "warn"],
+  connecting: ["settings.mobileChannelConnecting", ""],
+};
+
+function renderSummary() {
+  const { phones, channel } = ui.state;
+  const title = $("mobilePairSummaryTitle");
+  const sub = $("mobilePairBridgeStatus");
+  if (title) title.textContent = phones.length ? t("settings.mobileSummaryCount", { count: phones.length }) : t("settings.mobileSummaryNone");
+  if (!sub) return;
+  sub.replaceChildren();
+  const notice = CHANNEL_NOTICE[channel];
+  if (notice) {
+    sub.append(el("span", `mobile-dot${notice[1] ? ` mobile-dot--${notice[1]}` : ""}`), document.createTextNode(t(notice[0])));
+    return;
+  }
+  if (!phones.length) {
+    sub.textContent = t("settings.mobileSummaryHint");
+    return;
+  }
+  const online = phones.filter((p) => p.online).length;
+  sub.append(
+    el("span", `mobile-dot${online ? " mobile-dot--online" : ""}`),
+    document.createTextNode(online ? t("settings.mobileSummaryOnline", { count: online }) : t("settings.mobileSummaryOffline")),
+  );
+}
+
+function approvalRow(grant, { inline = false } = {}) {
+  const row = el("div", inline ? "mobile-pair-inline-row" : "mobile-pair-row");
+  const body = el("div", "mobile-pair-row-body");
+  body.append(el("div", "mobile-pair-row-name", phoneName(grant)), el("div", "mobile-pair-row-meta", t("settings.mobilePairRequestHint")));
+  const actions = el("div", "mobile-pair-row-actions");
+  actions.append(
+    button(t("settings.mobilePairDeny"), "", (btn) => void deny(grant.grantId, btn)),
+    button(t("settings.mobilePairApprove"), "primary", (btn) => void approve(grant.grantId, btn)),
+  );
+  row.append(phoneIcon(), body, actions);
+  return row;
+}
+
+function renderPending() {
+  const { pending } = ui.state;
+  const panelOpen = Boolean(ui.challengeExpiresAt) && !$("mobilePairChallenge")?.hidden;
+  // A phone that just scanned appears where the user is looking: the QR panel.
+  const [first, ...rest] = pending;
+  const inline = $("mobilePairInlinePending");
+  if (inline) {
+    inline.hidden = !(panelOpen && first);
+    inline.replaceChildren(...(panelOpen && first ? [approvalRow(first, { inline: true })] : []));
+  }
+  const listed = panelOpen ? rest : pending;
+  const section = $("mobilePairPendingSection");
+  if (section) section.hidden = listed.length === 0;
+  $("mobilePairPendingList")?.replaceChildren(...listed.map((g) => approvalRow(g)));
+}
+
+function deviceRow(grant) {
+  const row = el("div", "mobile-pair-row");
+  const body = el("div", "mobile-pair-row-body");
+  const meta = el("div", "mobile-pair-row-meta");
+  const when = formatDate(grant.approvedAt || grant.createdAt);
+  meta.append(
+    el("span", `mobile-dot${grant.online ? " mobile-dot--online" : ""}`),
+    document.createTextNode([
+      grant.online ? t("settings.mobilePairOnline") : t("settings.mobilePairOffline"),
+      when ? t("settings.mobilePairPairedAt", { date: when }) : "",
+    ].filter(Boolean).join(" · ")),
+  );
+  body.append(el("div", "mobile-pair-row-name", phoneName(grant)), meta);
+  const actions = el("div", "mobile-pair-row-actions");
+  if (ui.confirmingRevoke === grant.grantId) {
+    actions.append(
+      el("span", "mobile-pair-confirm", t("settings.mobilePairRevokeConfirm")),
+      button(t("settings.mobilePairCancel"), "", () => { ui.confirmingRevoke = ""; render(); }),
+      button(t("settings.mobilePairConfirmRevoke"), "danger", (btn) => void revoke(grant.grantId, btn)),
+    );
+  } else {
+    actions.append(button(t("settings.mobilePairRevoke"), "", () => { ui.confirmingRevoke = grant.grantId; render(); }));
+  }
+  row.append(phoneIcon(), body, actions);
+  return row;
+}
+
+function renderDevices() {
+  const host = $("mobilePairDeviceList");
+  if (!host) return;
+  const { phones } = ui.state;
+  host.replaceChildren(...(phones.length ? phones.map(deviceRow) : [el("div", "mobile-pair-empty", t("settings.mobilePairNoPaired"))]));
+}
+
+function renderCapabilities() {
+  const capEl = $("mobilePairCapabilityStatus");
+  if (!capEl) return;
+  const caps = ui.state.capabilities;
+  capEl.hidden = !caps;
+  if (!caps) return;
+  const liveDisabled = caps.observeControl?.enabled === false && caps.voice?.enabled === false;
+  capEl.textContent = t(liveDisabled ? "settings.mobilePairCapabilitiesDemo" : "settings.mobilePairCapabilitiesLive");
+}
+
+function renderCountdowns() {
+  const now = Date.now();
+  const show = (node, expiresAt) => {
+    if (!node || !expiresAt) return;
+    const left = expiresAt - now;
+    node.textContent = left > 0 ? t("settings.mobilePairExpiresIn", { time: formatRemaining(left) }) : t("settings.mobilePairExpired");
+    node.classList.toggle("mobile-pair-expiry--expired", left <= 0);
+  };
+  show($("mobilePairExpiry"), ui.challengeExpiresAt);
+  show($("mobilePairDirectExpiry"), ui.direct?.expiresAt);
+  const running = ui.visible && Boolean(ui.challengeExpiresAt || ui.direct);
+  if (running && !ui.countdown) ui.countdown = setInterval(renderCountdowns, 1000);
+  if (!running && ui.countdown) { clearInterval(ui.countdown); ui.countdown = null; }
+}
+
+function render() {
+  if (!ui.visible) return;
+  renderSummary();
+  renderPending();
+  renderDevices();
+  renderCapabilities();
+  renderCountdowns();
+}
+
+function applyState(next) {
+  if (!next?.ok) return;
+  ui.state = { channel: next.channel || "idle", phones: next.phones || [], pending: next.pending || [], capabilities: next.capabilities || null };
+  if (ui.confirmingRevoke && !ui.state.phones.some((p) => p.grantId === ui.confirmingRevoke)) ui.confirmingRevoke = "";
+  // A direct code was used: a phone we did not know is now paired.
+  const fresh = ui.direct ? ui.state.phones.find((p) => !ui.direct.known.has(p.grantId)) : null;
+  if (fresh) {
+    closeDirect();
+    showToast(t("settings.mobilePairDirectConnected", { device: phoneName(fresh) }), "success");
+    return;
+  }
+  render();
+}
+
+// --- lifecycle ----------------------------------------------------------------
+
 export function initMobilePairingSettings() {
   const startBtn = $("mobilePairStartBtn");
-  if (!startBtn || !window.assistantClient?.mobilePairingCreateChallenge) {
+  if (!startBtn || !window.assistantClient?.mobileGetState) {
     // Feature off (kill switch) or unsupported build: hide the nav entry.
     const nav = document.querySelector('.settings-nav-item[data-settings-page="mobile"]');
     if (nav) nav.hidden = true;
@@ -228,23 +315,22 @@ export function initMobilePairingSettings() {
   }
   startBtn.addEventListener("click", () => void startPairing(startBtn));
   const directBtn = $("mobilePairDirectBtn");
-  if (directBtn && window.assistantClient?.mobilePairingCreateDirectCode) {
-    directBtn.addEventListener("click", () => void startDirectCode(directBtn));
-  } else if (directBtn) {
-    directBtn.hidden = true;
-  }
+  directBtn?.addEventListener("click", () => void startDirectCode(directBtn));
+  $("mobilePairChallengeClose")?.addEventListener("click", closeChallenge);
+  $("mobilePairDirectClose")?.addEventListener("click", closeDirect);
+  $("mobilePairCopyCode")?.addEventListener("click", () => void copyText($("mobilePairCode")?.textContent));
+  ui.unsubscribe = api().onMobileState?.(applyState) || null;
 }
 
-/** Called when the settings panel opens the mobile page — start polling. */
+/** The settings panel opened the mobile page. */
 export function onMobilePairingPageShown() {
-  if (!window.assistantClient?.mobilePairingPollPending) return;
-  void refreshPending();
-  void refreshDevices();
-  void refreshBridgeStatus();
-  stopPolling();
-  pollTimer = setInterval(() => { void refreshPending(); }, 3000);
+  if (!window.assistantClient?.mobileGetState) return;
+  ui.visible = true;
+  render();
+  void api().mobileGetState().then(applyState).catch(() => {});
 }
 
 export function onMobilePairingPageHidden() {
-  stopPolling();
+  ui.visible = false;
+  if (ui.countdown) { clearInterval(ui.countdown); ui.countdown = null; }
 }

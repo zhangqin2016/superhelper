@@ -1,127 +1,74 @@
 #!/usr/bin/env node
-// Static guard for the mobile pairing web page (desktop-vouched, no login).
-// Locks the pairing/relay flow structure + the exact endpoints it calls so they
-// can't drift from the server. On-device round-trip is validated server-side by
-// server/scripts/mobile-command-e2e.mjs.
-
+// The phone page (web/app/m/pair + web/components/mobile + web/lib/mobile):
+// security invariants, the surfaces it must offer, and its layering. The
+// behaviour itself is tested in test-mobile-relay-client / -conversation-reducer
+// / -protocol-contract; this holds the structure.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const page = fs.readFileSync(path.join(ROOT, "web/app/m/pair/page.js"), "utf8");
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const files = {
+  page: read("web/app/m/pair/page.js"),
+  hook: read("web/components/mobile/use-mobile-command.js"),
+  chat: read("web/components/mobile/chat-screen.js"),
+  pairing: read("web/components/mobile/pairing-screen.js"),
+  sheet: read("web/components/mobile/session-sheet.js"),
+  voice: read("web/components/mobile/use-voice-input.js"),
+  markdown: read("web/components/mobile/markdown.js"),
+  protocol: read("web/lib/mobile/protocol.mjs"),
+  conversation: read("web/lib/mobile/conversation.mjs"),
+  client: read("web/lib/mobile/relay-client.mjs"),
+  attachments: read("web/lib/mobile/attachments.mjs"),
+};
+const all = Object.values(files).join("\n");
 
-assert.match(page, /^"use client";/, "the pairing page is a client component");
+// --- security: no login, no account credential, no raw HTML -------------------
+assert.match(files.page, /^"use client";/, "the page is a client component");
+assert.doesNotMatch(all, /\/api\/auth\/sms\//, "the phone does not send/verify SMS codes");
+assert.doesNotMatch(all, /accessToken/, "the phone holds no account access token");
+assert.doesNotMatch(all, /\/api\/account\//, "the phone calls no account endpoints");
+assert.doesNotMatch(all, /dangerouslySetInnerHTML=/, "markdown renders elements, never raw HTML (XSS-safe)");
+assert.match(files.client, /role=mobile/, "connects the relay as the mobile role");
+assert.match(files.client, /token=\$\{encodeURIComponent\(mobileToken\)\}/, "the relay is authenticated with the grant token only");
+assert.match(files.client, /\/api\/mobile\/pairing\/consume/, "consumes the one-time pairing token");
+assert.match(files.client, /CAN_START\.has\(phase\)/, "a one-time code is never consumed twice");
+assert.match(files.hook, /history\.replaceState/, "the spent token is removed from the address bar");
 
-// NO login: the phone must not call any auth/SMS endpoints or hold an account
-// token. (It MAY carry a scoped, grant-derived ASR gateway token — that's not an
-// account credential.)
-assert.doesNotMatch(page, /\/api\/auth\/sms\//, "the phone does not send/verify SMS codes");
-assert.doesNotMatch(page, /accessToken/, "the phone holds no account access token");
-assert.doesNotMatch(page, /\/api\/account\//, "the phone calls no account endpoints");
+// --- the surfaces the phone offers -----------------------------------------------
+assert.match(files.client, /\/api\/mobile\/direct\/consume/, "direct code + password");
+assert.match(files.client, /\/api\/mobile\/grant\/refresh/, "the relay token is renewed before it lapses");
+assert.match(files.client, /GRANT_STORAGE_KEY = "lily_m_grant"/, "the pairing survives a refresh");
+assert.match(files.client, /CLOSE\.GRANT_ENDED/, "a revoked pairing ends cleanly");
+assert.match(files.hook, /visibilitychange/, "returning to the tab reconnects at once");
+assert.match(files.hook, /parseScanHash/, "a scanned QR deep link pairs automatically");
+assert.match(files.chat, /type="file"/, "an image picker");
+assert.match(files.chat, /accept="image\/\*"/);
+assert.match(files.attachments, /fileToDownscaledAttachment/, "images are downscaled to fit the relay");
+assert.match(files.voice, /\/api\/mobile\/asr\/token/, "server speech recognition");
+assert.match(files.voice, /\/llm\/asr\/sessions/);
+assert.match(files.voice, /SpeechRecognition/, "browser dictation fallback");
+assert.match(files.voice, /此浏览器不支持语音输入/, "an unsupported browser is told so");
+assert.match(files.chat, /isComposing/, "Enter while composing Chinese does not send");
+assert.match(files.chat, /停止/, "a running turn can be stopped");
+assert.match(files.sheet, /onSelectProject/, "workspace picker");
+assert.match(files.sheet, /onSelectSession/, "session picker");
+assert.match(files.page, /电脑离线/, "the desktop being away is said plainly");
+assert.match(files.page, /\/api\/mobile\/capabilities/, "server-gated capabilities are described");
+assert.match(files.page, /屏幕、鼠标键盘控制暂未开放/, "phase-2 surfaces are not advertised as live");
+assert.doesNotMatch(all, /indigo|violet/, "the product's brand palette, not framework defaults");
 
-// Pairing: consume with just a device id + one-time token, get a grant token.
-assert.match(page, /\/api\/mobile\/pairing\/consume/, "consumes the pairing challenge");
-assert.match(page, /deviceId/, "sends the browser device id");
-assert.match(page, /mobileToken/, "uses the grant-scoped token returned by consume");
-
-// Transport: relay as the mobile role, carrying the grant token (not a bearer).
-assert.match(page, /role=mobile/, "connects the relay as the mobile role");
-assert.match(page, /\/api\/mobile\/relay/, "connects the relay endpoint");
-assert.match(page, /grantId=/, "relay connection carries the grant id");
-assert.match(page, /token=\$\{encodeURIComponent\(mobileToken\)\}/, "relay is authenticated with the grant token");
-
-// Command envelope shape the desktop bridge expects.
-assert.match(page, /type: "command"/, "sends a command envelope");
-assert.match(page, /commandId/, "the command carries a commandId (idempotency)");
-assert.match(page, /correlationId/, "the command carries a correlationId for diagnostics");
-assert.match(page, /corr_/, "correlation ids are visually distinct from command ids");
-assert.match(page, /command\.admitted/, "renders the admission ack");
-assert.match(page, /command\.rejected/, "renders a rejection");
-assert.match(page, /setTurnState\("queued"\)/, "send clears old reply into a queued state");
-assert.match(page, /排队中/, "queued commands have a visible waiting state");
-assert.match(page, /relay\.peer_offline/, "renders desktop-offline relay feedback");
-assert.match(page, /frame\.correlationId/, "desktop-offline feedback includes the command correlation id when present");
-assert.match(page, /连接已断开/, "shows a clear message when the relay disconnects");
-assert.match(page, /无法连接桌面/, "shows a terminal message after reconnect retries are exhausted");
-assert.match(page, /手机尚未连接桌面/, "send/stop while disconnected is visible");
-assert.match(page, /attachmentStatus/, "renders whether phone attachments reached desktop");
-assert.match(page, /图片未送达/, "warns when image attachment materialization fails");
-assert.match(page, /部分图片未送达/, "warns when only some attachments materialize");
-
-// Projected desktop turn output — the phone sees the reply it triggered.
-assert.match(page, /"assistant\.delta"/, "accumulates streaming assistant text");
-assert.match(page, /"turn\.started"/, "resets the reply on a new turn");
-assert.match(page, /"turn\.ended"/, "marks the turn done/failed/interrupted");
-assert.match(page, /setReply\(/, "renders the streaming desktop reply");
-assert.match(page, /renderMarkdown\(/, "renders assistant replies as markdown");
-assert.doesNotMatch(page, /dangerouslySetInnerHTML=/, "markdown is rendered as elements, never raw HTML (XSS-safe)");
-// Interrupt a running turn from the phone.
-assert.match(page, /type: "interrupt"/, "can send an interrupt frame");
-assert.match(page, /interrupt\.ack/, "renders the interrupt ack");
-assert.match(page, /stopCorrelationId/, "interrupt frames carry a correlation id");
-assert.match(page, /corr_stop_/, "stop correlation ids are visually distinct");
-// Session context + recent history.
-assert.match(page, /type: "session\.request"/, "requests session context on connect");
-assert.match(page, /type: "sessions\.request"/, "requests selectable session list on connect");
-assert.match(page, /"sessions\.list"/, "renders selectable sessions from the desktop");
-assert.match(page, /type: "session\.select"/, "can select which desktop session receives mobile commands");
-assert.match(page, /selectedSessionId/, "keeps the selected target session id");
-assert.match(page, /selectSession\(s\.id\)/, "renders a mobile session picker (bottom sheet)");
-assert.match(page, /"session\.context"/, "renders the session context");
-assert.match(page, /sessionCtx/, "keeps session context state (title + recent history)");
-// Workspace (project) selection.
-assert.match(page, /type: "projects\.request"/, "requests the workspace list on connect");
-assert.match(page, /type: "project\.select"/, "can switch workspace");
-assert.match(page, /selectProject/, "has a workspace-select flow");
-assert.match(page, /工作空间/, "renders the workspace picker");
-// Attachments: pick + downscale an image and send it with the command.
-assert.match(page, /type="file"/, "has an image picker");
-assert.match(page, /accept="image\/\*"/, "picker accepts images");
-assert.match(page, /fileToDownscaledAttachment/, "downscales the image before sending");
-assert.match(page, /attachments: attachment \?/, "includes the attachment in the command frame");
-assert.match(page, /lilySessionId: selectedSessionId/, "commands target the mobile-selected session");
-
-// Browser dictation: speech-to-text is a mobile input convenience, distinct
-// from gated production/native voice control.
-assert.match(page, /SpeechRecognition/, "checks for browser speech recognition support");
-assert.match(page, /toggleVoice/, "has a voice dictation toggle (start/stop)");
-assert.match(page, /此浏览器不支持语音输入/, "says so plainly (visible toast) when browser dictation is unavailable");
-// Prefer server ASR (cross-platform incl. iOS), fall back to browser dictation.
-assert.match(page, /\/api\/mobile\/asr\/token/, "fetches a scoped server-ASR token");
-assert.match(page, /\/llm\/asr\/sessions/, "streams audio to the server ASR relay");
-assert.match(page, /startServerAsr/, "prefers server ASR");
-assert.match(page, /startBrowserSr/, "falls back to browser dictation when server ASR is unavailable");
-assert.match(page, /\{toast\}/, "surfaces voice + status feedback in a visible toast (not a hidden log)");
-assert.match(page, /🎙/, "renders a microphone button");
-
-// Direct connect (TeamViewer/ToDesk-style): code + password, no approval.
-assert.match(page, /\/api\/mobile\/direct\/consume/, "direct-connect consumes code + password");
-assert.match(page, /directConnect/, "has a direct-connect flow");
-assert.match(page, /DIRECT_CODE_LOCKED/, "shows a lockout message after too many attempts");
-assert.match(page, /授权码直连/, "offers a direct-code mode");
-
-// Retry-until-approved: the relay refuses until the desktop approves.
-assert.match(page, /setTimeout\(tryOnce/, "retries the relay connection until approval flips the grant active");
-
-// Scan deep link: a QR opens /m/pair#u=<api>&t=<token>; scanning auto-pairs.
-assert.match(page, /parseScanHash/, "parses the scanned QR deep link");
-assert.match(page, /\bt=/, "reads the token param from the scan hash");
-assert.match(page, /pageOrigin\(\)/, "falls back to the page origin as the API base when scanned");
-assert.match(page, /autoPairedRef/, "auto-pairs once when opened via a scanned deep link");
-
-// One-time token: never consume twice (StrictMode double-invoke / double tap).
-assert.match(page, /consumingRef/, "guards against a double consume of the one-time token");
-assert.match(page, /if \(consumingRef\.current\) return/, "pair() returns early if a consume is already in flight/done");
-assert.match(page, /PAIRING_CHALLENGE_INVALID_OR_EXPIRED/, "shows a clear message when the code expired/was used");
-
-// Final-shape capability metadata: the page shows the current demo surface and
-// explicitly keeps Phase 2 live/voice/control disabled unless the server enables it.
-assert.match(page, /\/api\/mobile\/capabilities/, "loads Mobile Command capability metadata");
-assert.match(page, /工作空间\/会话选择/, "capability copy lists the truly-open surfaces (incl. workspace/session selection)");
-assert.match(page, /capabilities\.observeControl\?\.enabled/, "renders observe/control as server-gated");
-assert.match(page, /capabilities\.voice\?\.enabled/, "renders voice as server-gated");
-assert.match(page, /屏幕、语音、鼠标键盘控制等待桌面证据放行/, "does not advertise Phase 2 as live");
+// --- layering ----------------------------------------------------------------------
+for (const [name, src] of Object.entries({ protocol: files.protocol, conversation: files.conversation, client: files.client })) {
+  assert.doesNotMatch(src, /from "react"|useState|useEffect/, `lib/mobile/${name} is framework-free`);
+}
+assert.doesNotMatch(files.conversation, /fetch\(|WebSocket|localStorage/, "the conversation model does no I/O");
+for (const [name, src] of Object.entries({ page: files.page, chat: files.chat, pairing: files.pairing, sheet: files.sheet })) {
+  assert.doesNotMatch(src, /new WebSocket|\.send\(JSON/, `${name}: views never touch the connection`);
+}
+assert.ok(files.page.split("\n").length < 160, "the page is composition, not a monolith");
+assert.match(files.conversation, /commandId/, "pending tasks reconcile by command identity");
 
 console.log("mobile-pair-web: ok");

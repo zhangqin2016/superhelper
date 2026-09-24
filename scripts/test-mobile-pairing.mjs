@@ -224,8 +224,8 @@ function pendingChallenge(overrides = {}) {
 
 // --- listPendingGrants: desktop polls its pending requests -------------------
 {
-  const shaped = shapePendingGrant({ id: "mpg_1", mobile_device_id: "dmob", approval_expires_at: "2026-07-12T12:02:00.000Z", created_at: "2026-07-12T12:00:00.000Z", user_id: "u1", license_id: "lic1" });
-  assert.deepEqual(shaped, { grantId: "mpg_1", mobileDeviceId: "dmob", approvalExpiresAt: "2026-07-12T12:02:00.000Z", createdAt: "2026-07-12T12:00:00.000Z" }, "the pending view exposes no internal columns (no user_id/license_id)");
+  const shaped = shapePendingGrant({ id: "mpg_1", mobile_device_id: "dmob", mobile_label: "iPhone · Safari", approval_expires_at: "2026-07-12T12:02:00.000Z", created_at: "2026-07-12T12:00:00.000Z", user_id: "u1", license_id: "lic1" });
+  assert.deepEqual(shaped, { grantId: "mpg_1", mobileDeviceId: "dmob", mobileLabel: "iPhone · Safari", approvalExpiresAt: "2026-07-12T12:02:00.000Z", createdAt: "2026-07-12T12:00:00.000Z" }, "the pending view exposes no internal columns (no user_id/license_id) — but says which phone");
 
   let queriedDevice = null;
   const res = await listPendingGrants({
@@ -246,7 +246,7 @@ function pendingChallenge(overrides = {}) {
   const shaped = shapeGrant({ id: "mpg_9", mobile_device_id: "dmob", status: "active", approval_expires_at: "x", approved_at: "z", created_at: "y", user_id: "u1", license_id: "lic1" });
   assert.deepEqual(
     shaped,
-    { grantId: "mpg_9", mobileDeviceId: "dmob", status: "active", approvalExpiresAt: "x", approvedAt: "z", createdAt: "y" },
+    { grantId: "mpg_9", mobileDeviceId: "dmob", mobileLabel: null, status: "active", approvalExpiresAt: "x", approvedAt: "z", createdAt: "y" },
     "the management view exposes status but no user_id/license_id",
   );
 

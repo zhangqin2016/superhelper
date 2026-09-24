@@ -22,15 +22,25 @@ const activeGrant = { id: "g1", status: "active", user_id: "u1", desktop_device_
 {
   const r = authenticateRelayConnection({ auth: mobileAuth, role: "mobile", grantId: "g1", deviceId: "dmob", grant: activeGrant });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.conn, { role: "mobile", grantId: "g1", deviceId: "dmob", userId: "u1" });
+  assert.deepEqual(r.conn, { kind: "mobile", grantId: "g1", deviceId: "dmob", userId: "u1" });
 }
 
-// happy path: desktop joins its grant with its account token
+// happy path: a pre-2 desktop joins one grant with its account token (legacy)
 {
   const r = authenticateRelayConnection({ auth: desktopAuth, role: "desktop", grantId: "g1", deviceId: "dtop", grant: activeGrant });
   assert.equal(r.ok, true);
-  assert.equal(r.conn.role, "desktop");
+  assert.equal(r.conn.kind, "legacy");
   assert.equal(r.conn.userId, "u1");
+}
+
+// happy path: the desktop's control channel — no grant; bound server-side to
+// this device's and this account's pairings only.
+{
+  const r = authenticateRelayConnection({ auth: desktopAuth, role: "desktop", grantId: "", deviceId: "dtop", grant: null });
+  assert.deepEqual(r, { ok: true, conn: { kind: "channel", deviceId: "dtop", userId: "u1" } });
+  assert.equal(authenticateRelayConnection({ auth: { ...desktopAuth, deviceId: "dX" }, role: "desktop", grantId: "", deviceId: "dtop", grant: null }).code, "DEVICE_MISMATCH", "a channel is only for the token's own device");
+  assert.equal(authenticateRelayConnection({ auth: mobileAuth, role: "desktop", grantId: "", deviceId: "dtop", grant: null }).code, "RELAY_AUTH_KIND_INVALID", "a phone token cannot open a desktop channel");
+  assert.equal(authenticateRelayConnection({ auth: mobileAuth, role: "mobile", grantId: "", deviceId: "dmob", grant: null }).code, "RELAY_GRANT_REQUIRED", "a phone always names its grant");
 }
 
 // invalid / failed auth
@@ -61,11 +71,10 @@ assert.equal(authenticateRelayConnection({ auth: desktopAuth, role: "desktop", g
 // desktop device not the grant's desktop device
 assert.equal(authenticateRelayConnection({ auth: { ...desktopAuth, deviceId: "dX" }, role: "desktop", grantId: "g1", deviceId: "dX", grant: activeGrant }).code, "RELAY_GRANT_DEVICE_MISMATCH");
 
-// peer-offline feedback preserves command diagnostics when the relay can parse it
+// peer-offline feedback preserves command diagnostics
 {
-  const frame = peerOfflineFrameForMessage(JSON.stringify({ type: "command", commandId: "cmd_1", correlationId: "corr_1" }));
-  assert.deepEqual(frame, { type: "relay.peer_offline", commandId: "cmd_1", correlationId: "corr_1" });
-  assert.deepEqual(peerOfflineFrameForMessage("{bad json"), { type: "relay.peer_offline" });
+  assert.deepEqual(peerOfflineFrameForMessage({ type: "command", commandId: "cmd_1", correlationId: "corr_1" }), { type: "relay.peer_offline", commandId: "cmd_1", correlationId: "corr_1" });
+  assert.deepEqual(peerOfflineFrameForMessage(null), { type: "relay.peer_offline" });
 }
 
 console.log("mobile-relay-auth: ok");

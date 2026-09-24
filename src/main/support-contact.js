@@ -118,6 +118,13 @@ async function submitContactRequestPublic(input) {
   if (attachmentResult.attachments.length) {
     payload.attachments = attachmentResult.attachments;
   }
+  if (input?.includeDiagnostics) {
+    // Fail-open: without diagnostics this is the same ticket it always was.
+    const collect = input.collectDiagnostics
+      || require("./support-log-bundle").collectFeedbackDiagnostics;
+    const diagnostics = await Promise.resolve().then(() => collect()).catch(() => null);
+    if (diagnostics) payload.diagnostics = diagnostics;
+  }
 
   const result = await submitContactRequest(payload);
   if (!result.ok) {
@@ -127,7 +134,15 @@ async function submitContactRequestPublic(input) {
       detail: result.detail || null,
     };
   }
-  return { ok: true, id: result.json?.id || null };
+  return {
+    ok: true,
+    id: result.json?.id || null,
+    // What the server actually kept, so the form can say so truthfully. An
+    // older server ignores the field and answers without it.
+    diagnostics: payload.diagnostics
+      ? { sent: true, log: Boolean(payload.diagnostics.log), stored: result.json?.diagnostics ?? null }
+      : { sent: false },
+  };
 }
 
 function getFeedbackContext(category) {
