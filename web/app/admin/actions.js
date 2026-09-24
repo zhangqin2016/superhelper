@@ -313,6 +313,62 @@ export async function rolloutAction(formData) {
   if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
 }
 
+function idList(value) {
+  return String(value || "").split(/[\s,]+/).map((v) => v.trim()).filter(Boolean);
+}
+
+async function releaseSettingAction(path, body, back) {
+  let failure = "";
+  try {
+    await apiPatch(path, body);
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath(back);
+  if (failure) redirect(`${back}?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
+}
+
+export async function setLegacyNoticeAction(formData) {
+  await releaseSettingAction("/api/admin/release-settings/legacy-notice", {
+    enabled: bool(formData, "enabled"),
+    licenseIds: idList(text(formData, "licenseIds")),
+    deviceIds: idList(text(formData, "deviceIds")),
+  }, "/admin/releases");
+}
+
+export async function setArchiveSettingsAction(formData) {
+  await releaseSettingAction("/api/admin/release-settings/archive", { olderThanDays: Number(text(formData, "olderThanDays")) || 30 }, "/admin/releases/archive");
+}
+
+// Archives exactly the candidates the page listed; the server recomputes and skips any that stopped qualifying.
+export async function archiveReleasesAction(formData) {
+  let failure = "";
+  let summary = "";
+  try {
+    const result = await apiPost("/api/admin/release-archive", { releaseIds: formData.getAll("releaseId").map(String).filter(Boolean) });
+    const moved = (result.results || []).reduce((sum, r) => sum + Number(r.moved || 0), 0);
+    const failed = (result.results || []).reduce((sum, r) => sum + (r.failed || []).length, 0);
+    summary = `${(result.results || []).length}:${moved}:${failed}:${(result.skipped || []).length}`;
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath("/admin/releases/archive");
+  revalidatePath("/admin/releases");
+  redirect(failure ? `/admin/releases/archive?rolloutError=${encodeURIComponent(failure.slice(0, 300))}` : `/admin/releases/archive?done=${encodeURIComponent(summary)}`);
+}
+
+export async function restoreReleaseAction(formData) {
+  let failure = "";
+  try {
+    await apiPost(`/api/admin/release-archive/${encodeURIComponent(text(formData, "id"))}/restore`, {});
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath("/admin/releases/archive");
+  revalidatePath("/admin/releases");
+  if (failure) redirect(`/admin/releases/archive?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
+}
+
 export async function setAutoPauseAction(formData) {
   let failure = "";
   try {

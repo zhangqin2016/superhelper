@@ -6,6 +6,7 @@ import {
   forwardAnthropicModels,
 } from "./model-gateway/anthropic-adapter.js";
 import { signModelGatewayToken, verifyLiveModelGatewayToken } from "./model-gateway/auth.js";
+import { maybeSendLegacyNotice } from "./legacy-client-notice.js";
 import {
   approximateAnthropicInputTokens,
   forwardOpenAi,
@@ -264,6 +265,8 @@ async function handleGatewayRequest(request, reply) {
   }
 
   const body = request.body && typeof request.body === "object" ? request.body : {};
+  // A client too old to update itself is told how, as a reply (off by default).
+  if (await maybeSendLegacyNotice({ token, body, reply, protocol: "anthropic" })) return reply;
   let upstream;
   try {
     upstream = provider.type === "anthropic"
@@ -327,6 +330,7 @@ async function handleOpenAiChatCompletionsRequest(request, reply) {
   }
 
   const body = request.body && typeof request.body === "object" ? request.body : {};
+  if (await maybeSendLegacyNotice({ token, body, reply, protocol: "openai" })) return reply;
   let upstream;
   try {
     upstream = await forwardOpenAiChatCompletions(provider, body);

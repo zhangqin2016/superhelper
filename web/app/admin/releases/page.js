@@ -23,9 +23,9 @@ export default async function ReleasesPage({ searchParams }) {
   const supportByPlatform = Object.fromEntries((rollouts.platforms || []).map((p) => [p.platform, p.support || {}]));
   return (
     <AdminShell title={t.admin.pages.releases[0]} subtitle={t.admin.pages.releases[1]}>
-      <AdminPageActions actions={[{ href: "/admin/releases/new", label: t.admin.rollouts.newRelease, variant: "primary" }]} />
+      <AdminPageActions actions={[{ href: "/admin/releases/new", label: t.admin.rollouts.newRelease, variant: "primary" }, { href: "/admin/releases/archive", label: t.admin.rollouts.archiveTitle }]} />
       {rolloutError ? <p role="alert" className="mb-3 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-800">{t.admin.rollouts.refused}: {rolloutError}</p> : null}
-      <ReleaseRolloutsPanel platforms={rollouts.platforms || []} autoPause={rollouts.autoPause || null} />
+      <ReleaseRolloutsPanel platforms={rollouts.platforms || []} autoPause={rollouts.autoPause || null} legacyNotice={rollouts.legacyNotice || null} />
       <ReleasesTable rows={rows} latest={Object.keys(offeredNow).length ? offeredNow : data.latest || {}} support={supportByPlatform} empty={<AdminEmpty title={t.admin.pages.releases[0]} description={t.admin.pages.releases[1]} />} />
       <Pagination
         basePath="/admin/releases"

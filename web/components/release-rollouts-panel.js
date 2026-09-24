@@ -4,7 +4,7 @@ import { DangerForm } from "./danger-form";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useI18n } from "../lib/use-i18n";
-import { rolloutAction, setAutoPauseAction, setReleaseSupportAction } from "../app/admin/actions";
+import { rolloutAction, setAutoPauseAction, setLegacyNoticeAction, setReleaseSupportAction } from "../app/admin/actions";
 
 // The widening steps offered from a given percentage. Only upward: stopping is pause/halt.
 const STEPS = [1, 5, 10, 25, 50, 100];
@@ -160,14 +160,33 @@ function AutoPauseSettings({ autoPause = {}, copy }) {
   );
 }
 
+function LegacyNoticeSettings({ legacyNotice = {}, copy }) {
+  const hits = legacyNotice.hits || {};
+  return (
+    <details className="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+      <summary className="cursor-pointer"><span className="font-medium">{copy.legacyNotice}</span>: {legacyNotice.enabled ? copy.autoPauseOn : copy.autoPauseOff}
+        {legacyNotice.enabled && ((legacyNotice.licenseIds || []).length || (legacyNotice.deviceIds || []).length) ? <span className="ms-2 text-xs text-amber-700">{copy.trialScope}</span> : null}
+        <span className="ms-2 text-xs text-slate-500">{copy.noticeHits.replace("{requests}", String(hits.requests || 0)).replace("{devices}", String(hits.devices || 0))}</span></summary>
+      <form action={setLegacyNoticeAction} className="mt-2 grid gap-2">
+        <label className="flex items-center gap-2"><input type="checkbox" name="enabled" defaultChecked={Boolean(legacyNotice.enabled)} />{copy.legacyNoticeEnabled}</label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.trialLicenses}<textarea name="licenseIds" rows={2} defaultValue={(legacyNotice.licenseIds || []).join("\n")} className="rounded-md border border-slate-300 px-2 py-1 font-mono text-xs" /></label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.trialDevices}<textarea name="deviceIds" rows={2} defaultValue={(legacyNotice.deviceIds || []).join("\n")} className="rounded-md border border-slate-300 px-2 py-1 font-mono text-xs" /></label>
+        <div><Button variant="outline" size="sm">{copy.saveAutoPause}</Button></div>
+      </form>
+      <p className="mt-2 text-xs text-slate-500">{copy.legacyNoticeHelp}</p>
+    </details>
+  );
+}
+
 /** Per platform: who gets what now, the rollout in progress, and how it is doing. */
-export function ReleaseRolloutsPanel({ platforms = [], autoPause = null }) {
+export function ReleaseRolloutsPanel({ platforms = [], autoPause = null, legacyNotice = null }) {
   const { t } = useI18n();
   const copy = t.admin.rollouts;
   if (!platforms.length) return null;
   return (
     <>
     {autoPause ? <AutoPauseSettings autoPause={autoPause} copy={copy} /> : null}
+    {legacyNotice ? <LegacyNoticeSettings legacyNotice={legacyNotice} copy={copy} /> : null}
     <div className="mb-4 grid gap-3 lg:grid-cols-3">
       {platforms.map((entry) => (
         <section key={entry.platform} className="table-card p-4">

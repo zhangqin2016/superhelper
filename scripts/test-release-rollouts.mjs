@@ -235,6 +235,62 @@ await check("update funnel: stages come from the update manager's own transition
   assert.ok(funnel.observe({ ...base, phase: "idle" }, { ...base, latestVersion: "0.1.185", phase: "downloading" }, { service: { devicePayload() { throw new Error("x"); }, serviceFetch: async () => { throw new Error("offline"); } } }).length === 1, "a failing reporter does not throw into the update flow");
 });
 
+await check("archive: only what nobody needs, exactly its files, never the shared pointer", async () => {
+  const { archiveCandidates, objectsForRelease, keyFromUrl, normalizeArchiveSettings } = await import("../server/src/services/release-archive.js");
+  const now = Date.parse("2026-09-24T00:00:00Z");
+  const old = "2026-06-01T00:00:00Z";
+  const releases = [
+    rel("a", "0.1.18", { created_at: old }), rel("b", "0.1.183", { created_at: old }), rel("c", "0.1.184", { created_at: old }),
+    rel("d", "0.1.185", { created_at: old }), rel("e", "0.1.186", { created_at: old }), rel("f", "0.1.150", { created_at: "2026-09-20T00:00:00Z" }),
+    rel("g", "0.1.20", { created_at: old, archived_at: "2026-08-01T00:00:00Z" }),
+  ];
+  const picked = archiveCandidates({
+    releases, rollouts: [{ release_id: "e", state: "rolling" }],
+    fullByPlatform: new Map([["darwin-arm64", "0.1.185"]]), minimumByPlatform: new Map([["darwin-arm64", "0.1.184"]]),
+    olderThanDays: 30, now,
+  }).map((r) => r.version);
+  assert.deepEqual(picked, ["0.1.18", "0.1.183"], "not the full, not the minimum, not rolling/newer, not young, not already archived");
+  assert.deepEqual(archiveCandidates({ releases, fullByPlatform: new Map(), olderThanDays: 30, now }), [], "a platform with nothing offered is left alone");
+  assert.equal(keyFromUrl("https://cdn", "https://cdn/app/updates/x/0.1.18/Lily%20Workbench-0.1.18.dmg?v=1"), "app/updates/x/0.1.18/Lily Workbench-0.1.18.dmg");
+  assert.equal(keyFromUrl("https://cdn", "https://elsewhere/x.dmg"), "", "never another bucket's object");
+  const stable = ["p/stable/Lily Workbench-0.1.18-arm64.zip", "p/stable/Lily Workbench-0.1.183-arm64.zip", "p/stable/Lily Workbench-0.1.18-arm64.zip.blockmap", "p/stable/latest-mac.yml"];
+  assert.deepEqual(objectsForRelease({ version: "0.1.18", url: "https://cdn/app/0.1.18.dmg" }, { publicBaseUrl: "https://cdn", stableKeys: stable }).sort(),
+    ["app/0.1.18.dmg", "p/stable/Lily Workbench-0.1.18-arm64.zip", "p/stable/Lily Workbench-0.1.18-arm64.zip.blockmap"].sort());
+  assert.equal(normalizeArchiveSettings({ olderThanDays: 1 }).olderThanDays, 7, "retention has a floor");
+  const qiniu = await import("../server/src/services/qiniu-rs.js");
+  assert.match(qiniu.qboxAuthorization({ accessKey: "ak", secretKey: "sk" }, "/move/a/b"), /^QBox ak:[A-Za-z0-9_-]+=*$/);
+  assert.ok(!/deleteObject|\/delete\//.test(read("server/src/services/qiniu-rs.js")), "archiving moves; nothing here can delete");
+});
+
+await check("old clients: a reply saying how to update, only when on, in scope, and reachable", async () => {
+  const { decideLegacyNotice, normalizeLegacyNotice, noticeResponse, LEGACY_NOTICE_DEFAULT } = await import("../server/src/services/legacy-client-notice.js");
+  assert.equal(LEGACY_NOTICE_DEFAULT.enabled, false, "off by default");
+  const on = normalizeLegacyNotice({ enabled: true });
+  const device = { id: "d1", app_version: "0.1.100" };
+  const offered = { version: "0.1.185", url: "https://cdn/x.dmg" };
+  assert.equal(decideLegacyNotice({ settings: normalizeLegacyNotice({}), device, minimum: "0.1.184", offered }).notice, false);
+  assert.equal(decideLegacyNotice({ settings: on, device, minimum: "", offered }).notice, false, "no floor, no notice");
+  assert.equal(decideLegacyNotice({ settings: on, device: { ...device, app_version: "0.1.185" }, minimum: "0.1.184", offered }).notice, false);
+  assert.equal(decideLegacyNotice({ settings: on, device, minimum: "0.1.190", offered }).reason, "no_release_at_floor", "nowhere to go: let the user work");
+  assert.equal(decideLegacyNotice({ settings: normalizeLegacyNotice({ enabled: true, licenseIds: ["lic_x"] }), device, licenseId: "lic_y", minimum: "0.1.184", offered }).reason, "outside_trial_scope");
+  const yes = decideLegacyNotice({ settings: on, device, minimum: "0.1.184", offered });
+  assert.ok(yes.notice && yes.text.includes("0.1.185") && yes.text.includes("https://cdn/x.dmg"));
+  const anthropicJson = JSON.parse(noticeResponse({ protocol: "anthropic", stream: false, text: "T" }).body);
+  assert.deepEqual([anthropicJson.type, anthropicJson.content[0].text, anthropicJson.stop_reason], ["message", "T", "end_turn"]);
+  const anthropicSse = noticeResponse({ protocol: "anthropic", stream: true, text: "T" }).body;
+  assert.deepEqual([...anthropicSse.matchAll(/^event: (\w+)$/gm)].map((m) => m[1]), ["message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop"]);
+  const openAiJson = JSON.parse(noticeResponse({ protocol: "openai", stream: false, text: "T" }).body);
+  assert.equal(openAiJson.choices[0].message.content, "T");
+  assert.match(noticeResponse({ protocol: "openai", stream: true, text: "T" }).body, /data: \[DONE\]\n\n$/);
+  const gateway = read("server/src/services/model-gateway.js");
+  for (const [start, protocol] of [["async function handleGatewayRequest", "anthropic"], ["async function handleOpenAiChatCompletionsRequest", "openai"]]) {
+    const body = gateway.slice(gateway.indexOf(start), gateway.indexOf("\n}\n", gateway.indexOf(start)));
+    const notice = body.indexOf(`maybeSendLegacyNotice({ token, body, reply, protocol: "${protocol}" })`);
+    assert.ok(notice > 0, `${protocol}: the notice is wired`);
+    assert.ok(notice < body.indexOf("consumeChatUsage") && notice < body.indexOf("upstream = "), `${protocol}: before billing and before any provider call, so an unlicensed old client sees it`);
+  }
+});
+
 await check("the real-database closed loop runs when a scratch Postgres is provided", () => {
   // server/scripts/release-rollouts-integration.mjs: real migrations, real routes, 200 devices.
   const url = process.env.LILY_TEST_DATABASE_URL || "";
@@ -247,6 +303,11 @@ await check("the real-database closed loop runs when a scratch Postgres is provi
   });
   assert.equal(run.status, 0, `closed loop failed:\n${run.stdout}\n${run.stderr}`);
   assert.match(run.stdout, /release rollouts integration: ok/);
+  const p4 = spawnSync(process.execPath, [path.join(ROOT, "server/scripts/release-archive-notice-integration.mjs")], {
+    cwd: path.join(ROOT, "server"), env: { ...process.env, DATABASE_URL: url }, encoding: "utf8", timeout: 240_000,
+  });
+  assert.equal(p4.status, 0, `archive + notice loop failed:\n${p4.stdout}\n${p4.stderr}`);
+  assert.match(p4.stdout, /release archive \+ notice integration: ok/);
 });
 
 console.log(`\n${checks} checks passed (release rollouts)`);

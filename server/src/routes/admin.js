@@ -17,6 +17,7 @@ import { registerAdminLicenseRoutes } from "./admin/licenses.js";
 import { registerAdminModelProviderRoutes } from "./admin/model-providers.js";
 import { registerAdminReleaseRoutes } from "./admin/releases.js";
 import { registerAdminReleaseSettingsRoutes, registerAdminReleaseSupportRoutes, registerAdminRolloutRoutes } from "./admin/rollouts.js";
+import { registerAdminReleaseArchiveRoutes } from "./admin/release-archive.js";
 import { registerAdminSummaryRoutes } from "./admin/summary.js";
 import { registerAdminSystemRoutes } from "./admin/system.js";
 import { registerAdminSkillPackageRoutes } from "./admin/skill-packages.js";
@@ -132,6 +133,7 @@ export async function adminRoutes(app) {
   registerAdminRolloutRoutes(app, { audit });
   registerAdminReleaseSupportRoutes(app, { audit });
   registerAdminReleaseSettingsRoutes(app, { audit });
+  registerAdminReleaseArchiveRoutes(app, { audit });
   registerAdminRuntimePackRoutes(app, { audit });
   registerAdminLegalKnowledgePackRoutes(app, { audit });
   registerAdminSkillPackageRoutes(app, { audit });

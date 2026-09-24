@@ -9,7 +9,8 @@ import { ROLLOUT_ACTIONS, transitionRollout } from "../../services/release-rollo
 import { baselineFor, judgeHealth, versionHealth } from "../../services/release-health.js";
 import { RELEASE_CHANNELS, normalizeSupport, supportPolicyError } from "../../services/release-support.js";
 import { AUTO_PAUSE_SETTING, loadAutoPause, normalizeAutoPause } from "../../services/rollout-guard.js";
-import { setAppSetting } from "../../services/app-settings.js";
+import { getAppSetting, setAppSetting } from "../../services/app-settings.js";
+import { LEGACY_NOTICE_SETTING, clearLegacyNoticeCache, legacyNoticeHits, normalizeLegacyNotice } from "../../services/legacy-client-notice.js";
 
 const createRolloutSchema = z.object({
   channel: z.enum(["stable", "beta"]).optional(),
@@ -42,7 +43,7 @@ export function registerAdminRolloutRoutes(app, { audit }) {
         tags: ["admin:releases"],
         summary: "Release rollouts by platform",
         description: "Per platform on the stable channel: the version everyone is offered, the rollout in progress with its reach and health against the previous version, and recent rollouts.",
-        response: { 200: okResponse({ platforms: { type: "array", items: { type: "object", additionalProperties: true } }, autoPause: { type: "object", additionalProperties: true } }) },
+        response: { 200: okResponse({ platforms: { type: "array", items: { type: "object", additionalProperties: true } }, autoPause: { type: "object", additionalProperties: true }, legacyNotice: { type: "object", additionalProperties: true } }) },
       },
     },
     async () => {
@@ -64,8 +65,10 @@ export function registerAdminRolloutRoutes(app, { audit }) {
         .filter((row) => row.platform === platform && row.to_version === version)
         .map((row) => [row.stage, row.devices]));
       const platforms = [...new Set(releases.map((r) => r.platform))].sort();
+      const legacyNotice = { ...normalizeLegacyNotice(await getAppSetting(LEGACY_NOTICE_SETTING, null).catch(() => null)), hits: legacyNoticeHits() };
       return {
         autoPause,
+        legacyNotice,
         platforms: platforms.map((platform) => {
           const own = releases.filter((r) => r.platform === platform);
           const allRollouts = rollouts.filter((r) => r.platform === platform);
@@ -159,6 +162,7 @@ export function registerAdminRolloutRoutes(app, { audit }) {
       const decided = transitionRollout({ ...rollout, immutable_feed: Boolean(release?.immutable_feed) }, input, { otherActive: await otherActive(rollout) });
       if (!decided.ok) return reply.code(400).send(decided);
       await db.updateTable("release_rollouts").set({ ...decided.patch, updated_at: new Date() }).where("id", "=", rollout.id).execute();
+      clearLegacyNoticeCache(); // what is offered changed
       await audit(request, `rollout.${input.action}`, "release_rollout", rollout.id, {
         version: rollout.version, platform: rollout.platform, from: { state: rollout.state, percent: rollout.percent }, to: decided.patch, reason: input.reason || null,
       });
@@ -197,6 +201,7 @@ export async function writeReleaseSupport({ channel, platform, patch, audit, req
     mandate_deadline: next.mandateDeadline ? new Date(next.mandateDeadline) : null,
     updated_by: "admin", updated_at: new Date(),
   })).execute();
+  clearLegacyNoticeCache(); // the old-client notice follows the floor at once
   await audit(request, "release_support.update", "release_support", `${channel}:${platform}`, { from: current, to: next, reason: patch.reason || null });
   return { ok: true, support: next };
 }
@@ -239,7 +244,7 @@ export function registerAdminReleaseSettingsRoutes(app, { audit }) {
         summary: "Turn rollout auto-pause on or off and set its thresholds",
         description: "A rolling version whose error rate per active device is at least worseRatio times the previous version's, with at least minDevices on both, is paused automatically when enabled.",
         body: zodBody(autoPauseSchema),
-        response: { 200: okResponse({ autoPause: { type: "object", additionalProperties: true } }) },
+        response: { 200: okResponse({ autoPause: { type: "object", additionalProperties: true }, legacyNotice: { type: "object", additionalProperties: true } }) },
       },
     },
     async (request) => {
@@ -249,6 +254,33 @@ export function registerAdminReleaseSettingsRoutes(app, { audit }) {
       await setAppSetting(AUTO_PAUSE_SETTING, next);
       await audit(request, "release_settings.auto_pause", "app_setting", AUTO_PAUSE_SETTING, { from: before, to: next });
       return { ok: true, autoPause: next };
+    },
+  );
+
+  const legacyNoticeSchema = z.object({
+    enabled: z.boolean(),
+    licenseIds: z.array(z.string().max(80)).max(500).optional(),
+    deviceIds: z.array(z.string().max(120)).max(500).optional(),
+  });
+  app.patch(
+    "/api/admin/release-settings/legacy-notice",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Answer chats from clients below the minimum supported version with how to update",
+        description: "When enabled, a chat request through the model gateway from a device below its platform's minimum supported version gets a normal assistant reply saying how to update (no provider call, no billing) — only when an installable release reaches the floor. licenseIds/deviceIds restrict it to a trial scope; empty = every device below the floor.",
+        body: zodBody(legacyNoticeSchema),
+        response: { 200: okResponse({ legacyNotice: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async (request) => {
+      const input = legacyNoticeSchema.parse(request.body || {});
+      const before = normalizeLegacyNotice(await getAppSetting(LEGACY_NOTICE_SETTING, null));
+      const next = normalizeLegacyNotice({ ...before, ...input });
+      await setAppSetting(LEGACY_NOTICE_SETTING, next);
+      clearLegacyNoticeCache(); // a change takes effect on the next request, not after the cache
+      await audit(request, "release_settings.legacy_notice", "app_setting", LEGACY_NOTICE_SETTING, { from: before, to: next });
+      return { ok: true, legacyNotice: next };
     },
   );
 }
