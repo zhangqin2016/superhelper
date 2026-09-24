@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatScreen } from "../../../components/mobile/chat-screen";
+import { InstallHint } from "../../../components/mobile/install-hint";
 import { PairingScreen } from "../../../components/mobile/pairing-screen";
 import { SessionSheet } from "../../../components/mobile/session-sheet";
 import { useMobileCommand } from "../../../components/mobile/use-mobile-command";
@@ -89,6 +90,7 @@ export default function MobilePairPage() {
           电脑上的 Lily 暂时不在线（可能已关闭或休眠）。它上线后这里会自动恢复。
         </div>
       ) : null}
+      {online ? <InstallHint onNotice={showToast} /> : null}
       {reconnecting ? (
         <div className="flex-shrink-0 border-b border-[#ebe8e1] bg-[#f4f2ed] px-4 py-2 text-xs text-[#6b665c]">{status.message}</div>
       ) : null}

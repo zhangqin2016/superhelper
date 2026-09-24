@@ -109,4 +109,28 @@ assert.match(files.sheet, /truncate/, "long names are cut, not widened");
   assert.doesNotMatch(html("a | b | c"), /<table/, "a line with pipes but no rule stays text");
 }
 
+// --- keeps on the phone: an installable app, and the page says how -------------
+// Field case: "页面关了就没了" — the pairing was saved, but once the tab closed
+// there was nothing to reopen it from except scanning again.
+{
+  const layout = read("web/app/m/layout.js");
+  const route = read("web/app/m/manifest.webmanifest/route.js");
+  const hint = read("web/components/mobile/install-hint.js");
+  assert.match(layout, /manifest: "\/m\/manifest\.webmanifest"/, "the phone pages declare a manifest");
+  assert.match(layout, /appleWebApp: \{ capable: true/, "and are a home-screen app on iOS");
+  assert.match(route, /start_url: "\/m\/pair"/, "the installed app opens the pairing page, which resumes the saved pairing");
+  assert.match(route, /scope: "\/m\/"/);
+  assert.match(route, /display: "standalone"/);
+  for (const size of [192, 512]) {
+    assert.match(route, new RegExp(`icon-${size}\\.png", sizes: "${size}x${size}"`), `a ${size}px icon is declared`);
+    assert.ok(fs.existsSync(path.join(ROOT, `web/public/brand/icon-${size}.png`)), `and exists`);
+  }
+  assert.match(files.page, /\{online \? <InstallHint/, "offered once the phone is connected");
+  assert.match(hint, /beforeinstallprompt/, "one-tap install where the browser offers it");
+  assert.match(hint, /添加到主屏幕/, "iPhone Safari is told the steps");
+  assert.match(hint, /MicroMessenger/, "an in-app browser (WeChat…) is told to open a real browser");
+  assert.match(hint, /display-mode: standalone/, "not shown inside the installed app");
+  assert.match(files.client, /GRANT_STORAGE_KEY/, "the pairing itself is saved, so the app reconnects without a scan");
+}
+
 console.log("mobile-pair-web: ok");
