@@ -2287,6 +2287,15 @@
         "scripts/test-turn-process-group.mjs",
         "scripts/test-turn-grouped-tools.mjs"
       ]
+    },
+    {
+      "id": "knowledge-never-blocks",
+      "protects": "Knowledge never holds the answer: a pack installed on this machine is ready at once whatever the update check says; installing, updating and indexing run in the background one at a time; a turn whose pack is not ready still runs, the model is told the knowledge base is unavailable (no claimed citations, named statutes marked unverified) and the user sees why; background failures are recorded with their cause.",
+      "baseline": "A ready pack changes nothing about the turn; the legacy legal-role rule and agent knowledge.packs still decide which packs a turn uses; the search tool still installs and indexes on use.",
+      "failureFallback": "A pack that never becomes ready leaves every turn answering without it, honestly labelled; nothing fails the turn.",
+      "tests": [
+        "scripts/test-agent-knowledge-preparation.mjs"
+      ]
     }
   ]
 }

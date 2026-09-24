@@ -7,9 +7,20 @@
  *   1. the legacy rule — the official China legal counsel ROLE always needs
  *      the legal pack (kept verbatim so existing conversations behave the same);
  *   2. the bound 智能体's `knowledge.packs` (docs/agent-management-design.md).
- * Both resolve to pack ids; knowledge-packs.js installs/indexes them. A pack
- * that cannot be prepared blocks the turn with a named error (the model must
- * not answer legal questions blind), exactly as the legal role did before.
+ * Both resolve to pack ids; knowledge-packs.js installs/indexes them.
+ *
+ * Knowledge never blocks the answer. It used to: a pack that could not be
+ * prepared failed the turn outright, and preparing meant asking the server for
+ * the latest artifact on EVERY turn — so a network blip or an entitlement call
+ * that failed once made the legal role unusable, even with a valid pack already
+ * installed on the machine (a user saw "处理失败 · 官方法律角色需要授权的法律知识库…"
+ * three turns running). Now:
+ *   - a pack installed on this machine is used as it is, at once;
+ *   - installing, updating and indexing run in the background, one at a time,
+ *     and never hold a turn;
+ *   - a turn whose pack is not ready still answers, told plainly that the
+ *     knowledge base is unavailable (so it does not claim citations it could
+ *     not check), and the user sees why; the cause is recorded, not swallowed.
  */
 
 const { LEGAL_CHARACTER_ID, requiresLegalKnowledge } = require("./legal-kb-character");
@@ -37,6 +48,43 @@ function agentPacksOf(ctx, sessionId) {
   }
 }
 
+// Whether a pack is on this machine now: "ready", "missing", or "unknown" (no
+// such pack). An injected manager speaks only for the pack it manages, exactly
+// as pack.ensure uses it.
+function localPackState(packId, manager) {
+  try {
+    const pack = require("../agents/knowledge-packs").getKnowledgePack(packId);
+    if (!pack) return "unknown";
+    const status = packId === LEGAL_PACK_ID && typeof manager?.status === "function" ? manager.status() : pack.status();
+    return status?.installed ? "ready" : "missing";
+  } catch {
+    return "missing";
+  }
+}
+
+// One background preparation per pack set at a time; a turn only starts it.
+const warming = new Map();
+
+function warmInBackground(packIds, { manager, onProgress, log }) {
+  const key = [...packIds].sort().join(",");
+  if (warming.has(key)) return warming.get(key);
+  const run = require("../agents/knowledge-packs").ensureKnowledgePacks(packIds, { manager, onProgress })
+    .then((result) => {
+      if (!result.ready) {
+        require("../diagnostics/swallowed-failure").recordSwallowedFailure("knowledge pack preparation", result.error || "KNOWLEDGE_PACK_UNAVAILABLE", { pack: result.failedPackId || key });
+      }
+      return result;
+    })
+    .catch((error) => {
+      log?.warn?.("knowledge pack preparation failed: %s", error?.message || error);
+      require("../diagnostics/swallowed-failure").recordSwallowedFailure("knowledge pack preparation", error, { pack: key });
+      return { ready: false, error: error?.message || "KNOWLEDGE_PACK_UNAVAILABLE" };
+    })
+    .finally(() => warming.delete(key));
+  warming.set(key, run);
+  return run;
+}
+
 async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log }) {
   const packs = new Set();
   try {
@@ -47,23 +95,38 @@ async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log 
   }
   for (const id of agentPacksOf(ctx, session?.id)) packs.add(id);
   if (!packs.size) return { required: false, ready: true, packs: [] };
-  try {
-    const { ensureKnowledgePacks } = require("../agents/knowledge-packs");
-    const result = await ensureKnowledgePacks([...packs], {
-      onProgress: options?.onProgress,
-      manager: ctx.legalKnowledgeManager,
-    });
-    return {
-      required: true,
-      ready: result.ready,
-      packs: result.packs,
-      error: result.ready ? undefined : (result.error || "KNOWLEDGE_PACK_UNAVAILABLE"),
-      failedPackId: result.failedPackId || null,
-    };
-  } catch (error) {
-    log?.warn?.("knowledge pack preparation failed: %s", error?.message || error);
-    return { required: true, ready: false, packs: [...packs].map((packId) => ({ packId, ready: false })), error: "KNOWLEDGE_PACK_UNAVAILABLE", failedPackId: [...packs][0] };
-  }
+  const ids = [...packs];
+  const status = ids.map((packId) => {
+    const local = localPackState(packId, ctx.legalKnowledgeManager);
+    return { packId, ready: local === "ready", ...(local === "unknown" ? { error: "KNOWLEDGE_PACK_UNKNOWN" } : {}) };
+  });
+  warmInBackground(ids, { manager: ctx.legalKnowledgeManager, onProgress: options?.onProgress, log });
+  const missing = status.find((item) => !item.ready);
+  return {
+    required: true,
+    ready: !missing,
+    packs: status,
+    error: missing ? (missing.error || "KNOWLEDGE_PACK_NOT_READY") : undefined,
+    failedPackId: missing?.packId || null,
+  };
+}
+
+/**
+ * What a turn whose knowledge is not ready carries: an instruction so the
+ * model answers honestly without it, and a notice so the user knows. The turn
+ * itself always runs.
+ */
+function knowledgeUnavailable(legalKnowledge = {}) {
+  if (!legalKnowledge.required || legalKnowledge.ready) return null;
+  const { detail } = knowledgeFailure(legalKnowledge);
+  return {
+    instruction: [
+      "The knowledge base this role relies on is NOT available on this turn (it is still being prepared or could not be reached).",
+      "Answer the user anyway, from general knowledge and any tools that do work, but say once, briefly, that the answer was not checked against the knowledge base.",
+      "Do not claim to have searched or cited it, and mark any specific statute or article you name as unverified.",
+    ].join(" "),
+    notice: `${detail.replace(/请检查账号权限和网络后重试。$/, "")}本轮已照常回答，但未经知识库核对；知识库会在后台继续准备。`,
+  };
 }
 
 /** Terminal copy + code for a knowledge pack that could not be prepared. */
@@ -80,4 +143,23 @@ function knowledgeFailure(legalKnowledge = {}) {
   };
 }
 
-module.exports = { prepareLegalKnowledgeForTurn, knowledgeFailure, LEGAL_CHARACTER_ID, LEGAL_PACK_ID };
+/** The engine text for this turn, told about knowledge that is not ready; the user is told too. */
+function withKnowledgeAvailability(orchestrator, sessionId, engineText, state) {
+  const unavailable = knowledgeUnavailable(state?.legalKnowledge);
+  if (!unavailable) return engineText;
+  try {
+    const { engineNotice } = require("../../shared/engine-notices.mjs");
+    orchestrator?._emitEngineNotice?.(sessionId, engineNotice("legalKnowledgePackProgress", {
+      replaces: "legalKnowledgePackProgress", level: "warning", done: true, detail: unavailable.notice,
+    }));
+  } catch { /* the notice is a courtesy; the instruction below is what matters */ }
+  const { addLayersToEngineText } = require("../engine-message-layers");
+  return addLayersToEngineText(engineText, { executionConstraints: unavailable.instruction });
+}
+
+/** Settles when background preparation now in flight is done (tests, diagnostics). */
+function knowledgeWarmups() {
+  return Promise.all([...warming.values()]);
+}
+
+module.exports = { prepareLegalKnowledgeForTurn, knowledgeFailure, knowledgeUnavailable, withKnowledgeAvailability, knowledgeWarmups, LEGAL_CHARACTER_ID, LEGAL_PACK_ID };

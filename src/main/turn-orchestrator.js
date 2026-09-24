@@ -867,11 +867,8 @@ class TurnOrchestrator {
       options: { onProgress: (progress) => emitLegalKnowledgeProgress(this, session.id, progress) },
     });
     if (!isCurrentStart()) return staleStartResult();
-    if (legalKnowledge.required && !legalKnowledge.ready) {
-      const { code, detail } = require("./legal-kb/turn-preparation").knowledgeFailure(legalKnowledge);
-      this._finalize(session.id, "turn.failed", turnFailure({ code: legalKnowledge.error || code, assistant: detail }));
-      return { ok: false, error: code, detail, legalKnowledge };
-    }
+    // Knowledge never holds the answer: a pack that is not ready makes the turn
+    // run without it, honestly (legal-kb/turn-preparation).
     state.legalKnowledge = legalKnowledge;
     const sourceTaskCore = sourceTaskCoreForTurn(this.ctx, session, state, opts);
     state.scheduledTask = opts.scheduledTaskRunId
@@ -1284,6 +1281,7 @@ class TurnOrchestrator {
         turnPolicy,
         taskContract,
       });
+      engineText = require("./legal-kb/turn-preparation").withKnowledgeAvailability(this, session.id, engineText, state);
       if (hint) {
         const { addLayersToEngineText } = require("./engine-message-layers");
         engineText = addLayersToEngineText(engineText, {

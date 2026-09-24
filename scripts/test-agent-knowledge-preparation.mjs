@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Knowledge packs + turn preparation: the legal role's hard-coded pack rule
 // is preserved verbatim, an agent's knowledge.packs join it, unknown packs
-// are reported by name, a failing pack blocks the turn with a coded error,
-// and no bound agent + no legal role means no preparation at all.
+// are reported by name, and no bound agent + no legal role means no
+// preparation at all. Preparation never holds a turn: a pack installed on this
+// machine is ready at once (even when the update check fails), installing runs
+// in the background, and a pack that is not ready makes the turn run without
+// it — told so — instead of failing it.
 // Run: node scripts/test-agent-knowledge-preparation.mjs
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -13,7 +16,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
 const { ensureKnowledgePacks, getKnowledgePack, knowledgePackLabel, listKnowledgePacks } = require("../src/main/agents/knowledge-packs.js");
-const { prepareLegalKnowledgeForTurn, LEGAL_PACK_ID } = require("../src/main/legal-kb/turn-preparation.js");
+const { prepareLegalKnowledgeForTurn, knowledgeWarmups, withKnowledgeAvailability, LEGAL_PACK_ID } = require("../src/main/legal-kb/turn-preparation.js");
+const swallowed = require("../src/main/diagnostics/swallowed-failure.js");
 const { invalidateSessionAgentPolicy } = require("../src/main/agents/session-agent-policy.js");
 
 const OWNER = "profile:account:kb-owner";
@@ -32,7 +36,9 @@ const agentRepo = store.agents();
 const characterRepo = store.characterWorlds();
 const ensured = [];
 let failNext = false;
+let installed = true;
 const manager = {
+  status: () => ({ ok: true, installed }),
   ensureLegalKnowledgePack: async () => {
     ensured.push(LEGAL_PACK_ID);
     return failNext ? { ok: false, error: "LEGAL_KB_DOWNLOAD_FAILED" } : { ok: true, version: "2026.09", path: "/tmp/legal" };
@@ -90,10 +96,11 @@ try {
     assert.equal(result.required, true);
     assert.equal(result.ready, true);
     assert.deepEqual(result.packs.map((pack) => pack.packId), [LEGAL_PACK_ID]);
-    assert.deepEqual(ensured, [LEGAL_PACK_ID]);
+    await knowledgeWarmups();
+    assert.deepEqual(ensured, [LEGAL_PACK_ID], "and it is refreshed in the background");
   });
 
-  await check("a bound agent's knowledge.packs are prepared; an unknown pack blocks with its id", async () => {
+  await check("a bound agent's knowledge.packs are prepared; an unknown pack is reported with its id", async () => {
     const good = agentRepo.createAgent({ ownerScope: OWNER, definition: { name: "法务", knowledge: { packs: [LEGAL_PACK_ID] } }, source: { kind: "created" } }).revision;
     agentRepo.setBinding({ sessionId: SESSION, ownerScope: OWNER, expectedBindingVersion: 0, agentRevisionId: good.id });
     invalidateSessionAgentPolicy(SESSION);
@@ -101,6 +108,7 @@ try {
     const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
     assert.equal(result.required, true);
     assert.equal(result.ready, true);
+    await knowledgeWarmups();
     assert.deepEqual(ensured, [LEGAL_PACK_ID]);
 
     const odd = agentRepo.createAgent({ ownerScope: OWNER, definition: { name: "怪", knowledge: { packs: ["mystery-pack"] } }, source: { kind: "created" } }).revision;
@@ -113,16 +121,52 @@ try {
     assert.equal(blocked.failedPackId, "mystery-pack");
   });
 
-  await check("a failing pack blocks the turn with the pack's own error", async () => {
+  await check("an installed pack is ready at once, even when the update check fails", async () => {
     const legal = agentRepo.createAgent({ ownerScope: OWNER, definition: { name: "法务2", knowledge: { packs: [LEGAL_PACK_ID] } }, source: { kind: "created" } }).revision;
     agentRepo.setBinding({ sessionId: SESSION, ownerScope: OWNER, expectedBindingVersion: 2, agentRevisionId: legal.id });
     invalidateSessionAgentPolicy(SESSION);
-    failNext = true;
+    failNext = true; // the server / network answer fails this time
     const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
+    assert.equal(result.ready, true, "a pack already on this machine is usable whatever the update check says");
+    await knowledgeWarmups();
     failNext = false;
-    assert.equal(result.ready, false);
-    assert.equal(result.error, "LEGAL_KB_DOWNLOAD_FAILED");
-    assert.equal(result.failedPackId, LEGAL_PACK_ID);
+  });
+
+  await check("a pack that is not installed never holds the turn: it answers without it, told so, and the cause is recorded", async () => {
+    installed = false;
+    failNext = true;
+    swallowed.resetSwallowedFailuresForTests();
+    const warn = console.warn; console.warn = () => {};
+    let slowEnsure;
+    manager.ensureLegalKnowledgePack = async () => { await new Promise((resolve) => { slowEnsure = resolve; }); ensured.push(LEGAL_PACK_ID); return { ok: false, error: "LEGAL_KB_DOWNLOAD_FAILED" }; };
+    try {
+      const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
+      assert.equal(result.ready, false, "returned while the download is still pending — nothing waited for it");
+      assert.equal(result.error, "KNOWLEDGE_PACK_NOT_READY");
+
+      const notices = [];
+      const text = withKnowledgeAvailability({ _emitEngineNotice: (_id, notice) => notices.push(notice) }, SESSION, "用户的问题", { legalKnowledge: result });
+      assert.match(text, /NOT available/, "the model is told the knowledge base is unavailable");
+      assert.match(text, /用户的问题/, "and still gets the user's question");
+      assert.match(notices[0].detail, /本轮已照常回答/, "the user is told the answer ran without it");
+      assert.equal(withKnowledgeAvailability({}, SESSION, "q", { legalKnowledge: { required: true, ready: true } }), "q", "a ready pack changes nothing");
+
+      slowEnsure();
+      await knowledgeWarmups();
+      const [recorded] = swallowed.degradedCapabilities();
+      assert.equal(recorded.site, "knowledge pack preparation");
+      assert.match(recorded.cause, /LEGAL_KB_DOWNLOAD_FAILED/, "the background failure keeps its real cause");
+    } finally {
+      console.warn = warn;
+      installed = true;
+      failNext = false;
+    }
+  });
+
+  await check("the orchestrator no longer fails a turn over knowledge", async () => {
+    const source = fs.readFileSync(new URL("../src/main/turn-orchestrator.js", import.meta.url), "utf8");
+    assert.doesNotMatch(source, /knowledgeFailure\(legalKnowledge\)/, "no knowledge-failure finalize path remains");
+    assert.match(source, /withKnowledgeAvailability\(this, session\.id, engineText, state\)/, "the turn carries the availability instead");
   });
 
   await check("kill switch removes the agent contribution but keeps the legacy role rule", async () => {
