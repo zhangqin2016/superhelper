@@ -24,7 +24,7 @@ const { MIGRATIONS } = require("./schema");
 const { externalize, collectRefs } = require("./record-blobs");
 const { compactRuntimeEventForPersistence } = require("./runtime-event-persistence");
 const runtimeEventRetention = require("./runtime-event-retention");
-const { applyTerminalPayload, isTerminalEventType } = require("./turn-projection-payload");
+const { emptyProjection, projectedRecordParts, projectionUserMessages, reduceProjection } = require("./turn-projection-reducer");
 
 // The types getProjectedConversation LEFT JOINs to rebuild a turn's assistant
 // text. Reaching one of these means the turn is over.
@@ -38,10 +38,7 @@ const TERMINAL_TURN_EVENT_TYPES = new Set([
 ]);
 const { listSessionSummaries } = require("./message-store-session-inventory");
 const { pack, unpack } = require("./message-envelope");
-const {
-  DISPATCH_OUTCOME_UNKNOWN_ASSISTANT,
-  DISPATCH_BLOCKED_ASSISTANT,
-} = require("../turn-recovery-projection");
+const { DISPATCH_OUTCOME_UNKNOWN_ASSISTANT } = require("../turn-recovery-projection");
 const PREVIEW_MAX = 500;
 
 function fingerprintMessage(message) {
@@ -73,56 +70,6 @@ function parseJson(text, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function normalizeProjectionUserMessage(message = {}) {
-  const text = String(message.text ?? message.content ?? "");
-  if (!text.trim()) return null;
-  const steer = Boolean(message.steer || message.meta?.steer);
-  const steerSeq = message.steerSeq ?? message.meta?.steerSeq ?? null;
-  return {
-    text,
-    files: Array.isArray(message.files) ? message.files : null,
-    ts: Number.isFinite(message.ts) ? message.ts : null,
-    ...(steer ? { steer: true, steerSeq } : {}),
-  };
-}
-
-function projectionUserMessages(projection = {}) {
-  const payload = projection.payload && typeof projection.payload === "object"
-    ? projection.payload
-    : {};
-  const messages = Array.isArray(payload.userMessages)
-    ? payload.userMessages.map(normalizeProjectionUserMessage).filter(Boolean)
-    : [];
-  if (!messages.some((message) => !message.steer) && String(projection.userText || "").trim()) {
-    messages.unshift({ text: String(projection.userText || ""), files: null, ts: projection.startedAt || null });
-  }
-  return messages;
-}
-
-function upsertProjectionUserMessage(projection, nextMessage) {
-  const normalized = normalizeProjectionUserMessage(nextMessage);
-  if (!normalized) return;
-  const messages = projectionUserMessages(projection);
-  let index = -1;
-  if (normalized.steer) {
-    const seqKey = normalized.steerSeq == null ? "" : String(normalized.steerSeq);
-    index = messages.findIndex((message) => {
-      if (!message.steer) return false;
-      const messageSeqKey = message.steerSeq == null ? "" : String(message.steerSeq);
-      if (seqKey && messageSeqKey) return messageSeqKey === seqKey;
-      return message.text === normalized.text;
-    });
-  } else {
-    index = messages.findIndex((message) => !message.steer);
-  }
-  if (index >= 0) messages[index] = { ...messages[index], ...normalized };
-  else messages.push(normalized);
-  projection.payload = {
-    ...(projection.payload || {}),
-    userMessages: messages,
-  };
 }
 
 function previewOf(message) {
@@ -242,6 +189,7 @@ class MessageStore {
     if (!sid || list.length === 0) return [];
     return this.db.transaction(() => {
       const stored = [];
+      const pending = new Map();
       for (const event of list) {
         if (!event?.id || !event?.type) continue;
         const persistedEvent = compactRuntimeEventForPersistence(event);
@@ -267,7 +215,7 @@ class MessageStore {
             persistedPayload.event?.id || null,
           );
           if (inserted.changes > 0) {
-            this._projectRuntimeEvent(sid, event);
+            this._projectRuntimeEvent(sid, event, pending);
             stored.push(persistedEvent);
             // A turn that just reached a terminal state no longer needs the
             // events that only painted it while it ran. Deleting them here,
@@ -289,6 +237,7 @@ class MessageStore {
           // A malformed runtime diagnostic should not break the user turn.
         }
       }
+      for (const projection of pending.values()) this._writeTurnProjection(projection);
       return stored;
     })();
   }
@@ -349,19 +298,24 @@ class MessageStore {
   }
 
   getProjectedConversation(sessionId, { limit = 100, includeOpen = true } = {}) {
+    // The NEWEST `limit` turns, returned oldest-first. Ordering ascending before
+    // the LIMIT returned a long session's FIRST turns instead, so past `limit`
+    // turns the latest ones silently fell out of every reader of this.
     const rows = this.db.all(
-      `SELECT p.*,
-              e.payload_json AS terminal_payload_json,
-              e.ts AS terminal_event_ts
-       FROM turn_projection p
-       LEFT JOIN runtime_events e
-         ON e.session_id = p.session_id
-        AND e.turn_id = p.turn_id
-        AND e.type IN ('turn.completed', 'turn.failed', 'turn.interrupted', 'turn.stalled', 'turn.dispatch_outcome_unknown', 'turn.dispatch_blocked')
-       WHERE p.session_id = ?
-         AND (? OR p.terminal_type IS NOT NULL)
-       ORDER BY COALESCE(p.started_at, p.updated_at) ASC
-       LIMIT ?`,
+      `SELECT * FROM (
+         SELECT p.*,
+                e.payload_json AS terminal_payload_json,
+                e.ts AS terminal_event_ts
+         FROM turn_projection p
+         LEFT JOIN runtime_events e
+           ON e.session_id = p.session_id
+          AND e.turn_id = p.turn_id
+          AND e.type IN ('turn.completed', 'turn.failed', 'turn.interrupted', 'turn.stalled', 'turn.dispatch_outcome_unknown', 'turn.dispatch_blocked')
+         WHERE p.session_id = ?
+           AND (? OR p.terminal_type IS NOT NULL)
+         ORDER BY COALESCE(p.started_at, p.updated_at) DESC
+         LIMIT ?
+       ) ORDER BY COALESCE(started_at, updated_at) ASC`,
       String(sessionId || ""),
       includeOpen ? 1 : 0,
       Math.max(1, Math.min(Number(limit) || 100, 1000)),
@@ -400,7 +354,14 @@ class MessageStore {
       }
       const outcomeUnknown = projection.status === "outcome_unknown";
       const dispatchBlocked = projection.status === "dispatch_blocked";
+      // No archived record: the projection IS the turn (a killed or recovered
+      // run). Rebuild it the way it ran instead of an empty shell.
+      const archived = terminalPayload?.record && typeof terminalPayload.record === "object";
+      const parts = !archived && (outcomeUnknown || dispatchBlocked || !projection.terminalType)
+        ? projectedRecordParts(projection, this._turnToolEvents(projection.sessionId, projection.turnId))
+        : null;
       const assistantText = String(
+        parts?.assistantText ||
         terminalPayload?.assistant ||
         terminalPayload?.record?.assistantText ||
         projection.assistantText ||
@@ -424,11 +385,11 @@ class MessageStore {
             thinkingText: projection.thinkingText || "",
             contentBlocks: [],
             protocolUnknown: [],
-            tools: [],
+            tools: parts?.tools || [],
             fileChanges: [],
             artifacts: [],
             resultBlocks: [],
-            timeline: [],
+            timeline: parts?.timeline || [],
             activityLabel: projection.activityLabel || null,
             durationMs: Number.isFinite(startedAt) && Number.isFinite(terminalAt)
               ? Math.max(0, terminalAt - startedAt)
@@ -436,7 +397,7 @@ class MessageStore {
             totalCostUsd: null,
             engineMessageId: null,
             processEvents: [],
-            notices: [],
+            notices: parts?.notices || [],
             usage: null,
             meta: {
               terminal,
@@ -493,6 +454,17 @@ class MessageStore {
     return conversation;
   }
 
+  // Tool events are never pruned (they are not live-only painting), so a turn
+  // with no archived record can still show every step it took.
+  _turnToolEvents(sessionId, turnId) {
+    return this.db.all(
+      `SELECT type, payload_json FROM runtime_events
+       WHERE session_id = ? AND turn_id = ? AND type IN ('tool.started', 'tool.done')
+       ORDER BY seq ASC`,
+      String(sessionId || ""), String(turnId || ""),
+    ).map((row) => ({ type: row.type, payload: parseJson(row.payload_json, {}) }));
+  }
+
   _hydrateTurnProjection(row) {
     return {
       sessionId: row.session_id,
@@ -512,112 +484,22 @@ class MessageStore {
     };
   }
 
-  _projectRuntimeEvent(sessionId, event) {
+  // A batch folds each turn's events in memory and writes the row once at the
+  // end: every delta used to read the row, rebuild the whole accumulated text
+  // and write it back — a 90 KB thinking stream rewritten per few-token chunk.
+  _projectRuntimeEvent(sessionId, event, pending = null) {
     if (!event.turnId) return;
-    const now = Number.isFinite(event.ts) ? event.ts : Date.now();
-    const current = this.db.get(
-      `SELECT * FROM turn_projection WHERE session_id = ? AND turn_id = ?`,
-      sessionId,
-      event.turnId,
-    );
-    const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
-    const scheduledDraft =
-      payload.scheduledDraft ||
-      payload.record?.meta?.scheduledDraft ||
-      payload.meta?.scheduledDraft ||
-      null;
-    const projection = current
-      ? this._hydrateTurnProjection(current)
-      : {
-          sessionId,
-          turnId: event.turnId,
-          status: "running",
-          userText: "",
-          assistantText: "",
-          thinkingText: "",
-          activityLabel: null,
-          toolCount: 0,
-          noticeCount: 0,
-          startedAt: null,
-          updatedAt: now,
-          terminalAt: null,
-          terminalType: null,
-          payload: {},
-        };
-
-    projection.updatedAt = now;
-    if (event.type === "turn.started") {
-      projection.status = "running";
-      projection.userText = String(payload.text || projection.userText || "");
-      projection.startedAt = projection.startedAt || now;
-      upsertProjectionUserMessage(projection, {
-        text: projection.userText,
-        files: payload.files || null,
-        ts: projection.startedAt || now,
-      });
-    } else if (event.type === "user.committed") {
-      const userText = String(payload.text || "");
-      if (payload.steer) {
-        upsertProjectionUserMessage(projection, {
-          text: userText,
-          files: payload.files || null,
-          ts: now,
-          steer: true,
-          steerSeq: payload.steerSeq ?? null,
-        });
-      } else {
-        projection.userText = String(userText || projection.userText || "");
-        upsertProjectionUserMessage(projection, {
-          text: projection.userText,
-          files: payload.files || null,
-          ts: projection.startedAt || now,
-        });
-      }
-    } else if (event.type === "assistant.delta") {
-      projection.assistantText += String(payload.text || "");
-    } else if (event.type === "assistant.final") {
-      projection.assistantText = String(payload.assistant || projection.assistantText || "");
-    } else if (event.type === "assistant.thinking.delta") {
-      projection.thinkingText += String(payload.text || "");
-    } else if (event.type === "tool.started") {
-      projection.toolCount += 1;
-      projection.activityLabel = payload.name ? String(payload.name) : projection.activityLabel;
-    } else if (event.type === "engine.notice" || event.type === "engine.warning" || event.type === "engine.stderr") {
-      projection.noticeCount += 1;
-    } else if (event.type === "turn.dispatch_outcome_unknown") {
-      projection.status = "outcome_unknown";
-      projection.terminalType = event.type;
-      projection.terminalAt = now;
-      projection.assistantText = String(payload.assistant || DISPATCH_OUTCOME_UNKNOWN_ASSISTANT);
-    } else if (event.type === "turn.dispatch_blocked") {
-      projection.status = "dispatch_blocked";
-      projection.terminalType = event.type;
-      projection.terminalAt = now;
-      projection.assistantText = String(payload.assistant || DISPATCH_BLOCKED_ASSISTANT);
-    } else if (event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.interrupted" || event.type === "turn.stalled") {
-      projection.status = event.type.replace("turn.", "");
-      projection.terminalType = event.type;
-      projection.terminalAt = now;
-      if (payload.assistant) projection.assistantText = String(payload.assistant);
+    let projection = pending?.get(event.turnId);
+    if (!projection) {
+      const row = this.db.get(`SELECT * FROM turn_projection WHERE session_id = ? AND turn_id = ?`, sessionId, event.turnId);
+      projection = row ? this._hydrateTurnProjection(row) : emptyProjection(sessionId, event.turnId, Number.isFinite(event.ts) ? event.ts : Date.now());
     }
-    projection.payload = {
-      ...(projection.payload || {}),
-      lastEventType: event.type,
-      lastEventId: event.id,
-      ...(scheduledDraft ? { scheduledDraft } : {}),
-      ...(event.type === "turn.dispatch_outcome_unknown" || event.type === "turn.dispatch_blocked" ? {
-        assistant: String(payload.assistant || (event.type === "turn.dispatch_blocked" ? DISPATCH_BLOCKED_ASSISTANT : DISPATCH_OUTCOME_UNKNOWN_ASSISTANT)),
-        recoveryId: payload.recoveryId || "",
-        manualRecoveryRequired: payload.manualRecoveryRequired !== false,
-        automaticReplay: payload.automaticReplay === true,
-        retryable: payload.retryable !== false && event.type === "turn.dispatch_blocked",
-        errorCode: payload.errorCode || (event.type === "turn.dispatch_blocked" ? "DISPATCH_BLOCKED" : "DISPATCH_OUTCOME_UNKNOWN"),
-      } : {}),
-    };
-    if (isTerminalEventType(event.type)) {
-      projection.payload = applyTerminalPayload(projection.payload, payload, event.type);
-    }
+    reduceProjection(projection, event);
+    if (pending) pending.set(event.turnId, projection);
+    else this._writeTurnProjection(projection);
+  }
 
+  _writeTurnProjection(projection) {
     this.db.run(
       `INSERT INTO turn_projection
          (session_id, turn_id, status, user_text, assistant_text, thinking_text,
@@ -637,8 +519,8 @@ class MessageStore {
          terminal_at = excluded.terminal_at,
          terminal_type = excluded.terminal_type,
          payload_json = excluded.payload_json`,
-      sessionId,
-      event.turnId,
+      projection.sessionId,
+      projection.turnId,
       projection.status,
       projection.userText,
       projection.assistantText,

@@ -2263,6 +2263,18 @@
         "scripts/test-conversation-pagination.mjs",
         "scripts/test-opencode-conversation-source.mjs"
       ]
+    },
+    {
+      "id": "turn-survives-kill",
+      "protects": "What a turn produced survives the app dying: the projection (the durable copy of a running turn) is never overwritten by a recovery notice, records the order text/thinking/tools streamed as offsets and tool ids, and a turn with no archived record reopens rebuilt from it plus its never-pruned tool events, with the notice beside the content; the renderer closes a turn whose outcome became unknown with what it showed. Streamed deltas persist coalesced (only deltas; everything else synchronous and in order, flushed on quit), and a batch writes each turn's projection once.",
+      "baseline": "A turn killed before producing anything shows the recovery notice as before; the no-automatic-retry safety is unchanged; settled turns keep no running sequence; batched and event-by-event projections are identical.",
+      "failureFallback": "A hard kill can lose at most the last coalescing window of streamed text; everything else, and every tool event, is already on disk.",
+      "tests": [
+        "scripts/test-turn-survives-kill.mjs",
+        "scripts/test-message-store.mjs",
+        "scripts/test-runtime-event-retention.mjs",
+        "scripts/test-session-runtime-store.mjs"
+      ]
     }
   ]
 }

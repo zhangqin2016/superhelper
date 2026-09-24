@@ -4,6 +4,16 @@ const { createRuntimeEvent, isTerminalEvent, TERMINAL_EVENT_TYPES, POST_TERMINAL
 
 const POST_TERMINAL_ALLOWED = POST_TERMINAL_EVENT_TYPES;
 
+// Streamed text arrives a few tokens at a time, and persisting it is not
+// free: the projection folds each delta into the turn's accumulated text, so
+// one write per delta rewrote the whole answer — and a 90 KB thinking stream —
+// every few tokens. Deltas are the only events coalesced; everything else
+// persists synchronously as before, after any deltas that preceded it, so the
+// order of the log never changes. The window is how much streamed text a hard
+// kill can cost; a normal quit flushes it (flushPersistence).
+const COALESCED_PERSIST_TYPES = new Set(["assistant.delta", "assistant.thinking.delta"]);
+const DELTA_PERSIST_WINDOW_MS = 1_000;
+
 class RuntimeEventBus {
   constructor(mainWindowProvider, options = {}) {
     this._mainWindowProvider = mainWindowProvider;
@@ -17,6 +27,11 @@ class RuntimeEventBus {
     this._recent = new Map();
     this._terminalTurns = new Set();
     this._closedRecoveryTurns = new Set();
+    this._persistBuffer = new Map();
+    this._persistTimer = null;
+    this._deltaPersistWindowMs = Number(options.deltaPersistWindowMs) >= 0
+      ? Number(options.deltaPersistWindowMs)
+      : DELTA_PERSIST_WINDOW_MS;
     // Passive observers (e.g. the mobile bridge projecting turn output to a
     // paired phone). Called on every committed batch; never affect renderer
     // delivery and are fully isolated — an observer throwing can't disrupt a turn.
@@ -131,11 +146,40 @@ class RuntimeEventBus {
 
   _persist(sessionId, events) {
     if (!this._persistEvents || !events?.length) return;
+    const buffered = this._persistBuffer.get(sessionId) || [];
+    buffered.push(...events);
+    this._persistBuffer.set(sessionId, buffered);
+    if (events.every((event) => COALESCED_PERSIST_TYPES.has(event.type)) && this._deltaPersistWindowMs > 0) {
+      if (!this._persistTimer) {
+        this._persistTimer = setTimeout(() => {
+          this._persistTimer = null;
+          this.flushPersistence();
+        }, this._deltaPersistWindowMs);
+        this._persistTimer.unref?.();
+      }
+      return;
+    }
+    this._flushSessionPersistence(sessionId);
+  }
+
+  _flushSessionPersistence(sessionId) {
+    const events = this._persistBuffer.get(sessionId);
+    if (!events?.length) return;
+    this._persistBuffer.delete(sessionId);
     try {
       this._persistEvents(sessionId, events);
     } catch (err) {
       console.warn("[runtime-event-bus] persist failed:", err?.message || err);
     }
+  }
+
+  /** Persist every buffered delta now. Called on quit (main.js before-quit); otherwise the window timer does it. */
+  flushPersistence() {
+    if (this._persistTimer) {
+      clearTimeout(this._persistTimer);
+      this._persistTimer = null;
+    }
+    for (const sessionId of [...this._persistBuffer.keys()]) this._flushSessionPersistence(sessionId);
   }
 
   _scheduleFlush(events = []) {

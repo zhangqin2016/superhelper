@@ -27,6 +27,7 @@ registerLocalMediaScheme();
 let mainWindow = null;
 let runnerPoolRef = null;
 let sessionManagerRef = null;
+let runtimeEventBusRef = null;
 let scheduledTaskManagerRef = null;
 let characterWorldsServiceRef = null;
 let collaborationServiceRef = null;
@@ -492,6 +493,7 @@ app.whenReady().then(async () => {
   agentRuntimeControlServerRef = appContext.agentRuntimeControlServer || null;
   turnRecoveryRuntimeRef = appContext.turnOrchestrator?.turnRecoveryRuntime || null;
   publicHookBridgeRef = appContext.publicHookBridge || null;
+  runtimeEventBusRef = appContext.eventBus || null;
   if (!suppressAutomaticRecovery) try {
     const { longTaskDbPath } = require("./main/config");
     const { LongTaskSupervisor } = require("./main/long-task/supervisor");
@@ -642,6 +644,8 @@ app.on("before-quit", () => {
   longTaskSupervisorRef?.close();
   runtimePackAutoRepairRef?.cancel?.();
   scheduledTaskManagerRef?.close();
+  // Streamed text still in the persistence window belongs on disk before quit.
+  try { runtimeEventBusRef?.flushPersistence?.(); } catch { /* best effort */ }
   sessionManagerRef?.saveImmediate();
   runnerPoolRef?.terminateAll();
   try { agentRuntimeControlServerRef?.stop?.().catch?.(() => {}); } catch { /* best effort */ }
