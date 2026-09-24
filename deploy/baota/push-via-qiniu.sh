@@ -21,19 +21,11 @@ if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
   npm run deploy:preflight
 fi
 
-COPYFILE_DISABLE=1 tar \
-  --exclude "._*" \
-  --exclude ".DS_Store" \
-  --exclude "server/.env" \
-  --exclude "server/node_modules" \
-  --exclude "web/.env" \
-  --exclude "web/node_modules" \
-  --exclude "web/.next" \
-  -czf "$ARCHIVE" \
-  .dockerignore \
-  server \
-  web \
-  deploy/baota
+. "$ROOT/deploy/baota/commit-source.sh"
+SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}-source-XXXXXX")"
+trap 'rm -rf "$SOURCE_DIR"' EXIT
+export_commit_source "$ROOT" "$SOURCE_DIR"
+tar -czf "$ARCHIVE" -C "$SOURCE_DIR" .dockerignore server web deploy/baota
 
 node scripts/release-admin.mjs upload \
   --bucket "$QINIU_BUCKET" \

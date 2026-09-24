@@ -11,7 +11,7 @@ QINIU_BUCKET="${QINIU_BUCKET:-lanrensoft}"
 QINIU_DOMAIN="${QINIU_DOMAIN:-https://qny.lanrensoft.cn}"
 QINIU_PREFIX="${QINIU_PREFIX:-app/server-images}"
 PLATFORM="${PLATFORM:-linux/amd64}"
-IMAGE_TAG="${IMAGE_TAG:-$(cd "$ROOT" && git rev-parse --short HEAD)}"
+IMAGE_TAG="${IMAGE_TAG:-$(cd "$ROOT" && git rev-parse --short "${DEPLOY_REF:-HEAD}")}"
 BUILD_LOCATION="${BUILD_LOCATION:-auto}"
 STAMP="$(date +%Y%m%d%H%M%S)"
 WORK_DIR="${TMPDIR:-/tmp}/${APP_NAME}-images-${STAMP}"
@@ -45,6 +45,12 @@ cd "$ROOT"
 if [ "${SKIP_DEPLOY_PREFLIGHT:-0}" != "1" ]; then
   npm run deploy:preflight
 fi
+
+# Build and package from the commit the tag names, not the working tree.
+. "$ROOT/deploy/baota/commit-source.sh"
+export_commit_source "$ROOT" "$WORK_DIR/source"
+RELEASE_ADMIN="$ROOT/scripts/release-admin.mjs"
+cd "$WORK_DIR/source"
 
 COPYFILE_DISABLE=1 tar \
   --exclude "._*" \
@@ -80,9 +86,9 @@ if [ "$BUILD_LOCATION" = "local" ]; then
     .
   gzip -f "$WEB_TAR"
 
-  node scripts/release-admin.mjs upload --bucket "$QINIU_BUCKET" --key "$API_KEY" --file "$API_GZ"
-  node scripts/release-admin.mjs upload --bucket "$QINIU_BUCKET" --key "$WEB_KEY" --file "$WEB_GZ"
-  node scripts/release-admin.mjs upload --bucket "$QINIU_BUCKET" --key "$DEPLOY_KEY" --file "$DEPLOY_ARCHIVE"
+  (cd "$ROOT" && node "$RELEASE_ADMIN" upload --bucket "$QINIU_BUCKET" --key "$API_KEY" --file "$API_GZ")
+  (cd "$ROOT" && node "$RELEASE_ADMIN" upload --bucket "$QINIU_BUCKET" --key "$WEB_KEY" --file "$WEB_GZ")
+  (cd "$ROOT" && node "$RELEASE_ADMIN" upload --bucket "$QINIU_BUCKET" --key "$DEPLOY_KEY" --file "$DEPLOY_ARCHIVE")
 
   ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
   set -eu
@@ -138,7 +144,7 @@ elif [ "$BUILD_LOCATION" = "remote" ]; then
     web \
     deploy/baota
 
-  node scripts/release-admin.mjs upload --bucket "$QINIU_BUCKET" --key "$SOURCE_KEY" --file "$SOURCE_ARCHIVE"
+  (cd "$ROOT" && node "$RELEASE_ADMIN" upload --bucket "$QINIU_BUCKET" --key "$SOURCE_KEY" --file "$SOURCE_ARCHIVE")
 
   ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
     set -eu

@@ -2234,6 +2234,15 @@
       "tests": [
         "scripts/test-update-enforcement.mjs"
       ]
+    },
+    {
+      "id": "server-deploy-from-commit",
+      "protects": "What reaches the server is exactly the commit the image tag names: both deploy scripts export the commit (git archive) and build or package only that, naming every uncommitted file they leave out.",
+      "baseline": "A clean working tree deploys exactly what it did before; DEPLOY_REF defaults to HEAD.",
+      "failureFallback": "An uncommitted change — including a migration — cannot ship by accident; it is listed so it is never dropped silently either.",
+      "tests": [
+        "scripts/test-server-deploy-artifact-hygiene.mjs"
+      ]
     }
   ]
 }
