@@ -423,6 +423,9 @@ function createTaskRunRuntime(options = {}) {
             artifacts: opts.artifacts || [],
           })
         : { status: "not_verified", reason: "" };
+      // The verdict before coverage, so an audit that answers after delivery is
+      // applied through the same rules (objective-coverage-amendment).
+      require("./objective-coverage-amendment").rememberBaseline(state.taskRun, verification);
       require("./task-original-acceptance").applyObjectiveCoverage(verification, opts.objectiveCoverage);
       completeTaskRun(state.taskRun, terminalType, verification);
       if (terminalType === "turn.completed") {

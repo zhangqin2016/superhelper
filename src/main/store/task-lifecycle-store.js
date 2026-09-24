@@ -333,6 +333,59 @@ function createTaskLifecycleStoreMethods() {
       }));
     },
 
+    /**
+     * Amend the verdict of a task already verified — the one move the state
+     * machine allows after verification, and only between verdicts.
+     *
+     * An audit that no longer holds the answer (objective coverage, judged by
+     * liveness on a slow model) reaches its verdict after the turn delivered.
+     * Delivery is untouched: it is a separate column, and what was delivered
+     * was delivered. The verdict is what changes, optimistically against the
+     * status it was read at, and it carries who amended it and from what.
+     */
+    amendTaskLifecycleVerification({
+      sessionId,
+      ownerScope,
+      taskId,
+      turnId,
+      fromStatus,
+      verification,
+      amendedBy,
+      now = Date.now(),
+    } = {}) {
+      const status = String(verification?.status || "");
+      if (!validateIdentity({ sessionId, ownerScope, taskId, turnId })
+          || !VERIFICATION_STATUSES.has(String(fromStatus || "")) || !VERIFICATION_STATUSES.has(status)
+          || typeof amendedBy !== "string" || !amendedBy.trim()) {
+        return Object.freeze({ ok: false, reason: "INVALID_TASK_LIFECYCLE_AMENDMENT", lifecycle: null });
+      }
+      return this.db.transaction(() => {
+        const existing = this.db.get(
+          `SELECT * FROM task_lifecycles WHERE session_id=? AND owner_scope=? AND turn_id=?`,
+          sessionId, ownerScope, turnId,
+        );
+        if (!existing) return Object.freeze({ ok: false, reason: "TASK_LIFECYCLE_NOT_FOUND", lifecycle: null });
+        if (existing.task_id !== taskId) return Object.freeze({ ok: false, reason: "TASK_LIFECYCLE_IDENTITY_CONFLICT", lifecycle: hydrate(existing) });
+        if (existing.status !== fromStatus) {
+          return Object.freeze({ ok: false, reason: "TASK_LIFECYCLE_STATUS_CONFLICT", lifecycle: hydrate(existing) });
+        }
+        const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+        const amended = {
+          ...verification,
+          amendment: { by: bounded(amendedBy, 80), from: fromStatus, at: timestamp },
+        };
+        this.db.run(
+          `UPDATE task_lifecycles SET status=?, verification_json=?, version=version+1, updated_at=?
+           WHERE session_id=? AND owner_scope=? AND turn_id=? AND version=?`,
+          status, safeJson(amended), timestamp, sessionId, ownerScope, turnId, existing.version,
+        );
+        return Object.freeze({ ok: true, idempotent: false, reason: null, lifecycle: hydrate(this.db.get(
+          `SELECT * FROM task_lifecycles WHERE session_id=? AND owner_scope=? AND turn_id=?`,
+          sessionId, ownerScope, turnId,
+        )) });
+      })();
+    },
+
     /** Merge fields into a lifecycle row's metadata without a status change. */
     annotateTaskLifecycle({ sessionId, ownerScope, turnId, metadata } = {}) {
       if (!sessionId || !ownerScope || !turnId || !metadata || typeof metadata !== "object") return { ok: false, reason: "INVALID_TASK_LIFECYCLE" };

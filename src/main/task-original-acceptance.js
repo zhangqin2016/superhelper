@@ -57,9 +57,35 @@ async function assessObjectiveCoverage({ state = {}, post, resolveConnection, ob
       "Include each obligation separately. complete requires an actual successful tool OUTPUT proving it, not command input, plans, self-reported completion or absence of errors. missing means an identifiable unfinished obligation; uncertainty is unknown. Do not invent new work or expand scope. exhaustive must be false if the record is insufficient to cover the whole objective.",
       JSON.stringify({ objective: contract.objective, acceptanceCriteria: contract.successCriteria, deliverables: contract.deliverables, evidence }),
     ].join("\n");
-    const raw = await (post || judge.postJudgeChat)({ connection, prompt, timeoutMs: 10000, diagnostics: {} });
-    const text = String(raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    const verdict = JSON.parse(text);
+    // The judge reports why it returned nothing in `diagnostics` — a stall, an
+    // HTTP status, a transport error. This call used to pass a throwaway `{}`
+    // and JSON.parse the empty string, so every cause surfaced as "Unexpected
+    // end of JSON input". It also waited a fixed 10s: on the field turns it
+    // timed out at 10.8s every time and the audit never once ran (164 of 165
+    // recorded verdicts were "unavailable"). A verdict with verbatim quotes is
+    // a minute of output on an 18-token/s gateway, so the wait is judged by
+    // liveness — a reply still arriving is never a failure — and the caller
+    // no longer holds the answer for it (turn-acceptance-recovery).
+    const diagnostics = {};
+    const started = Date.now();
+    const raw = await (post || judge.postJudgeChat)({ connection, prompt, liveness: {}, diagnostics });
+    const tookMs = Date.now() - started;
+    const declined = (reason) => {
+      require("./diagnostics/swallowed-failure").recordSwallowedFailure(
+        "objective coverage audit",
+        `${reason} after ${tookMs}ms`,
+        { turn: state?.turnId || "", session: state?.sessionId || "" },
+      );
+      return unknown(reason);
+    };
+    if (!String(raw || "").trim()) return declined(`judge_unavailable:${diagnostics.reason || "empty_response"}`);
+    const verdict = judge.extractVerdictJson(raw, (value) => Array.isArray(value.requirements));
+    if (!verdict) return declined("verdict_unparseable");
+    // What this audit costs the end of every turn, measured rather than guessed.
+    require("./logger").getLogger("objective-coverage").info(
+      "audited in %dms (first output after %sms, %d evidence lines)",
+      tookMs, diagnostics.firstOutputAfterMs ?? "-", evidence.length,
+    );
     if (verdict.exhaustive !== true || !Array.isArray(verdict.requirements) || !verdict.requirements.length || verdict.requirements.length > 40) return unknown("incomplete_verdict");
     const requirements = [];
     for (const item of verdict.requirements) {

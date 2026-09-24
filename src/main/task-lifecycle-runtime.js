@@ -43,6 +43,27 @@ function transitionTaskLifecycle(ctx, sessionId, state, status, patch = {}) {
   }
 }
 
+// A verdict reached after delivery (objective coverage) amends the lifecycle's
+// verification; delivery is left exactly as it was.
+function amendTaskLifecycleVerification(ctx, sessionId, state, { fromStatus, verification, amendedBy } = {}) {
+  const manager = ctx?.sessionManager;
+  if (typeof manager?.amendTaskLifecycleVerification !== "function") return null;
+  const identity = taskIdentity(state);
+  if (!identity.taskId || !identity.turnId) return null;
+  try {
+    const result = manager.amendTaskLifecycleVerification(sessionId, {
+      ...identity,
+      fromStatus: verificationLifecycleStatus({ status: fromStatus }),
+      verification: { ...verification, status: verificationLifecycleStatus(verification) },
+      amendedBy,
+    });
+    if (result?.ok) emitLifecycle(ctx, sessionId, result.lifecycle);
+    return result;
+  } catch (error) {
+    return { ok: false, reason: error?.message || String(error) };
+  }
+}
+
 function emitLifecycle(ctx, sessionId, lifecycle) {
   if (!lifecycle || typeof ctx?.eventBus?.emit !== "function") return;
   try {
@@ -92,6 +113,7 @@ function completeShortTurnLifecycle(ctx, sessionId, state, type, payload = {}) {
 }
 
 module.exports = {
+  amendTaskLifecycleVerification,
   emitLifecycle,
   completeShortTurnLifecycle,
   ensureTaskLifecycle,

@@ -8,7 +8,7 @@ state.tools = new Map([['test', { name: 'bash', status: 'done', completionObserv
 state.taskRun.planSync.tools = []; // Final todowrite clears this inference window.
 const verdict = { exhaustive: true, requirements: [{ requirementQuote: 'Build summary and test it', status: 'complete', evidenceId: 'E1', evidenceQuote: '7 tests passed' }, { requirementQuote: 'deliver REPORT.md', status: 'missing' }] };
 let prompt;
-const judge = raw => coverageModule.assessObjectiveCoverage({ state, resolveConnection: () => ({ connection: {} }), post: async options => { prompt = options.prompt; assert.ok(options.timeoutMs <= 10000); return JSON.stringify(raw); } });
+const judge = raw => coverageModule.assessObjectiveCoverage({ state, resolveConnection: () => ({ connection: {} }), post: async options => { prompt = options.prompt; assert.ok(options.liveness && typeof options.liveness === 'object', 'judged by liveness: a slow reply still arriving is not a failure'); assert.equal(options.timeoutMs, undefined, 'and no fixed deadline that measures the model\'s speed'); return JSON.stringify(raw); } });
 assert.equal((await judge(verdict)).status, 'missing');
 assert.ok(prompt.includes('deliver REPORT.md'), 'original requirement omitted from todo is still reviewed');
 assert.equal((await judge({ ...verdict, requirements: [{ requirementQuote: 'invented deployment', status: 'missing' }] })).status, 'unknown', 'judge cannot invent authority');
@@ -217,6 +217,53 @@ assert.equal(typeof judgeModule.resolveAuditConnection, 'function', 'the audit c
   };
   walk(path.join(root, 'src', 'main'));
   assert.deepEqual(offenders, [], `end-of-turn audits must resolve through resolveAuditConnection: ${offenders.join(', ')}`);
+}
+
+// ---------------------------------------------------------------------------
+// The audit that never ran (2026-09-23/24): 7 of 7 judged turns failed at
+// 10.8s — a 10s bound where every sibling audit waits 30s — and the cause was
+// discarded, so the log said only "Unexpected end of JSON input".
+{
+  const swallowed = require('../src/main/diagnostics/swallowed-failure');
+  const judgeModule = require('../src/main/evidence-entailment-judge');
+  const warn = console.warn; const lines = []; console.warn = (...args) => lines.push(args.join(' '));
+  try {
+    swallowed.resetSwallowedFailuresForTests();
+    // Its own state: the sections above mutate the shared one.
+    const shell = { name: 'bash', status: 'done', completionObserved: true, input: { command: 'node test-summary.cjs' }, result: '7 tests passed', metadata: { exit: 0 } };
+    const state = {
+      taskContract: { active: true, taskType: 'code_change' },
+      taskCore: { contract: { objective: 'Build summary and test it; deliver REPORT.md' } },
+      taskRun: { plan: [{ title: 'Build summary', status: 'completed' }], planSync: { tools: [] } },
+      tools: new Map([['test', shell]]),
+    };
+    const timedOut = await coverageModule.assessObjectiveCoverage({
+      state, resolveConnection: () => ({ connection: {} }),
+      post: async ({ diagnostics }) => { diagnostics.reason = 'timeout_30000ms'; return ''; },
+    });
+    assert.equal(timedOut.status, 'unknown', 'an audit that could not run still claims nothing');
+    assert.equal(timedOut.reason, 'judge_unavailable:timeout_30000ms', 'and says WHY, in cause:detail form');
+    assert.ok(lines.some(line => /objective coverage audit/.test(line) && /timeout_30000ms/.test(line)), 'the log names the real cause');
+    assert.ok(!lines.some(line => /Unexpected end of JSON input/.test(line)), 'not the parse error it used to collapse into');
+    assert.equal(judgeModule.auditTimeoutMs({}), 30000);
+    assert.equal(judgeModule.auditTimeoutMs({ LILY_EVIDENCE_JUDGE_TIMEOUT_MS: '45000' }), 45000, 'one knob for every end-of-turn audit');
+
+    // A thinking model's reply: prose, a fenced verdict, and a quoted output
+    // that is itself JSON — braces inside strings must not break the parse.
+    shell.result = '{"passed": 7, "note": "a } b"} 7 tests passed';
+    const wrapped = await coverageModule.assessObjectiveCoverage({
+      state, resolveConnection: () => ({ connection: {} }),
+      post: async () => 'Checking each requirement.\n```json\n' + JSON.stringify({ exhaustive: true, requirements: [
+        { requirementQuote: 'Build summary and test it', status: 'complete', evidenceId: 'E1', evidenceQuote: '{"passed": 7, "note": "a } b"}' },
+        { requirementQuote: 'deliver REPORT.md', status: 'missing' },
+      ] }) + '\n```\nDone.',
+    });
+    assert.equal(wrapped.status, 'missing', 'a verdict wrapped in prose and fences is still read');
+    assert.equal(wrapped.requirements[0].evidenceQuote, '{"passed": 7, "note": "a } b"}');
+
+    const garbage = await coverageModule.assessObjectiveCoverage({ state, resolveConnection: () => ({ connection: {} }), post: async () => 'I could not decide.' });
+    assert.equal(garbage.reason, 'verdict_unparseable', 'a reply with no verdict is named as that, not as the judge being down');
+  } finally { console.warn = warn; }
 }
 
 console.log('task objective coverage passed');

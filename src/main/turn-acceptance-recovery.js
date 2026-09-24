@@ -17,7 +17,20 @@ function completeWithAcceptance({ ctx = {}, sessionId, state, type, payload, tas
   // Failure/cancellation must retain the synchronous terminal projection; an
   // added microtask here would drop the outcome-unknown assistant event.
   if (type === "turn.completed" && state.taskRequest?.complete === false) return finish({ status: "unknown", reason: state.taskRequest.reason || "request_source_incomplete", requirements: [] });
-  if (type === "turn.completed" && state.taskRun && state.tools?.size && hasExecutionIntent(state.taskContract)) return Promise.resolve().then(() => assess({ state })).catch(() => ({ status: "unknown", requirements: [] })).then(finish);
+  if (type === "turn.completed" && state.taskRun && state.tools?.size && hasExecutionIntent(state.taskContract)) {
+    // Acceptance-gap continuation decides from the verdict whether to re-run
+    // the task, so that opt-in mode still waits for it.
+    if (process.env.LILY_ACCEPTANCE_GAP_CONTINUATION === "1") {
+      return Promise.resolve().then(() => assess({ state })).catch(() => ({ status: "unknown", requirements: [] })).then(finish);
+    }
+    // Otherwise the answer is not held for the audit: the turn completes as it
+    // always did when the audit could not answer, and the verdict amends the
+    // conclusion when it lands (objective-coverage-amendment).
+    const amendment = require("./objective-coverage-amendment");
+    const source = finish(amendment.COVERAGE_PENDING);
+    amendment.auditAfterDelivery({ ctx, sessionId, state, assess });
+    return source;
+  }
   return finish(null);
   function finish(coverage) {
   // Never attach old asynchronous results to a newer turn or a cancellation.

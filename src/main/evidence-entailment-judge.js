@@ -32,6 +32,14 @@ const MAX_SEMANTIC_SOURCES = 6;
 // claims × 450-char windows) so the model spends its budget on the verdict.
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** How long an end-of-turn audit waits for its judge — one bound for every
+ *  audit, so a new one cannot quietly ship with a guess (the objective-coverage
+ *  audit waited 10s and timed out on every judged turn, 2026-09-23/24). */
+function auditTimeoutMs(env = process.env) {
+  const raw = Number(env?.LILY_EVIDENCE_JUDGE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
+}
+
 const { getLogger } = require("./logger");
 const log = getLogger("evidence-judge");
 
@@ -129,7 +137,67 @@ function trimUrl(value = "") {
   return String(value || "").replace(/\/+$/, "");
 }
 
-async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics, responseTextOnly = false }) {
+/**
+ * One judge call, streamed and judged by liveness — the mode for a caller that
+ * does not hold the answer while it waits. The reply is accepted however long
+ * it takes, as long as it keeps arriving (model-stream-reader); `diagnostics`
+ * says what happened either way, including how long the model took.
+ */
+async function postJudgeChatLive({ connection, prompt, diagnostics, responseTextOnly = false, liveness = {} }) {
+  const { readModelStream, NON_STREAM_CEILING_MS } = require("./model-stream-reader");
+  if (connection.protocol === "anthropic") {
+    // Its stream is not read here (runtime boundary); wait for the whole reply.
+    const startedAt = Date.now();
+    const reply = await postJudgeChat({ connection, prompt, timeoutMs: NON_STREAM_CEILING_MS, diagnostics, responseTextOnly });
+    if (diagnostics) diagnostics.totalMs = Date.now() - startedAt;
+    return reply;
+  }
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const bounds = { ...require("./model-stream-reader").liveness(), ...liveness };
+  // Covers a gateway that sends no headers until the model starts writing.
+  const headerTimer = setTimeout(() => controller.abort(new Error("JUDGE_NO_OUTPUT")), bounds.firstOutputMs);
+  headerTimer.unref?.();
+  const fail = (reason) => { if (diagnostics) diagnostics.reason = reason; return ""; };
+  try {
+    const requestShape = require("./openai-request-shape");
+    const sent = await requestShape.sendChatCompletion({
+      url: `${trimUrl(connection.baseUrl)}/chat/completions`,
+      headers: { authorization: `Bearer ${connection.apiKey}` },
+      body: { model: connection.model, ...(connection.bodyOverlay || {}), messages: [{ role: "user", content: prompt }] },
+      maxTokens: 8000,
+      temperature: 0,
+      stream: true,
+      shape: requestShape.recallShape(connection.baseUrl, connection.model, connection.requestShape),
+      signal: controller.signal,
+      onAdapt: (shape) => requestShape.rememberShape(connection.baseUrl, connection.model, shape),
+    });
+    if (!sent.ok) {
+      if (controller.signal.aborted) return fail(`no_output_within_${bounds.firstOutputMs}ms`);
+      return fail(sent.status ? `http_${sent.status}${sent.error?.code ? `:${sent.error.code}` : ""}` : `network:${sent.error?.message || ""}`);
+    }
+    const response = sent.response;
+    clearTimeout(headerTimer);
+    const read = await readModelStream(response, { ...bounds, startedAt, abort: () => controller.abort() });
+    if (diagnostics) {
+      diagnostics.totalMs = read.totalMs;
+      diagnostics.firstOutputAfterMs = read.firstOutputAfterMs;
+    }
+    if (!read.ok) return fail(read.reason);
+    const reply = responseTextOnly ? read.text : [read.text, read.reasoning].filter((part) => part.trim()).join("\n");
+    if (!reply.trim()) return fail("empty_response");
+    return reply;
+  } catch (error) {
+    return fail(controller.signal.aborted
+      ? `no_output_within_${bounds.firstOutputMs}ms`
+      : `transport_error:${error?.message || error}`);
+  } finally {
+    clearTimeout(headerTimer);
+  }
+}
+
+async function postJudgeChat({ connection, prompt, timeoutMs, diagnostics, responseTextOnly = false, liveness = null }) {
+  if (liveness) return postJudgeChatLive({ connection, prompt, diagnostics, responseTextOnly, liveness });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("JUDGE_TIMEOUT")), timeoutMs);
   try {
@@ -245,8 +313,47 @@ function buildSemanticJudgePrompt({ userText = "", claims = [], urls = [] } = {}
  * Instead scan balanced one-level-deep objects and take the LAST candidate
  * that parses AND carries verdict keys (the final answer trails the reasoning).
  */
-function extractVerdictJson(raw = "") {
-  const candidates = String(raw || "").match(/\{(?:[^{}]|\{[^{}]*\})*\}/g) || [];
+/** Every top-level `{…}` in a reply, found by a scanner that knows JSON
+ *  strings: a brace inside a quoted value (verbatim tool output quoted as
+ *  evidence is often JSON itself) neither opens nor closes anything, and
+ *  nesting is unbounded. */
+function jsonObjectCandidates(text = "") {
+  const out = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      if (depth > 0) inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0) out.push(text.slice(start, index + 1));
+    }
+  }
+  return out;
+}
+
+function isSemanticVerdict(parsed) {
+  return "claims" in parsed || "sources" in parsed || "conflicts" in parsed ||
+    "informalLabel" in parsed || "stakes" in parsed;
+}
+
+/** The last JSON object in a judge reply that `accepts` says is the verdict —
+ *  wherever it sits: bare, fenced, after prose, or in the reasoning a thinking
+ *  model wrote instead of its content. */
+function extractVerdictJson(raw = "", accepts = isSemanticVerdict) {
+  const candidates = jsonObjectCandidates(String(raw || ""));
   for (let index = candidates.length - 1; index >= 0; index -= 1) {
     let parsed = null;
     try {
@@ -254,11 +361,7 @@ function extractVerdictJson(raw = "") {
     } catch {
       continue;
     }
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
-        ("claims" in parsed || "sources" in parsed || "conflicts" in parsed ||
-         "informalLabel" in parsed || "stakes" in parsed)) {
-      return parsed;
-    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && accepts(parsed)) return parsed;
   }
   return null;
 }
@@ -308,7 +411,7 @@ async function judgeTurnSemantics({
   claims = [],
   urls = [],
   userText = "",
-  timeoutMs = Number(process.env.LILY_EVIDENCE_JUDGE_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
+  timeoutMs = auditTimeoutMs(),
   transport = postJudgeChat,
   diagnostics,
   // The route trace of the turn being judged. The finalizer has always handed
@@ -359,7 +462,9 @@ async function judgeTurnSemantics({
 }
 
 module.exports = {
+  auditTimeoutMs,
   buildSemanticJudgePrompt,
+  extractVerdictJson,
   judgeTurnSemantics,
   parseSemanticVerdict,
   postJudgeChat,

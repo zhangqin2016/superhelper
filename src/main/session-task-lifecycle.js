@@ -38,6 +38,13 @@ function markTaskLifecycleDelivered(sessionId, input = {}) {
   return this._store().markTaskLifecycleDelivered({ ...identity, ...input });
 }
 
+function amendTaskLifecycleVerification(sessionId, input = {}) {
+  const identity = identityFor(this, sessionId, input);
+  if (!identity) return Object.freeze({ ok: false, reason: "OWNER_SCOPE_UNAVAILABLE", lifecycle: null });
+  this._ensureImported(this._find(sessionId));
+  return this._store().amendTaskLifecycleVerification({ ...input, ...identity });
+}
+
 function getTaskLifecycle(sessionId, turnId) {
   const session = this._find(sessionId);
   const ownerScope = ownerFor(this, sessionId);
@@ -70,6 +77,7 @@ function annotateTaskLifecycle(sessionId, input = {}) {
 }
 
 module.exports = {
+  amendTaskLifecycleVerification,
   ensureTaskLifecycle,
   getTaskLifecycle,
   listTaskLifecycles,

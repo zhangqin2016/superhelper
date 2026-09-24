@@ -1079,6 +1079,23 @@ class SessionManager {
     return updated;
   }
 
+  /** Like updateMessageMeta, for the turn record's meta a sealed turn renders from. */
+  updateMessageRecordMeta(sessionId, messageId, updater) {
+    const session = this._find(sessionId);
+    if (!session || !messageId) return null;
+    this._ensureImported(session);
+    const updated = this._store().updateById(messageId, (message) => {
+      if (!message.record || typeof message.record !== "object") return null;
+      const current = message.record.meta && typeof message.record.meta === "object" ? message.record.meta : {};
+      const next = typeof updater === "function" ? updater(current, message) : updater;
+      if (!next || typeof next !== "object") return null;
+      message.record = { ...message.record, meta: next };
+      return message;
+    });
+    if (updated) this.save();
+    return updated;
+  }
+
   appendRuntimeEvents(sessionId, events) {
     const session = this._find(sessionId);
     if (!session) return [];

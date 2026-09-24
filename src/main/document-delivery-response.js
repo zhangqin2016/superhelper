@@ -18,7 +18,7 @@ async function assessPendingDocumentResponse({ userText = "", assistant = "", mo
       JSON.stringify({ request: userText, response: assistant }),
     ].join("\n");
     const diagnostics = {};
-    const raw = await (adapters.post || judge.postJudgeChat)({ connection, prompt, timeoutMs: 30000, diagnostics, responseTextOnly: true });
+    const raw = await (adapters.post || judge.postJudgeChat)({ connection, prompt, timeoutMs: judge.auditTimeoutMs(), diagnostics, responseTextOnly: true });
     if (!raw) return unknown(diagnostics.reason || "empty_verdict");
     const value = JSON.parse(String(raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     if (!["awaiting_input", "answer_only", "other"].includes(value.status)) return unknown("invalid_status");
