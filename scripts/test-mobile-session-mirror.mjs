@@ -92,4 +92,19 @@ const ev = (type, payload = {}, turnId = "t1") => ({ type, turnId, payload });
   assert.equal(snap.canInterrupt, true);
 }
 
+// The task list reaches the phone as the model wrote it: text + status only.
+{
+  const frame = phoneFrameForEvent({ type: "todo.updated", turnId: "t1", payload: { id: "todo_1", todos: [
+    { content: "读取日志", status: "completed", activeForm: "正在读取日志", priority: "high" },
+    { content: "修复构建", status: "in_progress" },
+    { content: "", status: "pending" },
+    { content: "写报告", status: "weird" },
+  ] } }, "s1");
+  assert.deepEqual(frame, { type: "todos.updated", turnId: "t1", sessionId: "s1", todos: [
+    { text: "读取日志", status: "completed" }, { text: "修复构建", status: "in_progress" }, { text: "写报告", status: "pending" },
+  ] }, "empty items dropped, unknown status is pending, no other fields travel");
+  const many = phoneFrameForEvent({ type: "todo.updated", turnId: "t1", payload: { todos: Array.from({ length: 50 }, (_, i) => ({ content: `步骤 ${i}`, status: "pending" })) } }, "s1");
+  assert.equal(many.todos.length, 30, "bounded");
+}
+
 console.log("mobile-session-mirror: ok");

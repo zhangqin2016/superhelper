@@ -2646,4 +2646,17 @@ if (queueState.queue.length !== 0) {
   assert.equal(await waitFor(()=>durableTurns.get(failed.turnId)?.terminalType==='turn.failed'),true,'host failure cannot become a successful assistant turn');
   assert.equal(await waitFor(()=>state.phase==='idle'),true);work.turnRecoveryRuntime.dispose?.();
 }
+// What a session waits on its user for is part of its public snapshot, so a
+// phone (Mobile Command) can show and answer it without reaching into state.
+{
+  const assert = require("node:assert/strict");
+  const sid = "session_user_prompts";
+  const st = ctx.turnOrchestrator._state(sid);
+  st.pendingPermissions.set("perm_x", { requestId: "perm_x", toolName: "bash" });
+  st.pendingQuestions.set("q_x", { requestId: "q_x", questions: [] });
+  st.pendingHooks.set("h_x", { requestId: "h_x", hookName: "pre" });
+  assert.deepEqual(ctx.turnOrchestrator.snapshot(sid).userPrompts.map((p) => p.requestId), ["perm_x", "q_x", "h_x"]);
+  st.pendingPermissions.clear(); st.pendingQuestions.clear(); st.pendingHooks.clear();
+  assert.deepEqual(ctx.turnOrchestrator.snapshot(sid).userPrompts, []);
+}
 console.log("turn-orchestrator: ok");

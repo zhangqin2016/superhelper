@@ -16,6 +16,8 @@ export const FROM_PHONE = Object.freeze({
   SESSION_SELECT: "session.select",
   PROJECTS_REQUEST: "projects.request",
   PROJECT_SELECT: "project.select",
+  PROMPT_RESPOND: "prompt.respond",
+  SESSION_CREATE: "session.create",
 });
 
 /** Desktop → phone. */
@@ -33,6 +35,9 @@ export const TO_PHONE = Object.freeze({
   ASSISTANT_FINAL: "assistant.final",
   TOOL_STARTED: "tool.started",
   TURN_ENDED: "turn.ended",
+  PROMPTS_UPDATED: "prompts.updated",
+  PROMPT_ACK: "prompt.ack",
+  TODOS_UPDATED: "todos.updated",
 });
 
 /** Relay → phone. */
@@ -78,4 +83,7 @@ export const toDesktop = {
   projectsRequest: () => ({ type: FROM_PHONE.PROJECTS_REQUEST }),
   selectSession: (sessionId) => ({ type: FROM_PHONE.SESSION_SELECT, sessionId }),
   selectProject: (projectId) => ({ type: FROM_PHONE.PROJECT_SELECT, projectId }),
+  createSession: () => ({ type: FROM_PHONE.SESSION_CREATE }),
+  /** Answer a prompt: `action` for a permission / plan / hook, `answers` (one per question) for a question. */
+  respondPrompt: ({ requestId, action, answers }) => ({ type: FROM_PHONE.PROMPT_RESPOND, requestId, ...(action ? { action } : {}), ...(answers ? { answers } : {}) }),
 };

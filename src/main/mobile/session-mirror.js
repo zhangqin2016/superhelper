@@ -16,7 +16,15 @@
  */
 
 const { mobileConversationView } = require("./conversation-view");
+const { phonePrompts } = require("./prompt-view");
 const { toPhone } = require("./protocol");
+
+// A prompt appearing or going away changes what the phone can answer.
+const PROMPT_EVENTS = new Set([
+  "permission.requested", "permission.resolved", "permission.timeout",
+  "user_question.requested", "user_question.resolved",
+  "hook.requested", "hook.resolved",
+]);
 
 const TERMINAL_STATUS = Object.freeze({
   "turn.completed": "completed",
@@ -62,6 +70,8 @@ function phoneFrameForEvent(event, sessionId, commandIdOf = () => "") {
       const tool = payload.name || payload.tool || payload.title || "";
       return tool ? toPhone.toolStarted({ turnId, sessionId, tool }) : null;
     }
+    case "todo.updated":
+      return Array.isArray(payload.todos) ? toPhone.todosUpdated({ turnId, sessionId, todos: payload.todos }) : null;
     default: {
       const status = TERMINAL_STATUS[event.type];
       return status ? toPhone.turnEnded({ turnId, sessionId, status, text: assistantText(payload.assistant) }) : null;
@@ -88,7 +98,7 @@ function createSessionMirror({ port, controllers, send, log = { warn() {} } }) {
     } catch (err) {
       log.warn("mobile snapshot read failed: %s", err?.message || err);
     }
-    return toPhone.sessionContext({ session, ...live, items: view.items, truncated: view.truncated });
+    return toPhone.sessionContext({ session, ...live, items: view.items, truncated: view.truncated, prompts: phonePrompts(live.userPrompts) });
   }
 
   function watchersOf(sessionId) {
@@ -103,14 +113,22 @@ function createSessionMirror({ port, controllers, send, log = { warn() {} } }) {
     const watchers = watchersOf(sessionId);
     if (!watchers.length) return;
     let settled = false;
+    let promptsChanged = false;
     for (const event of events || []) {
+      if (PROMPT_EVENTS.has(event?.type)) promptsChanged = true;
       const frame = phoneFrameForEvent(event, sessionId, (turnId) => port.turnCommandId(sessionId, turnId));
       if (!frame) continue;
       for (const grantId of watchers) send(grantId, frame);
       if (frame.type === "turn.ended") settled = true;
     }
+    // The whole pending list, read from the orchestrator after these events:
+    // idempotent, so a phone never has to replay requested/resolved pairs.
+    if (promptsChanged && !settled) {
+      const frame = toPhone.promptsUpdated({ sessionId, prompts: phonePrompts(port.turnState(sessionId).userPrompts) });
+      for (const grantId of watchers) send(grantId, frame);
+    }
     // Once a turn settles the conversation changed: send it as the desktop
-    // now shows it, this turn included.
+    // now shows it, this turn included (its prompts, now none, with it).
     if (settled) {
       void snapshot(sessionId).then((frame) => {
         if (!frame) return;
@@ -131,4 +149,4 @@ function createSessionMirror({ port, controllers, send, log = { warn() {} } }) {
   };
 }
 
-module.exports = { createSessionMirror, phoneFrameForEvent, assistantText, TERMINAL_STATUS };
+module.exports = { createSessionMirror, phoneFrameForEvent, assistantText, TERMINAL_STATUS, PROMPT_EVENTS };

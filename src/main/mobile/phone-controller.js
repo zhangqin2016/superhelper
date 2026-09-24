@@ -14,6 +14,7 @@
 
 const crypto = require("node:crypto");
 const { FROM_PHONE, LIMITS, PHONE_PROTOCOL, toPhone } = require("./protocol");
+const { desktopResponse } = require("./prompt-view");
 
 function payloadHashFor(text, attachments) {
   const canonical = JSON.stringify({ text: String(text || ""), attachments: attachments || [] });
@@ -151,7 +152,34 @@ function createPhoneController({ grantId, getDesktopDeviceId, port, snapshot, se
     }
   }
 
+  // An answer to a prompt of the session THIS phone drives, and only one that
+  // is still pending there: a stale card (already answered on the desktop)
+  // gets NOT_PENDING, never a decision on something else.
+  async function onPromptRespond(frame) {
+    const requestId = String(frame.requestId || "");
+    const ack = (ok, code) => send(toPhone.promptAck({ requestId, ok, code }));
+    const driving = sessionId();
+    if (!driving) return ack(false, "NO_TARGET_SESSION");
+    const item = port.turnState(driving).userPrompts.find((p) => String(p?.requestId || "") === requestId);
+    if (!item) return ack(false, "NOT_PENDING");
+    const response = desktopResponse(item, { action: frame.action, answers: frame.answers });
+    if (response.error) return ack(false, response.error);
+    const result = await port.respondPrompt(driving, response.method, requestId, response.decision);
+    log.info("mobile prompt answered: grant=%s request=%s method=%s ok=%s", grantId, requestId, response.method, Boolean(result?.ok));
+    return ack(Boolean(result?.ok), result?.ok ? "" : String(result?.error || "PROMPT_FAILED"));
+  }
+
   const routes = {
+    [FROM_PHONE.PROMPT_RESPOND]: onPromptRespond,
+    // A new conversation in the workspace this phone drives, which it then drives.
+    [FROM_PHONE.SESSION_CREATE]: async () => {
+      const project = projectId();
+      const result = project ? await port.createSession(project) : { ok: false, error: "NO_PROJECT" };
+      if (!result?.ok) return send(toPhone.selectAck("session", { id: "", code: result?.error || "SESSION_CREATE_FAILED" }));
+      target.sessionId = result.session.id;
+      send(sessionsList());
+      return sendSnapshot();
+    },
     [FROM_PHONE.COMMAND]: onCommand,
     [FROM_PHONE.INTERRUPT]: onInterrupt,
     [FROM_PHONE.SESSION_REQUEST]: () => sendSnapshot(),

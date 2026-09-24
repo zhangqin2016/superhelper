@@ -857,6 +857,15 @@ export function wireMessageIpc() {
     ].includes(event?.type));
     if (activity?.sessionId) touchSessionUsage(activity.sessionId, activity.ts);
   });
+  // A conversation made elsewhere (a paired phone): show it in the list; the
+  // active conversation stays what it is.
+  window.assistantClient.onSessionsChanged?.(async () => {
+    try {
+      const { refreshStateLight } = await import("./session-chrome.js");
+      await refreshStateLight();
+      (await import("./project-tree.js")).renderProjectTree();
+    } catch { /* the next refresh shows it */ }
+  });
   window.assistantClient.onFocusSession?.((data) => {
     void focusSessionFromNotification(data?.sessionId || "", data?.projectId || "");
   });

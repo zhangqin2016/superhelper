@@ -19,7 +19,7 @@ function Row({ label, selected, onClick }) {
   );
 }
 
-export function SessionSheet({ projects, selectedProjectId, sessions, selectedSessionId, onSelectProject, onSelectSession, onClose }) {
+export function SessionSheet({ projects, selectedProjectId, sessions, selectedSessionId, onSelectProject, onSelectSession, onNewSession, onClose }) {
   const list = "min-h-0 overflow-y-auto overscroll-contain divide-y divide-[#efece6] rounded-2xl border border-[#ebe8e1] bg-white";
   return (
     <div className="fixed inset-0 z-20 flex flex-col justify-end bg-black/25" onClick={onClose}>
@@ -31,7 +31,10 @@ export function SessionSheet({ projects, selectedProjectId, sessions, selectedSe
             {projects.map((p) => <Row key={p.id} label={p.name || "未命名工作空间"} selected={p.id === selectedProjectId} onClick={() => onSelectProject(p.id)} />)}
           </ul>
         ) : <p className="mt-2 flex-shrink-0 text-xs text-[#a9a397]">仅当前工作空间</p>}
-        <h2 className="mt-4 flex-shrink-0 text-xs font-semibold text-[#8a8479]">会话</h2>
+        <div className="mt-4 flex flex-shrink-0 items-center justify-between">
+          <h2 className="text-xs font-semibold text-[#8a8479]">会话</h2>
+          {onNewSession ? <button type="button" onClick={onNewSession} className="rounded-full border border-[#bcd3f3] bg-white px-3 py-1 text-xs font-semibold text-[#1d5aa8] active:bg-[#eef4fd]">＋ 新建会话</button> : null}
+        </div>
         <ul className={`mt-2 ${list}`}>
           {sessions.length
             ? sessions.map((s) => <Row key={s.id} label={s.title || "未命名会话"} selected={s.id === selectedSessionId} onClick={() => onSelectSession(s.id)} />)

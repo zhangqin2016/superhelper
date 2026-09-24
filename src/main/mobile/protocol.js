@@ -40,6 +40,8 @@ const FROM_PHONE = Object.freeze({
   SESSION_SELECT: "session.select",
   PROJECTS_REQUEST: "projects.request",
   PROJECT_SELECT: "project.select",
+  PROMPT_RESPOND: "prompt.respond",
+  SESSION_CREATE: "session.create",
 });
 
 /** Desktop → phone. */
@@ -57,6 +59,9 @@ const TO_PHONE = Object.freeze({
   ASSISTANT_FINAL: "assistant.final",
   TOOL_STARTED: "tool.started",
   TURN_ENDED: "turn.ended",
+  PROMPTS_UPDATED: "prompts.updated",
+  PROMPT_ACK: "prompt.ack",
+  TODOS_UPDATED: "todos.updated",
 });
 
 const LIMITS = Object.freeze({
@@ -145,7 +150,7 @@ const toPhone = {
       ...(text ? { text: capped(text, LIMITS.FINAL_TEXT) } : {}),
     };
   },
-  sessionContext({ session, phase, queueLength, runningTurnId, canInterrupt, items, truncated }) {
+  sessionContext({ session, phase, queueLength, runningTurnId, canInterrupt, items, truncated, prompts }) {
     return {
       type: TO_PHONE.SESSION_CONTEXT,
       sessionId: String(session?.id || ""),
@@ -156,7 +161,24 @@ const toPhone = {
       ...(canInterrupt ? { canInterrupt: true } : {}),
       recent: items,
       ...(truncated ? { truncated: true } : {}),
+      // What the session waits on its user for — always present from a desktop
+      // that sends it, so an empty list means "nothing to answer".
+      prompts: Array.isArray(prompts) ? prompts : [],
     };
+  },
+  /** The turn's task list as the model wrote it (text + status only). */
+  todosUpdated({ turnId, sessionId, todos }) {
+    const list = (Array.isArray(todos) ? todos : []).slice(0, 30).map((todo) => ({
+      text: capped(todo?.content ?? todo?.text ?? "", 200),
+      status: ["completed", "in_progress", "cancelled"].includes(todo?.status) ? todo.status : "pending",
+    })).filter((todo) => todo.text);
+    return { type: TO_PHONE.TODOS_UPDATED, turnId: turnId || null, sessionId, todos: list };
+  },
+  promptsUpdated({ sessionId, prompts }) {
+    return { type: TO_PHONE.PROMPTS_UPDATED, sessionId, prompts: Array.isArray(prompts) ? prompts : [] };
+  },
+  promptAck({ requestId, ok, code }) {
+    return { type: TO_PHONE.PROMPT_ACK, requestId: String(requestId || ""), ok: Boolean(ok), ...(code ? { code } : {}) };
   },
   sessionsList({ projectId, activeSessionId, selectedSessionId, sessions }) {
     return { type: TO_PHONE.SESSIONS_LIST, projectId, activeSessionId, selectedSessionId, sessions };

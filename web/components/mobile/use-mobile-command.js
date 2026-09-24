@@ -93,6 +93,18 @@ export function useMobileCommand() {
       dispatch({ type: "switching", projectId });
       clientRef.current?.send(toDesktop.selectProject(projectId));
     },
+    /** A new conversation in the workspace this phone drives. */
+    newSession: () => {
+      if (!clientRef.current?.send(toDesktop.createSession())) return false;
+      dispatch({ type: "switching" });
+      return true;
+    },
+    /** Answer a desktop prompt; false when the phone is not connected. */
+    respondPrompt: (answer) => {
+      if (!clientRef.current?.send(toDesktop.respondPrompt(answer))) return false;
+      dispatch({ type: "answering", requestId: answer.requestId });
+      return true;
+    },
   }), [send]);
 
   return {

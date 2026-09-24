@@ -887,7 +887,7 @@ class SessionManager {
     return true;
   }
 
-  create(projectId, title) {
+  create(projectId, title, { activate = true } = {}) {
     const session = {
       id: crypto.randomUUID(),
       projectId,
@@ -900,7 +900,7 @@ class SessionManager {
     };
     if (!this.sessions[projectId]) this.sessions[projectId] = [];
     this.sessions[projectId].push(session);
-    this.activeSessionId = session.id;
+    if (activate) this.activeSessionId = session.id;
     this.saveImmediate();
     return session;
   }

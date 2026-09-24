@@ -16,13 +16,18 @@ export function initialConversation() {
   return {
     session: null, // { id, title, phase, runningTurnId, canInterrupt, truncated }
     history: [],
-    live: null, // { turnId, commandId, userText, text, status, tool }
+    live: null, // { turnId, commandId, userText, text, status, tool, steps, todos }
     pending: [], // { commandId, text, files, state: "sending" | "queued" }
+    prompts: [], // what the desktop waits on this user for (permission / plan / hook / question cards)
+    answering: {}, // requestId → true while this phone's answer is on its way
     projects: [],
     selectedProjectId: "",
     sessions: [],
     selectedSessionId: "",
     desktopOnline: null, // null = not known yet
+    // What this desktop understands beyond the original protocol, learned from
+    // what it sends (a desktop that sends `prompts` also takes session.create).
+    desktopFeatures: { prompts: false },
     notice: null, // { kind: "info" | "error", text, seq } — the latest thing worth a toast
   };
 }
@@ -82,7 +87,7 @@ function onFrame(state, frame) {
     case TO_PHONE.TURN_STARTED:
       return {
         ...state,
-        live: { turnId: frame.turnId || "", commandId: frame.commandId || "", userText: frame.userText || "", text: "", status: "running", tool: "" },
+        live: { turnId: frame.turnId || "", commandId: frame.commandId || "", userText: frame.userText || "", text: "", status: "running", tool: "", steps: 0, todos: [] },
         pending: frame.commandId ? dropPending(state, frame.commandId) : ("commandId" in frame ? state.pending : legacyFifo(state.pending)),
       };
 
@@ -96,7 +101,11 @@ function onFrame(state, frame) {
       return { ...state, live: { ...state.live, text: String(frame.text) } };
 
     case TO_PHONE.TOOL_STARTED:
-      return state.live ? { ...state, live: { ...state.live, tool: String(frame.tool || "") } } : state;
+      return state.live ? { ...state, live: { ...state.live, tool: String(frame.tool || ""), steps: (state.live.steps || 0) + 1 } } : state;
+
+    case TO_PHONE.TODOS_UPDATED:
+      if (!state.live || (frame.turnId && state.live.turnId && frame.turnId !== state.live.turnId)) return state;
+      return { ...state, live: { ...state.live, todos: Array.isArray(frame.todos) ? frame.todos : [] } };
 
     case TO_PHONE.TURN_ENDED:
       if (!state.live) return state;
@@ -124,7 +133,7 @@ function onFrame(state, frame) {
       // Joined mid-turn (reopened the page): pick the running turn up from history.
       if (!live && frame.runningTurnId) {
         const partial = history.find((m) => m.role === "assistant" && m.turnId === frame.runningTurnId);
-        live = { turnId: frame.runningTurnId, commandId: "", userText: "", text: partial?.text || "", status: "running", tool: "" };
+        live = { turnId: frame.runningTurnId, commandId: "", userText: "", text: partial?.text || "", status: "running", tool: "", steps: 0, todos: [] };
       }
       return {
         ...state,
@@ -140,6 +149,10 @@ function onFrame(state, frame) {
         history,
         live,
         pending,
+        // A desktop that predates prompts sends none: keep nothing it cannot confirm.
+        prompts: Array.isArray(frame.prompts) ? frame.prompts : [],
+        answering: switched ? {} : state.answering,
+        desktopFeatures: { ...state.desktopFeatures, prompts: Array.isArray(frame.prompts) },
       };
     }
 
@@ -157,6 +170,24 @@ function onFrame(state, frame) {
         projects: Array.isArray(frame.projects) ? frame.projects : [],
         selectedProjectId: frame.selectedProjectId || frame.activeProjectId || state.selectedProjectId,
       };
+
+    case TO_PHONE.PROMPTS_UPDATED:
+      if (state.session && frame.sessionId && frame.sessionId !== state.session.id) return state;
+      return { ...state, prompts: Array.isArray(frame.prompts) ? frame.prompts : [] };
+
+    case TO_PHONE.PROMPT_ACK: {
+      const answering = { ...state.answering };
+      delete answering[frame.requestId];
+      if (frame.ok) return { ...state, answering, prompts: state.prompts.filter((p) => p.requestId !== frame.requestId) };
+      const gone = frame.code === "NOT_PENDING";
+      return {
+        ...state,
+        answering,
+        // Answered elsewhere (on the desktop) or no longer asked: drop the card.
+        prompts: gone ? state.prompts.filter((p) => p.requestId !== frame.requestId) : state.prompts,
+        notice: notice("error", gone ? "这个请求已经在电脑上处理过了" : "没能提交，请重试或在电脑上处理"),
+      };
+    }
 
     case TO_PHONE.SESSION_SELECT_ACK:
     case TO_PHONE.PROJECT_SELECT_ACK:
@@ -191,9 +222,13 @@ export function reduce(state, action) {
         history: [],
         live: null,
         pending: [],
+        prompts: [],
+        answering: {},
         ...(action.projectId ? { selectedProjectId: action.projectId, sessions: [], selectedSessionId: "" } : {}),
         ...(action.sessionId ? { selectedSessionId: action.sessionId } : {}),
       };
+    case "answering":
+      return { ...state, answering: { ...state.answering, [action.requestId]: true } };
     case "disconnected":
       return { ...state, desktopOnline: null };
     default:
@@ -212,7 +247,7 @@ export function messages(state) {
   if (live) {
     const asked = live.userText && !history.some((m) => m.role === "user" && (m.turnId === live.turnId));
     if (asked) out.push({ key: `live-user:${live.turnId}`, role: "user", text: live.userText, files: 0, status: "" });
-    out.push({ key: `live:${live.turnId}`, role: "assistant", text: live.text, status: live.status, tool: live.tool, live: true });
+    out.push({ key: `live:${live.turnId}`, role: "assistant", text: live.text, status: live.status, tool: live.tool, steps: live.steps || 0, todos: live.todos || [], live: true });
   }
   for (const p of pending) out.push({ key: `pending:${p.commandId}`, role: "user", text: p.text, files: p.files, status: p.state, pending: true });
   return out;

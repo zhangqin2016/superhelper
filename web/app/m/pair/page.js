@@ -56,10 +56,11 @@ export default function MobilePairPage() {
   const reconnecting = status.phase === "reconnecting";
   const inSession = online || reconnecting;
   const offline = online && conversation.desktopOnline === false;
-  const tone = !inSession ? (status.phase === "error" || status.phase === "ended" ? "bad" : "idle") : offline || reconnecting ? "warn" : busy ? "busy" : "ok";
+  const waiting = inSession && (conversation.prompts || []).length > 0;
+  const tone = !inSession ? (status.phase === "error" || status.phase === "ended" ? "bad" : "idle") : offline || reconnecting || waiting ? "warn" : busy ? "busy" : "ok";
   const statusText = !inSession
     ? ({ pairing: "配对中", waiting: "等待批准", connecting: "连接中", error: "未连接", ended: "已解除" }[status.phase] || "未配对")
-    : reconnecting ? "重连中" : offline ? "电脑离线" : busy ? "处理中" : "在线";
+    : reconnecting ? "重连中" : offline ? "电脑离线" : waiting ? "等你确认" : busy ? "处理中" : "在线";
   const workspace = conversation.projects.find((p) => p.id === conversation.selectedProjectId)?.name || "工作空间";
   const sessionTitle = conversation.sessions.find((s) => s.id === conversation.selectedSessionId)?.title || conversation.session?.title || "当前会话";
 
@@ -103,6 +104,7 @@ export default function MobilePairPage() {
           offline={offline}
           onSend={actions.send}
           onStop={actions.stop}
+          onAnswer={actions.respondPrompt}
           onNotice={showToast}
         />
       ) : (
@@ -123,6 +125,7 @@ export default function MobilePairPage() {
           selectedSessionId={conversation.selectedSessionId}
           onSelectProject={actions.selectProject}
           onSelectSession={(id) => { actions.selectSession(id); setSheetOpen(false); }}
+          onNewSession={conversation.desktopFeatures?.prompts ? () => { if (actions.newSession()) setSheetOpen(false); } : null}
           onClose={() => setSheetOpen(false)}
         />
       ) : null}

@@ -2299,6 +2299,17 @@
         "scripts/test-legal-kb-entitlement.mjs",
         "scripts/test-legal-kb-installer.mjs"
       ]
+    },
+    {
+      "id": "mobile-prompts",
+      "protects": "A paired phone can answer what the desktop session waits on its user for — a permission, a plan approval, a hook decision or a question — in the desktop's own words, through the same orchestrator seams (respondPermission / respondUserQuestion / respondHook) and decision shapes the desktop cards use, only for a prompt still pending in the session that phone drives; the pending list reaches the phone whenever it changes and in every snapshot.",
+      "baseline": "Without a phone nothing changes: the desktop's cards, prompts and decisions are exactly as before; the orchestrator snapshot only gains a read-only userPrompts list.",
+      "failureFallback": "A prompt the phone cannot see or answer still waits on the desktop exactly as before; a stale or foreign answer decides nothing (NOT_PENDING); a desktop that sends no prompts leaves the phone showing none.",
+      "tests": [
+        "scripts/test-mobile-prompts.mjs",
+        "scripts/test-mobile-command-e2e.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
     }
   ]
 }

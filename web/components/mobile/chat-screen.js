@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fileToDownscaledAttachment } from "../../lib/mobile/attachments.mjs";
 import { renderMarkdown } from "./markdown";
+import { PromptCard } from "./prompt-card";
 import { useVoiceInput } from "./use-voice-input";
 
 const STATUS_LABEL = {
@@ -38,6 +39,26 @@ function UserBubble({ message }) {
   );
 }
 
+const TODO_MARK = { completed: "✓", in_progress: "◐", cancelled: "✕", pending: "○" };
+
+// The task list as the model wrote it — what is done, what runs now, what is next.
+function TodoList({ todos }) {
+  const done = todos.filter((t) => t.status === "completed").length;
+  return (
+    <div className="mt-2 rounded-xl border border-[#ebe8e1] bg-white px-3 py-2">
+      <div className="text-xs font-medium text-[#6b665c]">任务进度 {done}/{todos.length}</div>
+      <ul className="mt-1 space-y-0.5 text-[13px] leading-5">
+        {todos.map((t, i) => (
+          <li key={i} className={`flex gap-1.5 ${t.status === "completed" || t.status === "cancelled" ? "text-[#a9a397]" : t.status === "in_progress" ? "font-medium text-[#1f2328]" : "text-[#4a463f]"}`}>
+            <span className={`w-3.5 flex-shrink-0 text-center ${t.status === "in_progress" ? "text-[#2f7de1]" : ""}`}>{TODO_MARK[t.status] || "○"}</span>
+            <span className={`min-w-0 flex-1 [overflow-wrap:anywhere] ${t.status === "cancelled" ? "line-through" : ""}`}>{t.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AssistantBlock({ message, onStop }) {
   const running = message.live && message.status === "running";
   const label = message.status === "completed" ? "" : STATUS_LABEL[message.status] || "";
@@ -47,7 +68,12 @@ function AssistantBlock({ message, onStop }) {
       <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#2f7de1] text-[11px] font-semibold text-white">L</div>
       <div className="min-w-0 flex-1 text-[15px] leading-6 text-[#1f2328]">
         {message.text ? <div className="space-y-1">{renderMarkdown(message.text)}</div> : (running ? <TypingDots /> : null)}
-        {running && message.tool ? <div className="mt-1.5 truncate text-xs text-[#8a8479]">正在使用 {message.tool}…</div> : null}
+        {running && message.todos?.length ? <TodoList todos={message.todos} /> : null}
+        {running && (message.tool || message.steps) ? (
+          <div className="mt-1.5 truncate text-xs text-[#8a8479]">
+            {message.steps ? `已执行 ${message.steps} 步` : ""}{message.steps && message.tool ? " · " : ""}{message.tool ? `正在使用 ${message.tool}…` : ""}
+          </div>
+        ) : null}
         {label || running ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs">
             {label ? <span className={failed ? "text-[#c8453b]" : "text-[#8a8479]"}>{label}</span> : null}
@@ -120,13 +146,14 @@ function Composer({ client, offline, onSend, onNotice }) {
   );
 }
 
-export function ChatScreen({ conversation, messages, client, offline, onSend, onStop, onNotice }) {
+export function ChatScreen({ conversation, messages, client, offline, onSend, onStop, onNotice, onAnswer }) {
   const scrollRef = useRef(null);
   const last = messages[messages.length - 1];
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, last?.text, last?.status]);
+  }, [messages.length, last?.text, last?.status, conversation.prompts?.length]);
+  const answer = (value) => { if (!onAnswer?.(value)) onNotice("手机尚未连接电脑，没能提交"); };
 
   return (
     <>
@@ -142,6 +169,9 @@ export function ChatScreen({ conversation, messages, client, offline, onSend, on
         {messages.map((m) => (m.role === "user"
           ? <UserBubble key={m.key} message={m} />
           : <AssistantBlock key={m.key} message={m} onStop={onStop} />))}
+        {(conversation.prompts || []).map((p) => (
+          <PromptCard key={p.requestId} prompt={p} busy={Boolean(conversation.answering?.[p.requestId])} onAnswer={answer} />
+        ))}
       </main>
       <Composer client={client} offline={offline} onSend={onSend} onNotice={onNotice} />
     </>

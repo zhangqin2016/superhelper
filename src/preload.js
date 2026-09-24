@@ -590,6 +590,11 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.on("runtime-packs:progress", handler);
     return () => ipcRenderer.removeListener("runtime-packs:progress", handler);
   },
+  onSessionsChanged: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("sessions:changed", handler);
+    return () => ipcRenderer.removeListener("sessions:changed", handler);
+  },
   onFocusSession: (callback) => {
     ipcRenderer.on("assistant:focus-session", (_event, data) => callback(data));
   },

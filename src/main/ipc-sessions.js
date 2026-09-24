@@ -109,24 +109,9 @@ function registerSessionHandlers(ctx) {
     }));
   });
 
-  ipcMain.handle("session:create", async (_event, title, projectId) => {
-    const pid = projectId || projectManager.getActive()?.id;
-    if (!pid) return { ok: false, error: "NO_PROJECT" };
-    const session = sessionManager.create(pid, title);
-    require("./public-hooks").observePublicHook(ctx.publicHookRuntime, "session.start", {
-      sessionId: session.id,
-      projectId: pid,
-      source: "desktop",
-    });
-    // A distributed default 智能体 (enterprise/admin targeting) binds to new
-    // conversations at creation. Fail-open: no default → native session.
-    let agent = null;
-    try {
-      const applied = await require("./agents/agent-distribution").applyDefaultAgentToNewSession(ctx, session.id);
-      if (applied?.applied) agent = { id: applied.agentId };
-    } catch { /* native */ }
-    return { ok: true, session: { id: session.id, title: session.title, projectId: pid, ...(agent ? { agent } : {}) } };
-  });
+  ipcMain.handle("session:create", (_event, title, projectId) => (
+    require("./session-create").createSessionFor(ctx, projectId, title, { source: "desktop" })
+  ));
 
   ipcMain.handle("session:switch", (_event, sessionId) => {
     return switchSessionFast(ctx, sessionId);

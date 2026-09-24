@@ -51,6 +51,8 @@ const base = `http://127.0.0.1:${app.server.address().port}`;
 // --- desktop: the real composition root over a fake port -----------------------
 const bus = new RuntimeEventBus(() => null);
 const admits = [];
+const pendingPrompts = [];
+const promptAnswers = [];
 const port = {
   activeProjectId: () => "p1",
   activeSessionId: () => "s1",
@@ -58,7 +60,13 @@ const port = {
   findSession: (id) => (id === "s1" ? { id: "s1", projectId: "p1", title: "修复构建" } : null),
   listProjects: () => [{ id: "p1", name: "lily" }],
   listSessions: () => [{ id: "s1", title: "修复构建" }],
-  turnState: () => ({ phase: "idle", runningTurnId: "", canInterrupt: false, queueLength: 0 }),
+  turnState: () => ({ phase: pendingPrompts.length ? "awaiting_user" : "idle", runningTurnId: "", canInterrupt: false, queueLength: 0, userPrompts: pendingPrompts.slice() }),
+  respondPrompt: (sid, method, requestId, decision) => {
+    promptAnswers.push({ sid, method, requestId, decision });
+    pendingPrompts.splice(pendingPrompts.findIndex((p) => p.requestId === requestId), 1);
+    bus.emit(sid, { type: "permission.resolved", turnId: "turn_perm", payload: { requestId } });
+    return { ok: true, sessionId: sid, requestId };
+  },
   turnCommandId: (_sid, turnId) => (turnId === "turn_phone" ? "cmd_e2e_1" : ""),
   readConversation: async () => [
     { id: "u", role: "user", content: "端到端：整理会议纪要", turnId: "turn_phone" },
@@ -123,6 +131,21 @@ assert.equal(phoneFrames.find((f) => f.type === "turn.started").commandId, "cmd_
 assert.equal(phoneFrames.find((f) => f.type === "assistant.final").text, "纪要已整理");
 assert.equal(phoneFrames.find((f) => f.type === "turn.ended").status, "completed");
 assert.deepEqual(phoneFrames.find((f) => f.type === "session.context").recent.map((m) => m.text), ["端到端：整理会议纪要", "纪要已整理"]);
+
+// 4b. The desktop waits on its user; the phone answers it, over the real relay.
+const permission = { requestId: "perm_e2e", toolName: "bash", title: "npm test", input: { command: "npm test", env: { TOKEN: "sk-never" } } };
+pendingPrompts.push(permission);
+bus.emit("s1", { type: "turn.started", turnId: "turn_perm", payload: { text: "跑测试" } });
+bus.emit("s1", { type: "permission.requested", turnId: "turn_perm", payload: permission });
+await until(() => phoneFrames.some((f) => f.type === "prompts.updated" && f.prompts.length === 1), "the prompt reaches the phone");
+const card = phoneFrames.find((f) => f.type === "prompts.updated" && f.prompts.length === 1).prompts[0];
+assert.equal(card.operation, "npm test");
+assert.ok(!JSON.stringify(card).includes("sk-never"), "the tool's raw input stays on the desktop");
+phone.send(JSON.stringify({ type: "prompt.respond", requestId: card.requestId, action: "approve" }));
+await until(() => phoneFrames.some((f) => f.type === "prompt.ack" && f.requestId === "perm_e2e"), "the answer is acknowledged");
+assert.deepEqual(promptAnswers, [{ sid: "s1", method: "respondPermission", requestId: "perm_e2e", decision: { allow: true, remember: false } }], "decided through the orchestrator seam");
+assert.equal(phoneFrames.find((f) => f.type === "prompt.ack").ok, true);
+await until(() => phoneFrames.filter((f) => f.type === "prompts.updated").at(-1).prompts.length === 0, "and the card is gone everywhere");
 
 // 5. Server pushes: a phone scans (pending), is approved (active) — no polling.
 table.set("g2", row("g2", "pending_approval"));

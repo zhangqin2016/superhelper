@@ -54,7 +54,29 @@ function createDesktopPort(ctx, { tmpDir, log = { warn() {} } } = {}) {
         runningTurnId: running ? String(snap.turnId || "") : "",
         canInterrupt: Boolean(snap.canInterrupt),
         queueLength: Number(snap.queueLength || 0),
+        // Raw pending permissions / questions / hooks; prompt-view shapes them.
+        userPrompts: Array.isArray(snap.userPrompts) ? snap.userPrompts : [],
       };
+    },
+
+    /**
+     * A new conversation in `projectId`, made the way the desktop makes one,
+     * without switching the desktop's active conversation; the desktop's list
+     * is told to refresh.
+     */
+    async createSession(projectId) {
+      const result = await require("../session-create").createSessionFor(ctx, projectId, "", { source: "mobile", activate: false });
+      if (result?.ok) {
+        try { ctx.mainWindow?.webContents?.send?.("sessions:changed", { sessionId: result.session.id, projectId: result.session.projectId }); } catch { /* window may be gone */ }
+      }
+      return result;
+    },
+
+    /** Answer a pending prompt through the orchestrator seam the desktop's cards use. */
+    respondPrompt(sessionId, method, requestId, decision) {
+      const fn = ctx.turnOrchestrator?.[method];
+      if (typeof fn !== "function") return { ok: false, error: "PROMPT_UNSUPPORTED" };
+      return fn.call(ctx.turnOrchestrator, sessionId, requestId, decision);
     },
 
     /**

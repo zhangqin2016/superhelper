@@ -156,4 +156,18 @@ const history = [
   assert.equal(isBusy(n), true, "no phase, no runningTurnId: not enough to end it");
 }
 
+// --- progress: steps counted, the task list of THIS turn shown -----------------
+{
+  let s = run([context([], { phase: "idle" }), frame({ type: "turn.started", turnId: "t7", commandId: "" })]);
+  s = reduce(s, frame({ type: "tool.started", turnId: "t7", tool: "bash" }));
+  s = reduce(s, frame({ type: "tool.started", turnId: "t7", tool: "read" }));
+  s = reduce(s, frame({ type: "todos.updated", turnId: "t7", todos: [{ text: "读日志", status: "completed" }, { text: "修复", status: "in_progress" }] }));
+  s = reduce(s, frame({ type: "todos.updated", turnId: "t_other", todos: [{ text: "串台", status: "pending" }] }));
+  const live = messages(s).at(-1);
+  assert.equal(live.steps, 2);
+  assert.equal(live.tool, "read");
+  assert.deepEqual(live.todos.map((t) => t.text), ["读日志", "修复"], "another turn's list does not replace this one");
+  assert.equal(reduce(initialConversation(), frame({ type: "todos.updated", turnId: "t7", todos: [] })).live, null, "no live turn: nothing to attach to");
+}
+
 console.log("mobile-conversation-reducer: ok");
