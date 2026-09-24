@@ -56,6 +56,8 @@ function localPackState(packId, manager) {
     const pack = require("../agents/knowledge-packs").getKnowledgePack(packId);
     if (!pack) return "unknown";
     const status = packId === LEGAL_PACK_ID && typeof manager?.status === "function" ? manager.status() : pack.status();
+    // `usable` = installed and entitled; a manager that predates it reports installed only.
+    if (status?.usable === false) return status.unusableCode === "LEGAL_KB_NOT_READY" ? "missing" : "denied";
     return status?.installed ? "ready" : "missing";
   } catch {
     return "missing";
@@ -98,7 +100,8 @@ async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log 
   const ids = [...packs];
   const status = ids.map((packId) => {
     const local = localPackState(packId, ctx.legalKnowledgeManager);
-    return { packId, ready: local === "ready", ...(local === "unknown" ? { error: "KNOWLEDGE_PACK_UNKNOWN" } : {}) };
+    const error = local === "unknown" ? "KNOWLEDGE_PACK_UNKNOWN" : local === "denied" ? "KNOWLEDGE_PACK_NOT_ENTITLED" : undefined;
+    return { packId, ready: local === "ready", ...(error ? { error } : {}) };
   });
   warmInBackground(ids, { manager: ctx.legalKnowledgeManager, onProgress: options?.onProgress, log });
   const missing = status.find((item) => !item.ready);
@@ -119,13 +122,16 @@ async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log 
 function knowledgeUnavailable(legalKnowledge = {}) {
   if (!legalKnowledge.required || legalKnowledge.ready) return null;
   const { detail } = knowledgeFailure(legalKnowledge);
+  const refused = legalKnowledge.error === "KNOWLEDGE_PACK_NOT_ENTITLED";
   return {
     instruction: [
       "The knowledge base this role relies on is NOT available on this turn (it is still being prepared or could not be reached).",
       "Answer the user anyway, from general knowledge and any tools that do work, but say once, briefly, that the answer was not checked against the knowledge base.",
       "Do not claim to have searched or cited it, and mark any specific statute or article you name as unverified.",
     ].join(" "),
-    notice: `${detail.replace(/请检查账号权限和网络后重试。$/, "")}本轮已照常回答，但未经知识库核对；知识库会在后台继续准备。`,
+    notice: refused
+      ? "当前账号未获授权使用这个知识库（或授权已到期）。本轮已照常回答，但未经知识库核对。"
+      : `${detail.replace(/请检查账号权限和网络后重试。$/, "")}本轮已照常回答，但未经知识库核对；知识库会在后台继续准备。`,
   };
 }
 

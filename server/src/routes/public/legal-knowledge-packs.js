@@ -16,7 +16,9 @@ const requestSchema = z.object({
   characterId: z.literal(LEGAL_KB_CHARACTER_ID),
 });
 
-async function resolveViewerPlan(deviceId) {
+// The best active plan on this device, and when the licence carrying it ends:
+// the client uses that as the bound on offline use of an installed pack.
+async function resolveViewerEntitlement(deviceId) {
   const rows = await db.selectFrom("license_devices")
     .innerJoin("licenses", "licenses.id", "license_devices.license_id")
     .select(["licenses.plan as plan", "licenses.expires_at as expires_at"])
@@ -25,9 +27,14 @@ async function resolveViewerPlan(deviceId) {
     .where("licenses.status", "=", "active").execute();
   const now = Date.now();
   return rows.reduce((best, row) => {
-    if (new Date(row.expires_at).getTime() <= now) return best;
-    return planRank(row.plan) > planRank(best) ? String(row.plan || "free") : best;
-  }, "free");
+    const ends = new Date(row.expires_at).getTime();
+    if (ends <= now) return best;
+    const plan = String(row.plan || "free");
+    if (planRank(plan) > planRank(best.plan) || (planRank(plan) === planRank(best.plan) && ends > (best.until || 0))) {
+      return { plan, until: ends };
+    }
+    return best;
+  }, { plan: "free", until: 0 });
 }
 
 export function registerPublicLegalKnowledgePackRoutes(app) {
@@ -37,7 +44,7 @@ export function registerPublicLegalKnowledgePackRoutes(app) {
       summary: "Resolve the authorized legal knowledge pack",
       description: "Returns a Qiniu artifact only after signed-device and entitlement checks.",
       body: zodBody(requestSchema),
-      response: { 200: okResponse({ artifact: { type: "object", additionalProperties: true } }) },
+      response: { 200: okResponse({ entitledUntil: { type: "string", description: "When the licence carrying this entitlement ends; the client bounds offline use of an installed pack by it." }, artifact: { type: "object", additionalProperties: true } }) },
     },
   }, async (request, reply) => {
     let input;
@@ -47,9 +54,10 @@ export function registerPublicLegalKnowledgePackRoutes(app) {
       .where("pack_id", "=", LEGAL_KB_PACK_ID)
       .where("character_id", "=", input.characterId)
       .where("enabled", "=", true).orderBy("created_at", "desc").limit(100).execute();
+    const entitlement = await resolveViewerEntitlement(input.deviceId);
     const result = legalPackArtifactForViewer(rows, {
       characterId: input.characterId,
-      viewerPlan: await resolveViewerPlan(input.deviceId),
+      viewerPlan: entitlement.plan,
     });
     if (!result.ok) {
       return reply.code(result.code === "NOT_ENTITLED" ? 403 : 404).send(result);
@@ -57,6 +65,7 @@ export function registerPublicLegalKnowledgePackRoutes(app) {
     const qiniu = await getQiniuConfig();
     return {
       ok: true,
+      ...(entitlement.until ? { entitledUntil: new Date(entitlement.until).toISOString() } : {}),
       artifact: {
         ...result.artifact,
         url: qiniuPrivateDownloadUrlForUrl({ url: result.artifact.url, qiniuConfig: qiniu }),

@@ -2290,11 +2290,13 @@
     },
     {
       "id": "knowledge-never-blocks",
-      "protects": "Knowledge never holds the answer: a pack installed on this machine is ready at once whatever the update check says; installing, updating and indexing run in the background one at a time; a turn whose pack is not ready still runs, the model is told the knowledge base is unavailable (no claimed citations, named statutes marked unverified) and the user sees why; background failures are recorded with their cause.",
+      "protects": "Knowledge never holds the answer, and entitlement is still enforced: an installed pack is usable while the server's last AUTHORITATIVE answer allows it (a 401/403/404 refusal disables it at once for turns and the search tool alike; an unreachable server changes nothing; offline use is bounded by the licence's own end, entitledUntil); installing, updating and indexing run in the background; a turn whose pack is not ready or not entitled still runs, told so, and the user sees which it is.",
       "baseline": "A ready pack changes nothing about the turn; the legacy legal-role rule and agent knowledge.packs still decide which packs a turn uses; the search tool still installs and indexes on use.",
       "failureFallback": "A pack that never becomes ready leaves every turn answering without it, honestly labelled; nothing fails the turn.",
       "tests": [
-        "scripts/test-agent-knowledge-preparation.mjs"
+        "scripts/test-agent-knowledge-preparation.mjs",
+        "scripts/test-legal-kb-entitlement.mjs",
+        "scripts/test-legal-kb-installer.mjs"
       ]
     }
   ]

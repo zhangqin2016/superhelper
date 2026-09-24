@@ -106,7 +106,15 @@ async function runInstall(options = {}) {
   const serviceClient = options.serviceClient || require("../service-client");
   const downloadArtifact = options.downloadArtifact || require("../runtime-pack-download").downloadArtifact;
   const resolved = await serviceClient.legalKnowledgePackArtifact("lily-cn-legal-counsel");
-  if (!resolved?.ok) return { ok: false, error: resolved?.error || "LEGAL_KB_RESOLVE_FAILED" };
+  // Record what the server said about entitlement before anything else, so a
+  // refusal disables the installed pack even though the install stops here.
+  const verdict = require("./legal-kb-entitlement").verdictFromResolve(resolved);
+  if (verdict) {
+    const current = readLegalKnowledgePackState(rootDir);
+    fs.mkdirSync(legalKnowledgePackRoot(rootDir), { recursive: true });
+    writeJsonAtomic(legalKnowledgePackStatePath(rootDir), { ...current, entitlement: verdict });
+  }
+  if (!resolved?.ok) return { ok: false, error: resolved?.error || "LEGAL_KB_RESOLVE_FAILED", authoritative: Boolean(verdict) };
   const artifact = resolved.json?.artifact || resolved.artifact;
   if (!artifact || artifact.packId !== PACK_ID || artifact.characterId !== "lily-cn-legal-counsel") {
     return { ok: false, error: "LEGAL_KB_ARTIFACT_INVALID" };
