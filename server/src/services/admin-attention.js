@@ -16,33 +16,9 @@ import { db } from "../db.js";
  * carries the page that acts on it.
  */
 
-/** Semantic version order — text order says "0.1.99" is newer than "0.1.183". */
-export function compareVersions(a, b) {
-  const parts = (value) => String(value || "").split(/[.+-]/).map((piece) => (/^\d+$/.test(piece) ? Number(piece) : piece));
-  const left = parts(a);
-  const right = parts(b);
-  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
-    const x = left[i] ?? 0;
-    const y = right[i] ?? 0;
-    if (x === y) continue;
-    if (typeof x === "number" && typeof y === "number") return x - y;
-    return String(x).localeCompare(String(y));
-  }
-  return 0;
-}
-
-/** Latest enabled release per platform, by version meaning rather than text. */
-export function latestReleases(rows = []) {
-  const byPlatform = new Map();
-  for (const row of rows) {
-    const platform = String(row.platform || "");
-    const entry = byPlatform.get(platform) || { platform, latest: "", records: 0 };
-    entry.records += 1;
-    if (!entry.latest || compareVersions(row.version, entry.latest) > 0) entry.latest = String(row.version || "");
-    byPlatform.set(platform, entry);
-  }
-  return [...byPlatform.values()].sort((a, b) => a.platform.localeCompare(b.platform));
-}
+// Version meaning lives in one place; re-exported for existing importers.
+export { compareVersions, latestReleases } from "./release-versions.js";
+import { compareVersions, latestReleases, forcedFloors } from "./release-versions.js";
 
 async function one(builder, fallback = {}) {
   try {
@@ -61,7 +37,7 @@ async function many(builder) {
 }
 
 export async function adminAttention() {
-  const [fleet, versions, licenses, failures, failureKinds, releases] = await Promise.all([
+  const [fleet, versions, licenses, failures, failureKinds, releases, platformVersions] = await Promise.all([
     one(db.selectFrom("devices").select([
       sql`count(*) filter (where last_seen_at > now() - interval '1 day')`.as("d1"),
       sql`count(*) filter (where last_seen_at > now() - interval '7 days')`.as("d7"),
@@ -93,8 +69,15 @@ export async function adminAttention() {
       .orderBy(sql`count(*)`, "desc")
       .limit(5)),
     many(db.selectFrom("releases")
-      .select(["platform", "version"])
+      .select(["platform", "version", "force_update"])
       .where("enabled", "=", true)),
+    // The same week's fleet by platform-arch, so each device is held to the
+    // forced floor of the platform it actually runs.
+    many(db.selectFrom("devices")
+      .select([sql`platform || '-' || arch`.as("platform"), "app_version", sql`count(*)`.as("devices")])
+      .where(sql`last_seen_at`, ">", sql`now() - interval '7 days'`)
+      .where("app_version", "is not", null)
+      .groupBy([sql`platform || '-' || arch`, "app_version"])),
   ]);
 
   const n = (value) => Number(value || 0);
@@ -119,11 +102,25 @@ export async function adminAttention() {
     }
   }
 
+  // Devices in use this week that are below a release marked mandatory for
+  // their platform: the ones a forced update is still waiting on.
+  const floors = forcedFloors(releases);
+  let belowRequired = 0;
+  for (const row of platformVersions) {
+    const floor = floors.get(String(row.platform));
+    if (floor && compareVersions(row.app_version, floor) < 0) belowRequired += n(row.devices);
+  }
+  if (belowRequired) {
+    items.push({ kind: "fleetBelowRequired", severity: "danger", count: belowRequired, href: "/admin/releases",
+      detail: [...floors].map(([platform, version]) => `${platform} ≥ ${version}`).join(" · ") });
+  }
+
   return {
     items,
     fleet: { active1d: n(fleet.d1), active7d: activeWeek, active30d: n(fleet.d30), installed: n(fleet.installed) },
     versions: versions.map((row) => ({ version: String(row.version), devices: n(row.devices), share: activeWeek ? n(row.devices) / activeWeek : 0 })),
     failures: { last1d: n(failures.d1), last7d: n(failures.d7), topKinds: failureKinds.map((row) => ({ kind: String(row.kind), count: n(row.n) })) },
     releases: current,
+    required: Object.fromEntries(floors),
   };
 }

@@ -382,6 +382,7 @@ function registerAll(ctx) {
     require("./update-manager").downloadUpdate());
   ipcMain.handle("updates:install", (_event, payload) =>
     require("./update-manager").installUpdate(payload || {}));
+  ipcMain.handle("updates:defer", () => require("./update-manager").deferUpdate());
   ipcMain.handle("updates:open-download", (_event, payload) =>
     require("./update-manager").openUpdateDownload(payload?.url || payload));
 

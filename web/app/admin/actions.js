@@ -294,6 +294,12 @@ export async function setReleaseEnabledAction(formData) {
   revalidatePath("/admin/releases");
 }
 
+export async function setReleaseForceAction(formData) {
+  await apiPatch(`/api/admin/releases/${text(formData, "id")}`, { forceUpdate: text(formData, "forceUpdate") === "true" });
+  revalidatePath("/admin/releases");
+  revalidatePath("/admin");
+}
+
 export async function setContactStatusAction(formData) {
   await apiPatch(`/api/admin/contact-requests/${text(formData, "id")}`, { status: text(formData, "status") === "handled" ? "handled" : "new" });
   revalidatePath("/admin/contacts");

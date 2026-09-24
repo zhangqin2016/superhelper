@@ -2402,5 +2402,22 @@
   "diagnostics.service.missing": "没有可用的服务端模型配置缓存。",
   "diagnostics.service.ready": "服务端配置可用。",
   "diagnostics.engine.missing": "AI 引擎缺失，无法开始对话。",
-  "diagnostics.issue": "{label}：{detail}"
+  "diagnostics.issue": "{label}：{detail}",
+  "update.mandate.pill": "必须更新",
+  "update.mandate.title": "需要更新到 {version}",
+  "update.mandate.reasonRelease": "管理员已将此版本设为强制更新。",
+  "update.mandate.reasonPolicy": "管理员要求此设备的最低版本不低于该版本。",
+  "update.mandate.reasonBoth": "管理员已设为强制更新，且此设备要求最低版本。",
+  "update.mandate.countdown": "{seconds} 秒后自动重启安装，未保存的输入请先处理。",
+  "update.mandate.now": "立即重启",
+  "update.mandate.later": "{minutes} 分钟后再说（还可推迟 {left} 次）",
+  "update.mandate.pending": "必须更新到 {version}，下载完成且没有任务在运行时会提示重启。",
+  "update.mandate.waitingForIdle": "{version} 已下载，当前任务结束后会倒计时重启安装。",
+  "update.mandate.deferredUntil": "已推迟到 {time}，届时会再次提示（还可推迟 {left} 次）。",
+  "update.mandate.blocked.NO_RELEASE_AT_REQUIRED_VERSION": "管理员要求至少 {version}，但还没有可安装的该版本，暂时可继续使用。",
+  "update.mandate.blocked.MANUAL_INSTALL_REQUIRED": "必须更新到 {version}，此安装方式不能自动更新，请点下方按钮下载安装。",
+  "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "必须更新到 {version}，但自动更新源不可用，请联系管理员获取安装包。",
+  "update.mandate.blocked.DOWNLOAD_FAILED": "必须更新到 {version}，自动下载失败，可点下方按钮手动下载，稍后也会自动重试。",
+  "update.error.DEFER_NOT_ALLOWED": "推迟次数已用完，更新将在倒计时结束后安装。",
+  "update.error.DEFER_NOT_SAVED": "无法记录推迟，请稍后再试。"
 }

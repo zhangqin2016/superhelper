@@ -1,6 +1,7 @@
 import { config } from "../config.js";
 import { buildClientBootstrapPolicy } from "./client-bootstrap.js";
 import { getMediaDeliveryMode, getModelDeliveryMode } from "./app-settings.js";
+import { updatePolicyError } from "./update-policy.js";
 import {
   expandModelProviderMenu,
   isGatewayBaseUrl,
@@ -41,6 +42,9 @@ export function validateConfigProfileConfig(config) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     return invalidConfigProfile("CONFIG_PROFILE_INVALID_CONFIG", "Config must be a JSON object.");
   }
+
+  const policyError = updatePolicyError(config.policy);
+  if (policyError) return invalidConfigProfile("CONFIG_PROFILE_INVALID_POLICY", policyError.message, { field: policyError.field });
 
   const models = config.models;
   if (!models || typeof models !== "object" || Array.isArray(models)) return null;

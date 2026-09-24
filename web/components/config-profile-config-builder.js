@@ -9,6 +9,13 @@ export function splitCsv(text) {
     .filter(Boolean);
 }
 
+// policy.update key ↔ form draft key.
+export const UPDATE_POLICY_FIELDS = [
+  ["countdownSeconds", "updateCountdownSeconds"],
+  ["deferMinutes", "updateDeferMinutes"],
+  ["maxDeferrals", "updateMaxDeferrals"],
+];
+
 export const MEDIA_PROVIDERS = [
   { id: "dashscope", label: "阿里百炼 DashScope" },
   { id: "volcengine", label: "火山方舟 Volcengine" },
@@ -55,9 +62,18 @@ export function buildConfig(draft, template) {
     pluginRegistryUrl: String(draft.pluginRegistryUrl || "/api/skills/registry").trim(),
     enabledPluginIds: splitCsv(draft.enabledPluginIds),
   };
+  // How a mandatory update lands, only where the rule sets it: an absent
+  // field inherits the delivered default, and the server bounds each value.
+  const update = Object.fromEntries(
+    UPDATE_POLICY_FIELDS
+      .map(([key, draftKey]) => [key, String(draft[draftKey] ?? "").trim()])
+      .filter(([, value]) => value !== "")
+      .map(([key, value]) => [key, Number(value)]),
+  );
   const policy = {
     permissionMode: String(draft.permissionMode || "default").trim(),
     minAppVersion: String(draft.minAppVersion || "").trim(),
+    ...(Object.keys(update).length ? { update } : {}),
   };
   const runtime = {
     env: {
@@ -122,6 +138,7 @@ export function draftFromConfig(config) {
     enabledPluginIds: Array.isArray(value.tools?.enabledPluginIds) ? value.tools.enabledPluginIds.join(", ") : "",
     permissionMode: String(value.policy?.permissionMode || "default"),
     minAppVersion: String(value.policy?.minAppVersion || ""),
+    ...Object.fromEntries(UPDATE_POLICY_FIELDS.map(([key, draftKey]) => [draftKey, value.policy?.update?.[key] === undefined ? "" : String(value.policy.update[key])])),
     requestTimeoutMs: String(env.API_TIMEOUT_MS || "300000"),
     visionModel: String(env.VISION_MODEL || "qwen3.7-plus"),
     imageProviders: image.providers,

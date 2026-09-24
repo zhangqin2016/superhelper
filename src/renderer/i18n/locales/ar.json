@@ -2402,5 +2402,22 @@
   "diagnostics.service.missing": "لا تتوفر إعدادات نموذج خادم مخزّنة مؤقتًا.",
   "diagnostics.service.ready": "إعدادات الخادم متوفرة.",
   "diagnostics.engine.missing": "محرك الذكاء الاصطناعي مفقود. لا يمكن بدء محادثة.",
-  "diagnostics.issue": "{label}: {detail}"
+  "diagnostics.issue": "{label}: {detail}",
+  "update.mandate.pill": "التحديث مطلوب",
+  "update.mandate.title": "مطلوب التحديث إلى {version}",
+  "update.mandate.reasonRelease": "جعل المسؤول هذا الإصدار إلزاميًا.",
+  "update.mandate.reasonPolicy": "يشترط المسؤول هذا الإصدار كحد أدنى على هذا الجهاز.",
+  "update.mandate.reasonBoth": "جعل المسؤول هذا الإصدار إلزاميًا وحدد حدًا أدنى للإصدار على هذا الجهاز.",
+  "update.mandate.countdown": "إعادة التشغيل للتثبيت خلال {seconds} ثانية. أكمل أي شيء غير محفوظ أولًا.",
+  "update.mandate.now": "إعادة التشغيل الآن",
+  "update.mandate.later": "ذكّرني بعد {minutes} دقيقة (متبقٍ {left})",
+  "update.mandate.pending": "التحديث إلى {version} مطلوب. سيُطلب منك إعادة التشغيل بعد اكتمال التنزيل وعدم وجود مهمة قيد التشغيل.",
+  "update.mandate.waitingForIdle": "تم تنزيل {version}. يبدأ العد التنازلي لإعادة التشغيل عند انتهاء المهمة الحالية.",
+  "update.mandate.deferredUntil": "تم التأجيل حتى {time}؛ سيُطلب منك مجددًا حينها (متبقٍ {left} تأجيلات).",
+  "update.mandate.blocked.NO_RELEASE_AT_REQUIRED_VERSION": "يشترط المسؤول {version} على الأقل، لكن لا يوجد إصدار قابل للتثبيت منه بعد. يمكنك مواصلة العمل.",
+  "update.mandate.blocked.MANUAL_INSTALL_REQUIRED": "التحديث إلى {version} مطلوب. لا يمكن لهذا التثبيت تحديث نفسه؛ نزّله بالزر أدناه.",
+  "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "التحديث إلى {version} مطلوب، لكن مصدر التحديث غير متاح. اطلب ملف التثبيت من المسؤول.",
+  "update.mandate.blocked.DOWNLOAD_FAILED": "التحديث إلى {version} مطلوب. فشل التنزيل؛ نزّله بالزر أدناه، أو ستُعاد المحاولة لاحقًا.",
+  "update.error.DEFER_NOT_ALLOWED": "لم يتبقَّ تأجيل؛ سيُثبَّت التحديث عند انتهاء العد التنازلي.",
+  "update.error.DEFER_NOT_SAVED": "تعذّر تسجيل التأجيل. حاول مجددًا بعد قليل."
 }

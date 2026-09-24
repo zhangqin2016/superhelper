@@ -276,6 +276,20 @@ function getRemoteCharacterWorldsPolicySync() {
   };
 }
 
+/** The update policy the signed remote config delivered: the scope's minimum
+ *  client version and how a mandatory update is carried out. Raw — the one
+ *  reader that validates and bounds it is update-enforcement.js. Null when
+ *  there is no fresh verified config, which means "no scope floor", never a
+ *  stricter one. */
+function getRemoteUpdatePolicySync() {
+  const policy = getRemoteEffectiveConfigSync()?.policy;
+  if (!policy || typeof policy !== "object" || Array.isArray(policy)) return null;
+  return {
+    minAppVersion: typeof policy.minAppVersion === "string" ? policy.minAppVersion : "",
+    update: policy.update && typeof policy.update === "object" && !Array.isArray(policy.update) ? { ...policy.update } : null,
+  };
+}
+
 /** Validated Collaboration Center policy from the signed remote config. */
 function getRemoteCollaborationPolicySync() {
   const cfg = getRemoteEffectiveConfigSync();
@@ -383,6 +397,7 @@ module.exports = {
   getRemoteRequestShapeHintsSync,
   getRemoteCharacterWorldsPolicySync,
   getRemoteCollaborationPolicySync,
+  getRemoteUpdatePolicySync,
   decodeGatewayTokenPayload,
   effectiveConfigHasExpiredGatewayToken,
   shouldRetryAfterDeviceRegister,

@@ -9,8 +9,6 @@ const { loadPublicKey } = require("./license-manager");
 const { verifyDetached } = require("./crypto-signing");
 
 const FETCH_TIMEOUT_MS = 20_000;
-const DEFAULT_MANIFEST_URL = "https://qny.lanrensoft.cn/app/updates/latest.json";
-const DEFAULT_AUTO_UPDATE_BASE_URL = "https://qny.lanrensoft.cn/app/auto-updates";
 
 const PHASE = Object.freeze({
   idle: "idle",
@@ -44,14 +42,6 @@ function isSilentAutoUpdate() {
   return true;
 }
 
-function defaultManifestUrl() {
-  return process.env.LILY_UPDATE_MANIFEST_URL || DEFAULT_MANIFEST_URL;
-}
-
-function defaultAutoUpdateBaseUrl() {
-  return process.env.LILY_AUTO_UPDATE_BASE_URL || DEFAULT_AUTO_UPDATE_BASE_URL;
-}
-
 function normalizeUrlBase(value) {
   return String(value || "").replace(/\/+$/g, "");
 }
@@ -62,42 +52,7 @@ function deriveAutoFeedUrl(platformKey = currentPlatformKey(), channel = "stable
   return `${normalizeUrlBase(defaultAutoUpdateBaseUrl())}/${encodeURIComponent(platformKey)}/${encodeURIComponent(channel)}`;
 }
 
-// Update feeds and download links may arrive from the service API. Restrict
-// them to origins we already trust for updates — a compromised or spoofed
-// service response must not be able to redirect the updater elsewhere.
-function trustedUpdateOrigins() {
-  const origins = new Set();
-  const candidates = [
-    defaultManifestUrl(),
-    defaultAutoUpdateBaseUrl(),
-    process.env.LILY_AUTO_UPDATE_FEED_URL,
-  ];
-  try {
-    const svc = require("./service-client").getServiceSettings();
-    if (svc?.apiBaseUrl) candidates.push(svc.apiBaseUrl);
-  } catch {
-    // service client unavailable in some test contexts
-  }
-  for (const value of candidates) {
-    try {
-      if (value) origins.add(new URL(String(value)).origin);
-    } catch {
-      // ignore malformed configured URLs
-    }
-  }
-  return origins;
-}
-
-function isTrustedUpdateUrl(url) {
-  try {
-    const parsed = new URL(String(url || ""));
-    const loopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) return false;
-    return trustedUpdateOrigins().has(parsed.origin);
-  } catch {
-    return false;
-  }
-}
+const { isTrustedUpdateUrl, trustedUpdateOrigins, defaultManifestUrl, defaultAutoUpdateBaseUrl } = require("./update-trust");
 
 function getUpdateSettings() {
   return {
@@ -136,6 +91,8 @@ function createBaseState() {
     package: null,
     notes: "",
     force: false,
+    requiredVersion: "",
+    enforcement: null,
     feedUrl: "",
     canAutoInstall: false,
     canManualDownload: false,
@@ -181,6 +138,7 @@ function broadcastState() {
 
 function configure(ctx = {}) {
   runtimeContext = { ...runtimeContext, ...ctx };
+  mandate.subscribe();
   broadcastState();
 }
 
@@ -257,6 +215,7 @@ function wireAutoUpdater() {
       canAutoInstall: true,
       error: null,
     });
+    driveEnforcement();
   });
   instance.on("error", (err) => {
     setState({
@@ -321,6 +280,7 @@ async function checkStaticUpdates() {
     currentVersion,
     latestVersion,
     force: Boolean(manifest.force),
+    requiredVersion: String(manifest.requiredVersion || (manifest.force ? manifest.version : "") || ""),
     notes: manifest.notes || "",
     platformKey,
     source: "static",
@@ -348,6 +308,8 @@ async function checkServiceUpdates() {
     currentVersion,
     latestVersion: release.version || currentVersion,
     force: Boolean(release.force),
+    // Servers before the floor semantics only flagged the newest release.
+    requiredVersion: String(release.requiredVersion || (release.force ? release.version : "") || ""),
     notes: release.notes || "",
     platformKey,
     source: "service",
@@ -384,10 +346,17 @@ async function checkForUpdates() {
     error: "STATIC_UPDATE_FAILED",
     detail: error?.message || String(error),
   }));
-  return preferNewerUpdate(service, staticManifest);
+  const chosen = preferNewerUpdate(service, staticManifest);
+  // A floor from either source binds, whichever source offers the newer build.
+  const floors = [service, staticManifest].filter((r) => r?.ok && r.requiredVersion).map((r) => r.requiredVersion);
+  if (chosen?.ok && floors.length) {
+    chosen.requiredVersion = floors.reduce((top, v) => (compareVersions(v, top) > 0 ? v : top), floors[0]);
+  }
+  return chosen;
 }
 
 async function checkForUpdatesState() {
+  mandate.onCheck();
   setState({
     ok: true,
     phase: PHASE.checking,
@@ -426,6 +395,7 @@ async function checkForUpdatesState() {
     package: result.package || null,
     notes: result.notes || "",
     force: Boolean(result.force),
+    requiredVersion: result.requiredVersion || "",
     feedUrl,
     canAutoInstall: Boolean(result.hasUpdate && feedUrl && app.isPackaged),
     canManualDownload: Boolean(result.package?.url),
@@ -450,7 +420,7 @@ async function checkForUpdatesState() {
       }
     }
   }
-  return getUpdateState();
+  return driveEnforcement();
 }
 
 async function downloadUpdate() {
@@ -557,6 +527,25 @@ async function openUpdateDownload(url) {
   return { ok: true };
 }
 
+// Mandatory updates are carried out by update-mandate.js against this state.
+const mandate = require("./update-mandate").createUpdateMandate({
+  getState: () => updateState,
+  setState,
+  isDownloadReady: () => downloadReady,
+  isBusy: hasBusyRunner,
+  download: () => downloadUpdate(),
+  install: () => installUpdate({ force: true }),
+  readRemotePolicy: () => require("./remote-config").getRemoteUpdatePolicySync(),
+  onPolicyChanged: (listener) => require("./remote-config").onRemoteConfigRefreshed(listener),
+  deferralFile: () => userDataPath("update-deferral.json"),
+  compareVersions,
+  appVersion: safeAppVersion,
+  phases: PHASE,
+});
+
+const driveEnforcement = () => mandate.drive();
+const deferUpdate = () => mandate.defer();
+
 function createUpdateManifest(payload, privateKeyPem) {
   const { signDetached } = require("./crypto-signing");
   const manifest = { ...payload };
@@ -577,6 +566,7 @@ module.exports = {
   checkForUpdatesState,
   downloadUpdate,
   installUpdate,
+  deferUpdate,
   openUpdateDownload,
   compareVersions,
   currentPlatformKey,

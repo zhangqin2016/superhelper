@@ -4,6 +4,13 @@
 
 export const labels = {
   zh: {
+    minVersionHelp: "低于此版本的客户端必须升级（按本规则的范围生效）。",
+    updateTitle: "强制升级方式",
+    updateHelp: "有强制升级时：先等任务结束，再倒计时重启；用户可推迟有限次数。留空沿用默认值，服务端会校验取值范围。",
+    updateCountdown: "重启倒计时（秒）",
+    updateDeferMinutes: "每次推迟（分钟）",
+    updateMaxDeferrals: "最多推迟次数",
+    updateInherit: "默认",
     scopeOrganization: "企业",
     scopeUser: "用户",
     editTitle: "编辑下发规则",
@@ -62,6 +69,13 @@ export const labels = {
     gatewayName: "网关配置",
   },
   en: {
+    minVersionHelp: "Clients below this version must update (within this rule's scope).",
+    updateTitle: "How a mandatory update lands",
+    updateHelp: "When an update is mandatory: wait for running tasks, then restart after a countdown; users may postpone a limited number of times. Leave blank to inherit the default; the server checks the ranges.",
+    updateCountdown: "Restart countdown (s)",
+    updateDeferMinutes: "Each postponement (min)",
+    updateMaxDeferrals: "Max postponements",
+    updateInherit: "default",
     scopeOrganization: "Organization",
     scopeUser: "User",
     editTitle: "Edit delivery rule",
@@ -120,6 +134,13 @@ export const labels = {
     gatewayName: "gateway config",
   },
   ar: {
+    minVersionHelp: "يجب على العملاء الأقدم من هذا الإصدار التحديث (ضمن نطاق هذه القاعدة).",
+    updateTitle: "طريقة تطبيق التحديث الإلزامي",
+    updateHelp: "عند وجود تحديث إلزامي: انتظار المهام الجارية ثم إعادة التشغيل بعد عد تنازلي؛ يمكن للمستخدم التأجيل عددًا محدودًا من المرات. اتركه فارغًا لاستخدام القيمة الافتراضية؛ يتحقق الخادم من النطاقات.",
+    updateCountdown: "العد التنازلي لإعادة التشغيل (ث)",
+    updateDeferMinutes: "مدة كل تأجيل (د)",
+    updateMaxDeferrals: "أقصى عدد للتأجيل",
+    updateInherit: "افتراضي",
     scopeOrganization: "المؤسسة",
     scopeUser: "المستخدم",
     editTitle: "تعديل قاعدة التوزيع",

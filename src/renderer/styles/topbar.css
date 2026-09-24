@@ -217,6 +217,17 @@
   box-shadow: 0 0 0 4px var(--danger-dot-ring);
 }
 
+/* A mandatory update reads as one: the pill carries the danger tone. */
+.update-chrome[data-mandatory="true"] .update-pill-btn {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.update-chrome[data-mandatory="true"] .update-pill-dot {
+  background: var(--danger-text);
+  box-shadow: 0 0 0 4px var(--danger-dot-ring);
+}
+
 @keyframes updatePulse {
   0%, 100% { opacity: 0.45; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.08); }

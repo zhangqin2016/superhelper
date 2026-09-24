@@ -80,6 +80,9 @@ function defaultDraft(copy, templates) {
     enabledPluginIds: "",
     permissionMode: "default",
     minAppVersion: "",
+    updateCountdownSeconds: "",
+    updateDeferMinutes: "",
+    updateMaxDeferrals: "",
     requestTimeoutMs: "300000",
     visionModel: "qwen3.7-plus",
     imageProviders: [],
@@ -553,9 +556,20 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
                   <option value="dontAsk">dontAsk</option>
                 </select>
               </Field>
-              <Field label={copy.minVersion}>
+              <Field label={copy.minVersion} help={copy.minVersionHelp}>
                 <input className={fieldClass()} value={draft.minAppVersion} onChange={(event) => updateField("minAppVersion", event.target.value)} placeholder="0.1.23" />
               </Field>
+              <div className="md:col-span-2 rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-semibold text-slate-900">{copy.updateTitle}</p>
+                <p className="mt-1 text-xs text-slate-500">{copy.updateHelp}</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  {[["updateCountdownSeconds", copy.updateCountdown], ["updateDeferMinutes", copy.updateDeferMinutes], ["updateMaxDeferrals", copy.updateMaxDeferrals]].map(([key, label]) => (
+                    <Field key={key} label={label}>
+                      <input className={fieldClass()} type="number" step="1" inputMode="numeric" value={draft[key]} onChange={(event) => updateField(key, event.target.value)} placeholder={copy.updateInherit} />
+                    </Field>
+                  ))}
+                </div>
+              </div>
               <Field label={copy.timeout}>
                 <input className={fieldClass()} type="number" value={draft.requestTimeoutMs} onChange={(event) => updateField("requestTimeoutMs", event.target.value)} />
               </Field>

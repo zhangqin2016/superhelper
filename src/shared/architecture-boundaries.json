@@ -33,7 +33,7 @@
     "src/main/store/message-store.js": 913,
     "src/main/task-contract.js": 1264,
     "src/main/turn-orchestrator.js": 2050,
-    "src/main/update-manager.js": 587,
+    "src/main/update-manager.js": 577,
     "src/main/voice-dictation-service.js": 517,
     "src/main/workspace-knowledge-store.js": 532,
     "src/main/workspace-share.js": 635,

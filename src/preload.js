@@ -441,6 +441,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
   kickUpdateCheck: () => ipcRenderer.invoke("updates:kick-check"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: (options) => ipcRenderer.invoke("updates:install", options || {}),
+  deferUpdate: () => ipcRenderer.invoke("updates:defer"),
   openUpdateDownload: (url) => ipcRenderer.invoke("updates:open-download", { url }),
 
   submitFeedback: (payload) => ipcRenderer.invoke("support:submit-feedback", payload),

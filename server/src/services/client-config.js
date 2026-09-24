@@ -15,6 +15,7 @@ import {
   applyCharacterWorldsClientGate,
   appVersionAtLeast,
 } from "./character-worlds-policy.js";
+import { UPDATE_POLICY_DEFAULT } from "./update-policy.js";
 import { DEFAULT_COLLABORATION_POLICY, resolveServerCollaborationPolicy } from "./collaboration/policy.js";
 import { availableMediaProviders, mediaProviderStatus } from "./media-provider-catalog.js";
 
@@ -32,6 +33,7 @@ export const DEFAULT_EFFECTIVE_CONFIG = {
   policy: {
     permissionMode: "default",
     minAppVersion: "",
+    update: { ...UPDATE_POLICY_DEFAULT },
   },
   runtime: {
     env: {},
@@ -490,6 +492,7 @@ export function buildEnvManagedClientConfig(serverConfig = config, providers = l
     policy: {
       permissionMode: "default",
       minAppVersion: "",
+      update: { ...UPDATE_POLICY_DEFAULT },
     },
     characterWorlds: resolveCharacterWorldsPolicy(serverConfig),
     collaboration: resolveServerCollaborationPolicy(serverConfig),

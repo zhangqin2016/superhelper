@@ -4,7 +4,7 @@ import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { artifactErrorResponse, checkReleaseArtifact } from "../../services/release-artifact-check.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
-import { latestReleases } from "../../services/admin-attention.js";
+import { latestReleases } from "../../services/release-versions.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -17,9 +17,12 @@ const createReleaseSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-const updateEnabledSchema = z.object({
-  enabled: z.boolean(),
-});
+// A release can be switched on/off, and marked mandatory after the fact: an
+// operator usually learns a version must go only once it is already out.
+const updateReleaseSchema = z.object({
+  enabled: z.boolean().optional(),
+  forceUpdate: z.boolean().optional(),
+}).refine((value) => value.enabled !== undefined || value.forceUpdate !== undefined, { message: "enabled or forceUpdate is required" });
 
 export function registerAdminReleaseRoutes(app, { audit }) {
   app.get(
@@ -91,16 +94,20 @@ export function registerAdminReleaseRoutes(app, { audit }) {
     {
       schema: {
         tags: ["admin:releases"],
-        summary: "Enable or disable a release",
-        description: "Toggles the enabled flag on an existing app release.",
-        body: zodBody(updateEnabledSchema),
+        summary: "Enable, disable, or mark a release mandatory",
+        description: "Updates the enabled and/or force_update flags of an existing app release. A mandatory release is a floor: clients below it must update.",
+        body: zodBody(updateReleaseSchema),
         response: { 200: okResponse({ id: { type: "string" } }) },
       },
     },
     async (request) => {
-      const input = updateEnabledSchema.parse(request.body);
-      await db.updateTable("releases").set({ enabled: input.enabled }).where("id", "=", request.params.id).execute();
-      await audit(request, "release.update", "release", request.params.id, { enabled: input.enabled });
+      const input = updateReleaseSchema.parse(request.body);
+      const changes = {
+        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+        ...(input.forceUpdate !== undefined ? { force_update: input.forceUpdate } : {}),
+      };
+      await db.updateTable("releases").set(changes).where("id", "=", request.params.id).execute();
+      await audit(request, "release.update", "release", request.params.id, changes);
       return { ok: true, id: request.params.id };
     },
   );

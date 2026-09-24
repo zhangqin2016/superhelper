@@ -76,7 +76,8 @@ await assert.rejects(loginActions.loginPasswordAccountAction(null, loginForm), (
 console.log('enterprise password web action: forced-change navigation passed');
 const proxyModule = await load('proxy.js', {
   'next/server': { NextResponse: { next: () => ({ next: true }), redirect: (url) => ({ url: String(url), cookies: { delete() {} } }) } },
-  './lib/admin-auth-shared.mjs': {},
+  // The real module: an empty stand-in broke the moment the proxy used a new export.
+  './lib/admin-auth-shared.mjs': await import('../web/lib/admin-auth-shared.mjs'),
 });
 const requestFor = (path) => {
   const url = new URL('https://lilyxinjiapo.lilywb.cn' + path);

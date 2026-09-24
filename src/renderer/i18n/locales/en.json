@@ -2402,5 +2402,22 @@
   "diagnostics.service.missing": "No cached server model configuration is available.",
   "diagnostics.service.ready": "Server configuration is available.",
   "diagnostics.engine.missing": "The AI engine is missing. A conversation cannot be started.",
-  "diagnostics.issue": "{label}: {detail}"
+  "diagnostics.issue": "{label}: {detail}",
+  "update.mandate.pill": "Update required",
+  "update.mandate.title": "Update to {version} required",
+  "update.mandate.reasonRelease": "Your administrator made this version mandatory.",
+  "update.mandate.reasonPolicy": "Your administrator requires at least this version on this device.",
+  "update.mandate.reasonBoth": "Your administrator made this version mandatory and set a minimum version for this device.",
+  "update.mandate.countdown": "Restarting to install in {seconds}s. Finish anything unsaved first.",
+  "update.mandate.now": "Restart now",
+  "update.mandate.later": "Remind me in {minutes} min ({left} left)",
+  "update.mandate.pending": "An update to {version} is required. You will be asked to restart once it is downloaded and no task is running.",
+  "update.mandate.waitingForIdle": "{version} is downloaded. The restart countdown starts when the current task finishes.",
+  "update.mandate.deferredUntil": "Postponed until {time}; you will be asked again then ({left} postponements left).",
+  "update.mandate.blocked.NO_RELEASE_AT_REQUIRED_VERSION": "Your administrator requires at least {version}, but no installable build of it exists yet. You can keep working.",
+  "update.mandate.blocked.MANUAL_INSTALL_REQUIRED": "An update to {version} is required. This install cannot update itself; download it with the button below.",
+  "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "An update to {version} is required, but the update source is unavailable. Ask your administrator for the installer.",
+  "update.mandate.blocked.DOWNLOAD_FAILED": "An update to {version} is required. The download failed; download it with the button below, or it will retry later.",
+  "update.error.DEFER_NOT_ALLOWED": "No postponements left; the update installs when the countdown ends.",
+  "update.error.DEFER_NOT_SAVED": "Could not record the postponement. Try again shortly."
 }

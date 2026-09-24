@@ -2225,6 +2225,15 @@
       "tests": [
         "scripts/test-opencode-runtime-ownership.mjs"
       ]
+    },
+    {
+      "id": "update-enforcement",
+      "protects": "A mandatory update actually lands: a forced release is a floor every client below it must reach, a delivery rule's minAppVersion binds its scope, and the client downloads, waits for running tasks, counts down and installs within the delivered postponement limit.",
+      "baseline": "Releases nobody marked mandatory and scopes with no minimum version update exactly as before: silent background download, install on the next quit.",
+      "failureFallback": "A floor no installable build reaches, an install that cannot self-update, or a failed download becomes a notice with the manual installer — never a locked app, never an interrupted task; with no verified remote config the client uses the server's default policy and no scope floor.",
+      "tests": [
+        "scripts/test-update-enforcement.mjs"
+      ]
     }
   ]
 }

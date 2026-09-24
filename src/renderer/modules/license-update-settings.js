@@ -4,7 +4,8 @@
 
 import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
-import { t } from "../i18n/index.js";
+import { t, getLocale } from "../i18n/index.js";
+import { renderUpdateMandate } from "./update-mandate-dialog.js";
 
 let latestPackageUrl = "";
 let autoUpdateListenersStarted = false;
@@ -181,7 +182,24 @@ async function kickUpdateCheckIfDue(minGapMs = AUTO_UPDATE_FOCUS_MIN_INTERVAL_MS
   await window.assistantClient.kickUpdateCheck?.();
 }
 
+// A mandatory update says so wherever the update is shown, with the stage it
+// is in: why it cannot proceed, what it waits for, or when it resumes.
+function mandateText(state) {
+  const enforcement = state?.enforcement;
+  if (!enforcement?.required) return "";
+  if (enforcement.blocked) {
+    return t(`update.mandate.blocked.${enforcement.blocked}`, { version: enforcement.requiredVersion });
+  }
+  if (enforcement.waitingForIdle) return t("update.mandate.waitingForIdle", { version: state.latestVersion || enforcement.requiredVersion });
+  if (enforcement.deferredUntil) {
+    const time = new Date(enforcement.deferredUntil).toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" });
+    return t("update.mandate.deferredUntil", { time, left: enforcement.deferralsLeft });
+  }
+  return t("update.mandate.pending", { version: enforcement.requiredVersion });
+}
+
 function phaseText(state) {
+  if (state?.enforcement?.required && !["downloading", "checking"].includes(state.phase)) return t("update.mandate.pill");
   if (!state?.hasUpdate && state?.phase !== "error") return "";
   if (state.phase === "checking") return t("update.pillChecking");
   if (state.phase === "downloading") {
@@ -195,6 +213,8 @@ function phaseText(state) {
 }
 
 function updateDescription(state) {
+  const mandate = mandateText(state);
+  if (mandate && state.phase !== "checking" && state.phase !== "downloading") return mandate;
   if (state.phase === "checking") return t("update.descChecking");
   if (state.phase === "downloading") return t("update.descDownloading");
   if (state.phase === "downloaded") {
@@ -238,11 +258,14 @@ function renderUpdateState(state) {
   const statusEl = $("updateStatusText");
   const downloadBtn = $("updateDownloadBtn");
 
-  const visible = updateState.hasUpdate || ["checking", "downloading", "downloaded", "restart_pending", "error"].includes(updateState.phase);
+  const mandatory = Boolean(updateState.enforcement?.required);
+  const visible = mandatory || updateState.hasUpdate || ["checking", "downloading", "downloaded", "restart_pending", "error"].includes(updateState.phase);
   if (chrome) {
     chrome.hidden = !visible;
     chrome.dataset.phase = updateState.phase || "idle";
+    chrome.dataset.mandatory = mandatory ? "true" : "false";
   }
+  renderUpdateMandate(updateState);
   if (pillText) pillText.textContent = phaseText(updateState);
   if (title) title.textContent = updateState.phase === "error" ? t("update.popoverErrorTitle") : t("update.popoverTitle");
   if (desc) desc.textContent = updateDescription(updateState);

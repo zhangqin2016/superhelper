@@ -8,6 +8,7 @@ import {
   normalizeFeedbackAttachmentInput,
   normalizeSubmittedAttachment,
 } from "../../services/qiniu-upload.js";
+import { compareVersions, newestRelease, requiredVersionFor } from "../../services/release-versions.js";
 
 const contactRequestSchema = z.object({
   name: z.string().min(1).max(120),
@@ -77,29 +78,6 @@ async function createContactAttachmentUploadToken(request, reply) {
   }
 }
 
-function compareVersions(a, b) {
-  const pa = String(a || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const pb = String(b || "0").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
-    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
-  }
-  return 0;
-}
-
-function newestRelease(releases) {
-  return (releases || []).reduce((best, release) => {
-    if (!best) return release;
-    const versionOrder = compareVersions(release.version, best.version);
-    if (versionOrder > 0) return release;
-    if (versionOrder === 0 && new Date(release.created_at).getTime() > new Date(best.created_at).getTime()) {
-      return release;
-    }
-    return best;
-  }, null);
-}
-
 function releaseFeedUrl(platform, version) {
   const base = String(config.qiniuPublicBaseUrl || "").replace(/\/+$/g, "");
   const file = String(platform || "").startsWith("darwin-") ? "latest-mac.yml" : "latest.yml";
@@ -167,6 +145,9 @@ export async function publicCatalogRoutes(app) {
 
     const release = newestRelease(releases);
     if (!release) return { hasUpdate: false };
+    // Mandatory is a floor, not a flag on the newest row: a client below any
+    // forced release must update even when a newer ordinary release followed.
+    const requiredVersion = currentVersion ? requiredVersionFor(releases, currentVersion) : "";
     return {
       hasUpdate: compareVersions(release.version, currentVersion) > 0,
       version: release.version,
@@ -175,7 +156,8 @@ export async function publicCatalogRoutes(app) {
       sha256: release.sha256,
       sizeBytes: Number(release.size_bytes || 0),
       notes: release.notes || "",
-      force: release.force_update,
+      force: Boolean(requiredVersion),
+      requiredVersion,
       feedUrl: releaseFeedUrl(release.platform, release.version),
     };
   });

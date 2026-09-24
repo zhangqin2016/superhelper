@@ -15,6 +15,7 @@ import {
   setLicenseStatusAction,
   setConfigProfileEnabledAction,
   setReleaseEnabledAction,
+  setReleaseForceAction,
   setRuntimePackEnabledAction,
   setSkillPackageEnabledAction,
   setWorkspaceAppEnabledAction,
@@ -175,7 +176,14 @@ export function ReleasesTable({ rows, latest = {}, empty }) {
         return <span className="text-slate-400">{copy.superseded}</span>;
       },
     },
-    { accessorKey: "force_update", header: t.admin.cols.force, cell: ({ row }) => row.original.force_update ? <Badge variant="warning">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
+    {
+      // Mandatory is a floor: every client below this version must update.
+      accessorKey: "force_update",
+      header: t.admin.cols.force,
+      cell: ({ row }) => row.original.force_update
+        ? <Badge variant="danger" title={copy.mandatoryHint}>{copy.mandatory}</Badge>
+        : <span className="text-slate-400">{t.admin.cols.no}</span>,
+    },
     { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? <span className="tabular-nums">{(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB</span> : "-" },
     { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
     { accessorKey: "url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.url} title={row.original.url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.url)}</a> },
@@ -183,11 +191,26 @@ export function ReleasesTable({ rows, latest = {}, empty }) {
       id: "action",
       header: t.admin.common.action,
       cell: ({ row }) => (
-        <form action={setReleaseEnabledAction}>
-          <input type="hidden" name="id" value={row.original.id} />
-          <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
-          <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
-        </form>
+        <RowActions>
+          <form action={setReleaseEnabledAction}>
+            <input type="hidden" name="id" value={row.original.id} />
+            <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
+            <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
+          </form>
+          {row.original.force_update ? (
+            <form action={setReleaseForceAction}>
+              <input type="hidden" name="id" value={row.original.id} />
+              <input type="hidden" name="forceUpdate" value="false" />
+              <Button variant="outline" size="sm">{copy.unmarkMandatory}</Button>
+            </form>
+          ) : (
+            <DangerForm action={setReleaseForceAction} confirm={copy.markMandatoryConfirm.replace("{version}", row.original.version).replace("{platform}", row.original.platform)}>
+              <input type="hidden" name="id" value={row.original.id} />
+              <input type="hidden" name="forceUpdate" value="true" />
+              <Button variant="outline" size="sm">{copy.markMandatory}</Button>
+            </DangerForm>
+          )}
+        </RowActions>
       ),
     },
   ];

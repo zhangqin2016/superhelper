@@ -3,7 +3,7 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { sql } from "kysely";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
-import { latestReleases } from "../../services/admin-attention.js";
+import { latestReleases } from "../../services/release-versions.js";
 
 // 1,210 installs, 85% unseen for a month: an unfiltered list is mostly the
 // dead. Default to the fleet that is actually running; "all" is one click away.
