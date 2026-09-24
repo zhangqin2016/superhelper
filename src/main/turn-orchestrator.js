@@ -333,7 +333,7 @@ class TurnOrchestrator {
       canInterrupt: state.phase !== "idle" && state.phase !== "finalizing",
       queueLength: state.queue.length,
       queue: state.queue.map((item) => compactQueueItem(item)),
-      userPrompts: [...state.pendingPermissions.values(), ...state.pendingQuestions.values(), ...(state.pendingHooks?.values() || [])],
+      userPrompts: [state.pendingPermissions, state.pendingQuestions, state.pendingHooks].flatMap((pending) => [...(pending?.values?.() || [])]),
       outcomeUnknownTurns: (state.outcomeUnknownTurns || []).slice(),
       runtime: this.eventBus.snapshot(sessionId),
       taskRun: compactTaskRun(state.taskRun),
