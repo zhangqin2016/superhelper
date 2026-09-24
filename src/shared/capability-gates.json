@@ -2197,11 +2197,33 @@
     },
     {
       "id": "watchdog-sleep-not-lag",
-      "protects": "A machine that slept is reported as a system sleep with its length, never as main-loop lag or a stale renderer: lag and staleness are measured on the monotonic clock, and powerMonitor resume restarts both baselines.",
-      "baseline": "A real freeze advances both clocks and is reported exactly as before; a test that injects only the wall clock behaves as before.",
-      "failureFallback": "Without powerMonitor the clock gap alone separates sleep from lag; a platform whose monotonic clock counts sleep is covered by the resume reset.",
+      "protects": "A machine that slept is reported as a system sleep with its length, never as main-loop lag or a stale renderer: from powerMonitor suspend until resume every tick is the sleep (DarkWakes included, and a first tick that beats the resume event), and resume restarts both baselines.",
+      "baseline": "A real freeze outside a suspend is reported exactly as before.",
+      "failureFallback": "Without powerMonitor the watchdog behaves as before (a sleep may read as lag); a resume with no suspend seen records nothing.",
       "tests": [
         "scripts/test-app-watchdog.mjs"
+      ]
+    },
+    {
+      "id": "objective-coverage-audit-runs",
+      "protects": "The objective-coverage audit actually runs and never holds the answer: the judge reply is judged by liveness (a reply still arriving is never a failure; first-output and stall bounds, no total deadline), the turn completes as it always did when the audit could not answer, and a verdict that lands later amends the lifecycle verification and the turn record — never delivery. The judge's own diagnostics are the reason, and the verdict is read by the shared string-aware extractor.",
+      "baseline": "Delivery records exactly the outcome an unavailable audit always produced (coverage unknown); the task result stays the record of delivery; LILY_ACCEPTANCE_GAP_CONTINUATION=1 still waits for the verdict because it decides from it; verdict validation is unchanged.",
+      "failureFallback": "A stalled or silent judge, an audit that throws, or an amendment that fails leaves the delivered verdict in place and is reported; the store amends only verdict to verdict, against the status it was read at, attributed.",
+      "tests": [
+        "scripts/test-objective-coverage-after-delivery.mjs",
+        "scripts/test-task-objective-coverage.mjs",
+        "scripts/test-evidence-entailment-judge.mjs",
+        "scripts/test-document-delivery-response.mjs",
+        "scripts/test-task-acceptance-recovery.mjs"
+      ]
+    },
+    {
+      "id": "session-model-without-turn",
+      "protects": "A caller that starts a session's engine without choosing a model (switch warm-up, project switch, official-history reload, agent runtime) runs it on the model that session's turns resolve — never the global preset — so the next real turn does not read as a model change and discard the resume id.",
+      "baseline": "When the session's model cannot be resolved the previous global-preset behaviour is kept; a caller that names a model is unchanged.",
+      "failureFallback": "A resolution error is reported as a degraded capability and falls back to the global preset.",
+      "tests": [
+        "scripts/test-opencode-runtime-ownership.mjs"
       ]
     }
   ]

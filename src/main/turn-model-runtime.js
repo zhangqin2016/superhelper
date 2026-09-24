@@ -57,6 +57,32 @@ function resolveTurnModel(opts, text, files, context = {}) {
   return route;
 }
 
+/**
+ * The model a session runs on when no turn is choosing one — a warm-up after a
+ * switch, a project switch, an official-history reload.
+ *
+ * Those paths used to start the session's engine on the globally active preset.
+ * A session pinned to another model then had its engine built on the wrong
+ * config, and the next real turn — on the session's own model — read as a
+ * model change and restarted it, discarding the conversation's resume id.
+ * Measured 2026-09-24: a long session lost its engine context after a switch
+ * warmed it on the gateway preset while it runs on a direct model.
+ *
+ * Resolved exactly as a turn resolves it (the session's selection and its
+ * retained context), so the two cannot disagree. Null when it cannot be
+ * resolved, and the caller keeps its previous behaviour.
+ */
+function sessionModelExecution({ manager = null, sessionId = "" } = {}) {
+  if (!sessionId) return null;
+  try {
+    const route = resolveTurnModel({}, "", [], { manager, sessionId });
+    return route?.ok && route.execution ? route.execution : null;
+  } catch (error) {
+    require("./diagnostics/swallowed-failure").recordSwallowedFailure("session model resolution", error, { session: sessionId });
+    return null;
+  }
+}
+
 function modelRouteFailure(route) {
   const details = {
     INVALID_MODEL_SELECTION: "所选模型当前不可用，请在输入框旁重新选择模型。",
@@ -111,4 +137,4 @@ function routeMetadata(route) {
   return route?.model ? { modelRoute: routeTrace(route) } : {};
 }
 
-module.exports = { resolveModelForTurn, resolveTurnModel, modelRouteFailure, runtimeModelPool, refreshModelExecution, allowImageFileParts, routeTrace, routeMetadata };
+module.exports = { resolveModelForTurn, resolveTurnModel, sessionModelExecution, modelRouteFailure, runtimeModelPool, refreshModelExecution, allowImageFileParts, routeTrace, routeMetadata };

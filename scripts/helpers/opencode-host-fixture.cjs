@@ -50,6 +50,7 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     writeFileSync: noop,
     unlinkSync: noop,
   }, { get: (target, key) => key in target ? target[key] : () => { throw new Error(`Blocked filesystem operation: ${String(key)}`); } });
+  let globalPresetEnv = {};
   const mocks = {
     "config": { PROJECT_ROOT: root, userDataPath: p => path.join(home, p),
       opencodeDbPath: () => path.join(home, "same.db"), fileStagingDir: () => path.join(home, "staging"),
@@ -62,7 +63,8 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     "resume-binding": { buildResumeBinding: () => ({}), verifyResumeBinding: () => ({ ok: true }) },
     "permission-settings": { getActivePermissionMode: () => "ask", resolveSessionPermissionMode: () => "ask" },
     "turn-model-runtime": { runtimeModelPool: () => undefined },
-    "model-presets": { getActivePresetEnv: () => ({}), getUserApiEnv: () => ({}) },
+    // Read through a variable: spawn-env destructures these at load time.
+    "model-presets": { getActivePresetEnv: () => ({ ...globalPresetEnv }), getUserApiEnv: () => ({}) },
     "runtime-node": { ensureRuntimeNodeShim: () => { stats.envBuilds++; }, runtimeBinDir: () => home },
     "runtime-python": { getRuntimePathEntries: () => [], getRuntimeEnvExtras: () => ({}) },
     "spawn-env-allowlist": { pickInheritedEnv: () => ({}) },
@@ -221,7 +223,17 @@ function fixture({ sdkTimeoutMs = 30_000 } = {}) {
     usageCalls.push({ sessionId, delta: { ...delta }, model: { ...model } });
     return recordUsage(sessionId, delta, model);
   };
-  return { add, ensure, pool, rows, sessions, stats, reports, usageCalls, projections, kills, summaryWaits,
+  // A caller that names no model and starts the engine — an official-history
+  // reload, a project switch, the agent runtime.
+  async function ensureWithoutModel(id) {
+    const { ensureSessionRunner } = load("ipc-utils");
+    const result = ensureSessionRunner(ctx, id, { spawn: true });
+    assert.ok(result.runner, result.detail || result.error);
+    await result.runner._ensureStarted();
+    return result;
+  }
+  const setGlobalPreset = (env) => { globalPresetEnv = { ...(env || {}) }; };
+  return { add, ensure, ensureWithoutModel, setGlobalPreset, pool, rows, sessions, stats, reports, usageCalls, projections, kills, summaryWaits,
     load, usage, hardExit, holdSummary: () => { holdSummary = true; },
     close: () => {
       pool.terminateAll(); sharedModule.resetSharedServer();

@@ -28,6 +28,36 @@ await check("host model replacement preserves history without a discarded startu
   assert.equal(unhandled.length, 0, "invalidated runner must not start again");
 });
 
+await check("a caller that names no model runs the session's own model, keeping its conversation", async f => {
+  // 2026-09-24: after a sleep the engine was dead; a caller that names no model
+  // started it on the global preset, and the next real turn — on the session's
+  // own model — read as a model change and restarted, discarding the resume id.
+  f.add("own");
+  await f.ensure("own", "B");
+  await tick();
+  const runtime = f.load("turn-model-runtime");
+  const envFor = (model) => ({
+    LILY_MODEL: model, LILY_API_BASE_URL: "https://fixture.invalid/v1", LILY_API_KEY: "fixture-not-a-secret",
+    LILY_OPENCODE_PROVIDER_ID: "fixture", LILY_CONTEXT_WINDOW_TOKENS: "128000",
+  });
+  // The global preset is a DIFFERENT model, as it was in the field.
+  f.setGlobalPreset(envFor("A"));
+  runtime.sessionModelExecution = ({ sessionId }) => (sessionId === "own"
+    ? { model: { providerID: "fixture", modelID: "B", contextWindowTokens: 128000 }, env: envFor("B") }
+    : null);
+  try {
+    f.pool.get("own").terminate(); // the engine died while the machine slept
+    const woken = (await f.ensureWithoutModel("own")).runner;
+    assert.equal(woken.spawnOptions.model.modelID, "B", "started on the session's model, not the global preset");
+    const next = (await f.ensure("own", "B")).runner;
+    await tick();
+    assert.equal(next.agentResumeId, "ses_own", "so the next real turn keeps the conversation's resume id");
+  } finally {
+    delete runtime.sessionModelExecution;
+    f.setGlobalPreset({});
+  }
+});
+
 await check("real packaged env shares A/B/A but isolates credentials and policy", async f => {
   const runners = [];
   for (const [id, model] of [["one", "A"], ["two", "B"], ["three", "A"]]) {

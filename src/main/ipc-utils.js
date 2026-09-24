@@ -289,7 +289,11 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     stagingDir,
     resumeSessionId,
     configDir,
-    modelExecution: opts.modelExecution || null,
+    // No caller-chosen model means no turn is choosing one: run on the model
+    // this session runs on, never the global preset (turn-model-runtime).
+    modelExecution: opts.modelExecution
+      || require("./turn-model-runtime").sessionModelExecution?.({ manager: sessionManager, sessionId })
+      || null,
     modelPool: require("./turn-model-runtime").runtimeModelPool(opts.modelPool),
     // An unattended (scheduled) run must not block on a permission prompt
     // nobody will answer — callers can force a non-interactive mode.
