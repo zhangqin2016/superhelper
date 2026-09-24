@@ -71,4 +71,42 @@ for (const [name, src] of Object.entries({ page: files.page, chat: files.chat, p
 assert.ok(files.page.split("\n").length < 160, "the page is composition, not a monolith");
 assert.match(files.conversation, /commandId/, "pending tasks reconcile by command identity");
 
+// --- fits a phone: nothing widens the page ---------------------------------------
+// Field case: a reply with a Windows path in inline code made the chat scroller
+// 673px wide on a 390px phone (a sideways scrollbar), a markdown table showed as
+// raw pipes, and a dozen workspaces as wrapped chips ran off the bottom sheet.
+assert.match(files.chat, /<main ref=\{scrollRef\} className="[^"]*overflow-x-hidden/, "the conversation never scrolls sideways");
+assert.match(files.pairing, /<main className="[^"]*overflow-x-hidden/, "nor does the pairing screen");
+for (const [name, src] of Object.entries({ chat: files.chat, pairing: files.pairing })) {
+  // Up to the field's own className ("=>" in a handler would end a [^>]* match early).
+  const fields = [...src.matchAll(/<(input|textarea)\b([\s\S]*?)className="([^"]*)"/g)].filter((m) => !/type="file"/.test(m[2]));
+  assert.ok(fields.length, `${name}: text fields found`);
+  for (const [, tag, , cls] of fields) assert.match(cls, /(?:^|\s)text-(?:base|lg)(?:\s|$)/, `${name} ${tag}: a text field under 16px makes iOS zoom the page on focus`);
+}
+assert.doesNotMatch(files.sheet, /flex-wrap/, "workspaces are a list, not wrapped chips");
+assert.match(files.sheet, /max-h-\[\d+dvh\]/, "the sheet is sized to the visible viewport, not vh behind the browser bars");
+assert.match(files.sheet, /truncate/, "long names are cut, not widened");
+{
+  const { createRequire } = await import("node:module");
+  const requireWeb = createRequire(path.join(ROOT, "web/package.json"));
+  const swc = requireWeb("next/dist/build/swc");
+  await swc.loadBindings();
+  const { code } = swc.transformSync(files.markdown, { filename: "markdown.js", jsc: { parser: { syntax: "ecmascript", jsx: true }, transform: { react: { runtime: "automatic" } }, target: "es2022" }, module: { type: "commonjs" } });
+  const mod = { exports: {} };
+  new Function("module", "exports", "require", code)(mod, mod.exports, requireWeb);
+  const React = requireWeb("react");
+  const { renderToStaticMarkup } = requireWeb("react-dom/server");
+  const html = (md) => renderToStaticMarkup(React.createElement(React.Fragment, null, ...mod.exports.renderMarkdown(md)));
+  const table = html("里面主要是：\n\n| 文件或目录 | 占用 |\n| --- | ---: |\n| runtime\\cache | 9.4 GiB |\n| messages.db | 3.1 GiB |");
+  assert.match(table, /<div class="[^"]*overflow-x-auto[^"]*"><table/, "a table scrolls inside its own box");
+  assert.match(table, /<th[^>]*>文件或目录<\/th>/, "the header row is a header");
+  assert.equal((table.match(/<tr/g) || []).length, 3, "header + two rows; the --- rule is not a row");
+  assert.doesNotMatch(table, /\|/, "no raw pipes left");
+  const long = html("位置 `C:\\Users\\ROG\\AppData\\Roaming\\lily-workbench`\n\n- 一项 `很长的路径`\n\n# 标题");
+  assert.match(long, /<code class="[^"]*overflow-wrap:anywhere/, "inline code breaks anywhere");
+  assert.match(long, /<ul class="[^"]*overflow-wrap:anywhere/, "list items wrap long text");
+  assert.match(long, /<p class="[^"]*overflow-wrap:anywhere/, "paragraphs wrap long text");
+  assert.doesNotMatch(html("a | b | c"), /<table/, "a line with pipes but no rule stays text");
+}
+
 console.log("mobile-pair-web: ok");

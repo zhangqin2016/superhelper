@@ -63,7 +63,7 @@ export default function MobilePairPage() {
   const sessionTitle = conversation.sessions.find((s) => s.id === conversation.selectedSessionId)?.title || conversation.session?.title || "当前会话";
 
   return (
-    <div className="mx-auto flex h-[100dvh] max-w-md flex-col bg-[#faf9f7] text-[#1f2328]">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-[#faf9f7] text-[#1f2328]" style={{ colorScheme: "light" }}>
       <header className="flex-shrink-0 border-b border-[#ebe8e1] bg-[#faf9f7]/95 px-4 pb-2.5 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center gap-2">
           {inSession ? (

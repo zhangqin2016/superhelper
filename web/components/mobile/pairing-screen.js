@@ -14,7 +14,7 @@ export function PairingScreen({ status, capabilitiesNote, onPair, onDirectConnec
   const failed = status.phase === "error" || status.phase === "ended";
 
   return (
-    <main className="flex-1 overflow-y-auto px-4 py-5">
+    <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5">
       {status.message ? (
         <p className={`mb-4 rounded-xl border px-3.5 py-2.5 text-sm leading-6 ${failed ? "border-[#f1d5d1] bg-[#fdf1ef] text-[#8f2f27]" : "border-[#dbe7f8] bg-[#f0f6fe] text-[#1d5aa8]"}`}>
           {busy ? <span className="mr-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent align-[-2px]" /> : null}
@@ -36,7 +36,7 @@ export function PairingScreen({ status, capabilitiesNote, onPair, onDirectConnec
               ))}
             </ol>
             <label className="mt-4 block text-xs font-medium text-[#8a8479]" htmlFor="pair-code">扫不了码？粘贴配对码</label>
-            <input id="pair-code" className="mt-1.5 w-full rounded-xl border border-[#e2ded5] bg-[#faf9f7] px-3 py-2.5 text-sm focus:border-[#2f7de1] focus:outline-none"
+            <input id="pair-code" className="mt-1.5 w-full rounded-xl border border-[#e2ded5] bg-[#faf9f7] px-3 py-2.5 text-base focus:border-[#2f7de1] focus:outline-none"
               value={code} onChange={(e) => setCode(e.target.value)} placeholder="粘贴电脑显示的配对码" />
             <button type="button" disabled={busy} onClick={() => onPair(code)}
               className="mt-3 w-full rounded-xl bg-[#2f7de1] py-3 text-sm font-semibold text-white active:bg-[#256bc4] disabled:opacity-60">{busy ? "连接中…" : "配对并连接"}</button>

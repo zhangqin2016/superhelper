@@ -29,7 +29,7 @@ function UserBubble({ message }) {
   const text = message.text.length > 1500 ? `${message.text.slice(0, 1500)}…` : message.text;
   return (
     <div className="flex justify-end">
-      <div className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[#ecebe6] px-3.5 py-2 text-[15px] leading-6 text-[#1f2328] ${message.pending ? "opacity-70" : ""}`}>
+      <div className={`min-w-0 max-w-[85%] whitespace-pre-wrap rounded-2xl [overflow-wrap:anywhere] rounded-br-md bg-[#ecebe6] px-3.5 py-2 text-[15px] leading-6 text-[#1f2328] ${message.pending ? "opacity-70" : ""}`}>
         {message.files ? <div className="mb-1 text-xs text-[#6b665c]">🖼 {message.files} 张图片</div> : null}
         {text}
         {message.pending ? <div className="mt-0.5 text-right text-[11px] text-[#8a8479]">{STATUS_LABEL[message.status] || ""}</div> : null}
@@ -105,7 +105,7 @@ function Composer({ client, offline, onSend, onNotice }) {
         </label>
         <textarea rows={1} value={text} onChange={(e) => setText(e.target.value)}
           placeholder={offline ? "电脑离线，暂时无法发送" : "给电脑上的 Lily 派任务…"}
-          className="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 placeholder:text-[#b9b4aa] focus:outline-none"
+          className="max-h-32 min-h-[2.25rem] min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base leading-6 placeholder:text-[#b9b4aa] focus:outline-none"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
         <button type="button" onClick={voice.toggle} title="语音输入"
           className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition ${voice.listening ? "animate-pulse bg-[#c8453b] text-white ring-4 ring-[#f6d9d5]" : "text-[#6b665c] active:bg-[#f1efe9]"}`}>
@@ -130,7 +130,7 @@ export function ChatScreen({ conversation, messages, client, offline, onSend, on
 
   return (
     <>
-      <main ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      <main ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4">
         {conversation.session === null ? <p className="mt-10 text-center text-sm text-[#a9a397]">正在读取电脑上的对话…</p> : null}
         {conversation.session && messages.length === 0 ? (
           <div className="mt-12 text-center">
