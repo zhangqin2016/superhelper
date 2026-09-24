@@ -36,15 +36,23 @@ async function currentCandidates({ withObjects }) {
   // A storage listing that fails leaves the candidates visible and says why;
   // nothing is archived from a partial picture of what exists.
   try {
+    // Two listings per platform, grouped here — one listing per candidate took
+    // 210 s on production (400+ old releases).
     const stableKeysByPlatform = new Map();
+    const feedKeysByPlatform = new Map();
     for (const platform of new Set(candidates.map((c) => c.platform))) {
-      stableKeysByPlatform.set(platform, await listObjects(qiniu, `app/auto-updates/${platform}/stable/`));
+      const [stable, feeds] = await Promise.all([
+        listObjects(qiniu, `app/auto-updates/${platform}/stable/`),
+        listObjects(qiniu, `app/auto-updates/${platform}/releases/`),
+      ]);
+      stableKeysByPlatform.set(platform, stable);
+      feedKeysByPlatform.set(platform, feeds);
     }
-    const withKeys = [];
-    for (const release of candidates) {
-      const feedKeys = await listObjects(qiniu, `app/auto-updates/${release.platform}/releases/${release.version}/`);
-      withKeys.push({ ...release, objects: objectsForRelease(release, { publicBaseUrl: qiniu.publicBaseUrl, stableKeys: stableKeysByPlatform.get(release.platform) || [], feedKeys }) });
-    }
+    const withKeys = candidates.map((release) => {
+      const feedPrefix = `app/auto-updates/${release.platform}/releases/${release.version}/`;
+      const feedKeys = (feedKeysByPlatform.get(release.platform) || []).filter((key) => key.startsWith(feedPrefix));
+      return { ...release, objects: objectsForRelease(release, { publicBaseUrl: qiniu.publicBaseUrl, stableKeys: stableKeysByPlatform.get(release.platform) || [], feedKeys }) };
+    });
     return { settings, candidates: withKeys, configured, qiniu, fullByPlatform };
   } catch (error) {
     return { settings, candidates: candidates.map((c) => ({ ...c, objects: [] })), configured, qiniu, fullByPlatform, storageError: error?.message || String(error) };

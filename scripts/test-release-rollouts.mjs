@@ -260,6 +260,9 @@ await check("archive: only what nobody needs, exactly its files, never the share
   const qiniu = await import("../server/src/services/qiniu-rs.js");
   assert.match(qiniu.qboxAuthorization({ accessKey: "ak", secretKey: "sk" }, "/move/a/b"), /^QBox ak:[A-Za-z0-9_-]+=*$/);
   assert.ok(!/deleteObject|\/delete\//.test(read("server/src/services/qiniu-rs.js")), "archiving moves; nothing here can delete");
+  const route = read("server/src/routes/admin/release-archive.js");
+  assert.ok(!/for \(const release of candidates\) \{\s*const feedKeys = await listObjects/.test(route), "no storage listing per candidate (210 s on production)");
+  assert.match(route, /listObjects\(qiniu, `app\/auto-updates\/\$\{platform\}\/releases\/`\)/, "one feed listing per platform");
 });
 
 await check("old clients: a reply saying how to update, only when on, in scope, and reachable", async () => {
