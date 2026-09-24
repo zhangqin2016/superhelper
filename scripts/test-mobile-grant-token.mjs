@@ -46,4 +46,13 @@ const { createGrantToken, verifyGrantToken } = await import("../server/src/servi
   assert.equal(verifyGrantToken("lily_access_v1.abc.def").code, "GRANT_TOKEN_INVALID", "an account access token is not a grant token");
 }
 
+// A phone may go unused for 30 days before it must scan again (the token
+// slides on every connect); two days made a home-screen remote useless.
+{
+  const now = Date.UTC(2026, 8, 25);
+  const token = createGrantToken({ grantId: "mpg_1", mobileDeviceId: "dmob", nowMs: now });
+  assert.equal(verifyGrantToken(token, { nowMs: now + 29 * 86_400_000 }).ok, true, "still valid after 29 unused days");
+  assert.equal(verifyGrantToken(token, { nowMs: now + 31 * 86_400_000 }).code, "GRANT_TOKEN_EXPIRED", "bounded: expired after 31");
+}
+
 console.log("mobile-grant-token: ok");

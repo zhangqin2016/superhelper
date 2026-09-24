@@ -14,9 +14,12 @@ import { config } from "../config.js";
 const GRANT_PREFIX = "lily_mgrant_";
 const GRANT_VERSION = "v1";
 const GRANT_TYP = "mobile_grant";
-// Grants live at most a couple of days; the token outlives the approval wait but
-// is bounded so a leaked one can't be replayed indefinitely.
-const DEFAULT_TTL_SECONDS = 2 * 24 * 60 * 60;
+// A token is bounded so a leaked one cannot be replayed indefinitely, and it
+// slides: every connect of a phone in use renews it (/api/mobile/grant/refresh).
+// So this is how long a phone may go UNUSED before it must scan again. Two
+// days made a home-screen remote control useless over a weekend; the desktop
+// can still end any pairing at once, and the token relays for that pairing only.
+const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 function base64urlEncode(input) {
   return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
