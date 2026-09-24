@@ -34,6 +34,9 @@ export function updatePolicyError(policy) {
   if (minAppVersion !== undefined && minAppVersion !== "" && !VERSION.test(String(minAppVersion))) {
     return { field: "policy.minAppVersion", message: `policy.minAppVersion must be a version like 0.1.185, got "${minAppVersion}".` };
   }
+  if (policy.updateChannel !== undefined && !["stable", "beta"].includes(policy.updateChannel)) {
+    return { field: "policy.updateChannel", message: `policy.updateChannel must be stable or beta, got "${policy.updateChannel}".` };
+  }
   const update = policy.update;
   if (update === undefined) return null;
   if (!update || typeof update !== "object" || Array.isArray(update)) return { field: "policy.update", message: "policy.update must be an object." };

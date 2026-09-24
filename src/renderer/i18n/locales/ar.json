@@ -2405,7 +2405,7 @@
   "diagnostics.issue": "{label}: {detail}",
   "update.mandate.pill": "التحديث مطلوب",
   "update.mandate.title": "مطلوب التحديث إلى {version}",
-  "update.mandate.reasonRelease": "جعل المسؤول هذا الإصدار إلزاميًا.",
+  "update.mandate.reasonRelease": "الحد الأدنى للإصدار المدعوم الذي حدده المسؤول أعلى من إصدارك الحالي.",
   "update.mandate.reasonPolicy": "يشترط المسؤول هذا الإصدار كحد أدنى على هذا الجهاز.",
   "update.mandate.reasonBoth": "جعل المسؤول هذا الإصدار إلزاميًا وحدد حدًا أدنى للإصدار على هذا الجهاز.",
   "update.mandate.countdown": "إعادة التشغيل للتثبيت خلال {seconds} ثانية. أكمل أي شيء غير محفوظ أولًا.",
@@ -2419,5 +2419,8 @@
   "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "التحديث إلى {version} مطلوب، لكن مصدر التحديث غير متاح. اطلب ملف التثبيت من المسؤول.",
   "update.mandate.blocked.DOWNLOAD_FAILED": "التحديث إلى {version} مطلوب. فشل التنزيل؛ نزّله بالزر أدناه، أو ستُعاد المحاولة لاحقًا.",
   "update.error.DEFER_NOT_ALLOWED": "لم يتبقَّ تأجيل؛ سيُثبَّت التحديث عند انتهاء العد التنازلي.",
-  "update.error.DEFER_NOT_SAVED": "تعذّر تسجيل التأجيل. حاول مجددًا بعد قليل."
+  "update.error.DEFER_NOT_SAVED": "تعذّر تسجيل التأجيل. حاول مجددًا بعد قليل.",
+  "update.mandate.reasonBlocked": "أوقف المسؤول الإصدار الذي تستخدمه؛ يلزم إصدار أحدث.",
+  "update.mandate.deadline": "حدّث قبل {when}.",
+  "update.mandate.deadlinePassed": "انقضى موعد التحديث ({when})؛ لم يعد التأجيل ممكنًا."
 }

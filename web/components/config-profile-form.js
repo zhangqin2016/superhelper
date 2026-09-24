@@ -83,6 +83,7 @@ function defaultDraft(copy, templates) {
     updateCountdownSeconds: "",
     updateDeferMinutes: "",
     updateMaxDeferrals: "",
+    updateChannel: "",
     requestTimeoutMs: "300000",
     visionModel: "qwen3.7-plus",
     imageProviders: [],
@@ -562,6 +563,13 @@ export function ConfigProfileForm({ providers = [], skillPackageOptions = [], ag
               <div className="md:col-span-2 rounded-xl border border-slate-200 p-3">
                 <p className="text-sm font-semibold text-slate-900">{copy.updateTitle}</p>
                 <p className="mt-1 text-xs text-slate-500">{copy.updateHelp}</p>
+                <Field label={copy.updateChannel} help={copy.updateChannelHelp}>
+                  <select className={fieldClass()} value={draft.updateChannel} onChange={(event) => updateField("updateChannel", event.target.value)}>
+                    <option value="">{copy.updateChannelInherit}</option>
+                    <option value="stable">stable</option>
+                    <option value="beta">beta</option>
+                  </select>
+                </Field>
                 <div className="mt-3 grid gap-3 md:grid-cols-3">
                   {[["updateCountdownSeconds", copy.updateCountdown], ["updateDeferMinutes", copy.updateDeferMinutes], ["updateMaxDeferrals", copy.updateMaxDeferrals]].map(([key, label]) => (
                     <Field key={key} label={label}>

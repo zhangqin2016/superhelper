@@ -2405,7 +2405,7 @@
   "diagnostics.issue": "{label}: {detail}",
   "update.mandate.pill": "Update required",
   "update.mandate.title": "Update to {version} required",
-  "update.mandate.reasonRelease": "Your administrator made this version mandatory.",
+  "update.mandate.reasonRelease": "Your administrator's minimum supported version is above the one you are on.",
   "update.mandate.reasonPolicy": "Your administrator requires at least this version on this device.",
   "update.mandate.reasonBoth": "Your administrator made this version mandatory and set a minimum version for this device.",
   "update.mandate.countdown": "Restarting to install in {seconds}s. Finish anything unsaved first.",
@@ -2419,5 +2419,8 @@
   "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "An update to {version} is required, but the update source is unavailable. Ask your administrator for the installer.",
   "update.mandate.blocked.DOWNLOAD_FAILED": "An update to {version} is required. The download failed; download it with the button below, or it will retry later.",
   "update.error.DEFER_NOT_ALLOWED": "No postponements left; the update installs when the countdown ends.",
-  "update.error.DEFER_NOT_SAVED": "Could not record the postponement. Try again shortly."
+  "update.error.DEFER_NOT_SAVED": "Could not record the postponement. Try again shortly.",
+  "update.mandate.reasonBlocked": "Your administrator has pulled the version you are on; a newer one is required.",
+  "update.mandate.deadline": "Update by {when}.",
+  "update.mandate.deadlinePassed": "The update deadline ({when}) has passed; it can no longer be postponed."
 }

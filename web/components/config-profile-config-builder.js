@@ -74,6 +74,8 @@ export function buildConfig(draft, template) {
     permissionMode: String(draft.permissionMode || "default").trim(),
     minAppVersion: String(draft.minAppVersion || "").trim(),
     ...(Object.keys(update).length ? { update } : {}),
+    // Only where the rule chooses one: absent inherits stable.
+    ...(String(draft.updateChannel || "").trim() ? { updateChannel: String(draft.updateChannel).trim() } : {}),
   };
   const runtime = {
     env: {
@@ -139,6 +141,7 @@ export function draftFromConfig(config) {
     permissionMode: String(value.policy?.permissionMode || "default"),
     minAppVersion: String(value.policy?.minAppVersion || ""),
     ...Object.fromEntries(UPDATE_POLICY_FIELDS.map(([key, draftKey]) => [draftKey, value.policy?.update?.[key] === undefined ? "" : String(value.policy.update[key])])),
+    updateChannel: String(value.policy?.updateChannel || ""),
     requestTimeoutMs: String(env.API_TIMEOUT_MS || "300000"),
     visionModel: String(env.VISION_MODEL || "qwen3.7-plus"),
     imageProviders: image.providers,

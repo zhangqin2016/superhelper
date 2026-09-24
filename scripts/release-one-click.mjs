@@ -50,7 +50,10 @@ useful options:
                            until the rollout completes (release-promote.mjs).
                            Omitted = today's behaviour: everyone at once.
   --draft                  publish everything but offer it to no one yet
-  --mandatory              every client below this version must update (restart
+  --channel beta           publish to the beta channel only (always staged;
+                           the stable fallbacks are never touched)
+  --mandatory              make this version the platform's minimum supported
+                           version: every client below it must update (restart
                            countdown per the delivered update policy)
   --force                  republish catalog packages even when unchanged
                            (never makes the release mandatory)
@@ -563,7 +566,10 @@ if (rolloutPercent !== null && (!Number.isInteger(rolloutPercent) || rolloutPerc
   fail("--rollout must be an integer between 1 and 100");
 }
 if (rolloutPercent !== null && options.draft) fail("--rollout and --draft are exclusive");
-const offerEveryoneNow = !options.draft && (rolloutPercent === null || rolloutPercent === 100);
+const releaseChannel = options.channel || "stable";
+if (!["stable", "beta"].includes(releaseChannel)) fail("--channel must be stable or beta");
+// A beta release never moves the shared fallbacks, which serve stable.
+const offerEveryoneNow = releaseChannel === "stable" && !options.draft && (rolloutPercent === null || rolloutPercent === 100);
 if (!offerEveryoneNow && options["skip-server-publish"]) {
   fail("a staged or draft release needs the server rollout; drop --skip-server-publish");
 }
@@ -719,6 +725,7 @@ try {
     if (options.mandatory) serverArgs.push("--mandatory");
     // Every release now ships its own feed, so any later rollout can target it.
     serverArgs.push("--immutable-feed");
+    if (releaseChannel !== "stable") serverArgs.push("--channel", releaseChannel);
     if (options.draft) serverArgs.push("--draft");
     else if (rolloutPercent !== null) serverArgs.push("--rollout", String(rolloutPercent));
     run(scriptNode, serverArgs);

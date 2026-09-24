@@ -30,9 +30,14 @@ function close() {
 
 function reasonText(enforcement) {
   const reasons = enforcement.reasons || [];
-  if (reasons.includes("release") && reasons.includes("policy")) return t("update.mandate.reasonBoth");
-  if (reasons.includes("policy")) return t("update.mandate.reasonPolicy");
-  return t("update.mandate.reasonRelease");
+  const base = reasons.includes("blocked")
+    ? t("update.mandate.reasonBlocked")
+    : reasons.includes("release") && reasons.includes("policy")
+      ? t("update.mandate.reasonBoth")
+      : reasons.includes("policy") ? t("update.mandate.reasonPolicy") : t("update.mandate.reasonRelease");
+  if (!enforcement.deadline) return base;
+  const when = new Date(enforcement.deadline).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return `${base} ${t(enforcement.pastDeadline ? "update.mandate.deadlinePassed" : "update.mandate.deadline", { when })}`;
 }
 
 function open(state) {

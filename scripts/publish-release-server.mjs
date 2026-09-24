@@ -61,9 +61,11 @@ function usage() {
   --draft           create the rollout without offering it to anyone yet
   (neither)         today's behaviour: enabled = offered to everyone
 
-  --mandatory  every client below this version must update (a forced release is
-               a floor). There is no --force: it once meant "overwrite" in the
-               catalog step and marked 20 releases mandatory by accident.
+  --mandatory  make this version the platform's minimum supported version on
+               its channel: every client below it must update. There is no
+               --force: it once meant "overwrite" in the catalog step and
+               marked 20 releases mandatory by accident.
+  --channel C  stable (default) or beta; a beta release is always staged
 
 env:
   RELEASE_ADMIN_TOKEN
@@ -189,12 +191,15 @@ async function createRelease(artifact) {
       sha256: artifact.sha256,
       sizeBytes: artifact.sizeBytes,
       notes: options.notes || null,
-      forceUpdate: Boolean(options.mandatory),
+      // Mandatory is set on the platform's support policy after the release
+      // exists (see below), not as a per-row flag.
+      forceUpdate: false,
       enabled: !options.disabled,
       immutableFeed: Boolean(options["immutable-feed"]),
       // Written with the release in one transaction: never visible unstaged.
       ...(rolloutPercent !== null ? { rolloutPercent } : {}),
       ...(options.draft ? { draft: true } : {}),
+      ...(options.channel ? { channel: options.channel } : {}),
     }),
   });
 }
@@ -260,6 +265,17 @@ for (const artifact of options.artifact.map(parseArtifact)) {
   }
   if (lastError) {
     throw lastError;
+  }
+  if (options.mandatory) {
+    const channel = options.channel || "stable";
+    const response = await fetchImpl(`${api}/api/admin/release-support/${encodeURIComponent(channel)}/${encodeURIComponent(artifact.platform)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify({ minSupportedVersion: options.version, reason: "release --mandatory" }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`${artifact.platform} minimum supported version failed: ${response.status} ${json.code || ""} ${json.message || ""}`.trim());
+    console.log(`[release-server] ${artifact.platform} minimum supported version on ${channel} -> ${options.version}`);
   }
   if (createdNow) {
     if (rolloutPercent !== null || options.draft) console.log(`[release-server] ${artifact.platform} rollout -> ${options.draft ? "draft" : `${rolloutPercent}%`}`);

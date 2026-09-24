@@ -4,10 +4,13 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { DEFAULT_CHANNEL, offerRelease } from "../../services/release-offer.js";
+import { compareVersions } from "../../services/release-versions.js";
 import { ROLLOUT_ACTIONS, transitionRollout } from "../../services/release-rollouts.js";
 import { baselineFor, judgeHealth, versionHealth } from "../../services/release-health.js";
+import { RELEASE_CHANNELS, normalizeSupport, supportPolicyError } from "../../services/release-support.js";
 
 const createRolloutSchema = z.object({
+  channel: z.enum(["stable", "beta"]).optional(),
   // Omitted: a draft that reaches no one until started.
   percent: z.number().int().min(1).max(100).optional(),
   notes: z.string().max(2000).optional().nullable(),
@@ -41,24 +44,32 @@ export function registerAdminRolloutRoutes(app, { audit }) {
       },
     },
     async () => {
-      const [releases, rollouts, health, adoption] = await Promise.all([
+      const [releases, rollouts, health, adoption, supportRows] = await Promise.all([
         db.selectFrom("releases").selectAll().where("enabled", "=", true).execute(),
-        db.selectFrom("release_rollouts").selectAll().where("channel", "=", DEFAULT_CHANNEL).orderBy("created_at", "desc").execute(),
+        db.selectFrom("release_rollouts").selectAll().orderBy("created_at", "desc").execute(),
         versionHealth(),
         db.selectFrom("devices")
           .select([sql`platform || '-' || arch`.as("platform"), "app_version", sql`count(*)::int`.as("devices")])
           .where("last_seen_at", ">", sql`now() - interval '7 days'`)
           .groupBy([sql`platform || '-' || arch`, "app_version"])
           .execute(),
+        db.selectFrom("release_support").selectAll().execute().catch(() => []),
       ]);
       const platforms = [...new Set(releases.map((r) => r.platform))].sort();
       return {
         platforms: platforms.map((platform) => {
           const own = releases.filter((r) => r.platform === platform);
-          const ownRollouts = rollouts.filter((r) => r.platform === platform);
+          const allRollouts = rollouts.filter((r) => r.platform === platform);
+          const ownRollouts = allRollouts.filter((r) => r.channel === DEFAULT_CHANNEL);
+          const supportRow = supportRows.find((row) => row.platform === platform && row.channel === DEFAULT_CHANNEL) || null;
+          const support = normalizeSupport(supportRow);
           // What an anonymous device (the download page) and everyone gets.
-          const full = offerRelease({ releases: own, rollouts: ownRollouts }).release;
+          const full = offerRelease({ releases: own, rollouts: allRollouts, support: supportRow }).release;
           const active = ownRollouts.find((r) => ACTIVE.includes(r.state)) || null;
+          const betaActive = allRollouts.find((r) => r.channel === "beta" && ACTIVE.includes(r.state)) || null;
+          const belowMinimum = support.minSupportedVersion
+            ? adoption.filter((row) => row.platform === platform && row.app_version && compareVersions(row.app_version, support.minSupportedVersion) < 0).reduce((sum, row) => sum + row.devices, 0)
+            : 0;
           const activeWeek = adoption.filter((row) => row.platform === platform).reduce((sum, row) => sum + row.devices, 0);
           const onVersion = (version) => adoption.filter((row) => row.platform === platform && row.app_version === version).reduce((sum, row) => sum + row.devices, 0);
           const withHealth = (rollout) => {
@@ -75,9 +86,11 @@ export function registerAdminRolloutRoutes(app, { audit }) {
             platform,
             full: full ? { id: full.id, version: full.version, installed: onVersion(full.version) } : null,
             active: withHealth(active),
+            betaActive: withHealth(betaActive),
+            support: { ...support, belowMinimum, betaOverride: Boolean(supportRows.find((row) => row.platform === platform && row.channel === "beta")) },
             activeWeek,
             // Published but offered to no one yet: what "start" acts on.
-            drafts: ownRollouts.filter((r) => r.state === "draft").map((r) => ({ ...r, immutableFeed: Boolean(own.find((rel) => rel.id === r.release_id)?.immutable_feed) })),
+            drafts: allRollouts.filter((r) => r.state === "draft").map((r) => ({ ...r, immutableFeed: Boolean(own.find((rel) => rel.id === r.release_id)?.immutable_feed) })),
             halted: ownRollouts.filter((r) => r.state === "halted").slice(0, 3),
             recent: ownRollouts.slice(0, 8),
           };
@@ -101,9 +114,10 @@ export function registerAdminRolloutRoutes(app, { audit }) {
       const input = createRolloutSchema.parse(request.body || {});
       const release = await db.selectFrom("releases").selectAll().where("id", "=", request.params.id).executeTakeFirst();
       if (!release) return reply.code(404).send({ ok: false, code: "RELEASE_NOT_FOUND" });
-      const existing = await db.selectFrom("release_rollouts").select("id").where("release_id", "=", release.id).where("channel", "=", DEFAULT_CHANNEL).executeTakeFirst();
+      const channel = input.channel || DEFAULT_CHANNEL;
+      const existing = await db.selectFrom("release_rollouts").select("id").where("release_id", "=", release.id).where("channel", "=", channel).executeTakeFirst();
       if (existing) return reply.code(409).send({ ok: false, code: "ROLLOUT_EXISTS", id: existing.id, message: "This release already has a rollout; act on it instead." });
-      const draft = { id: publicId("rol"), release_id: release.id, platform: release.platform, version: release.version, channel: DEFAULT_CHANNEL, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
+      const draft = { id: publicId("rol"), release_id: release.id, platform: release.platform, version: release.version, channel, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
       let row = draft;
       if (input.percent !== undefined) {
         const decided = transitionRollout({ ...draft, immutable_feed: release.immutable_feed }, { action: "start", percent: input.percent }, { otherActive: await otherActive(draft) });
@@ -139,6 +153,62 @@ export function registerAdminRolloutRoutes(app, { audit }) {
         version: rollout.version, platform: rollout.platform, from: { state: rollout.state, percent: rollout.percent }, to: decided.patch, reason: input.reason || null,
       });
       return { ok: true, id: rollout.id, state: decided.patch.state, percent: decided.patch.percent ?? rollout.percent };
+    },
+  );
+}
+
+const supportSchema = z.object({
+  minSupportedVersion: z.string().max(40).optional().nullable(),
+  blockedVersions: z.array(z.string().max(40)).max(50).optional(),
+  mandateDeadline: z.string().max(40).optional().nullable(),
+  reason: z.string().max(500).optional().nullable(),
+});
+
+/** Write one channel × platform support policy; shared by the route and the release-row shortcut. */
+export async function writeReleaseSupport({ channel, platform, patch, audit, request }) {
+  const current = normalizeSupport(await db.selectFrom("release_support").selectAll()
+    .where("channel", "=", channel).where("platform", "=", platform).executeTakeFirst());
+  const next = {
+    minSupportedVersion: patch.minSupportedVersion === undefined ? current.minSupportedVersion : String(patch.minSupportedVersion || "").trim(),
+    blockedVersions: patch.blockedVersions === undefined ? current.blockedVersions : [...new Set(patch.blockedVersions.map((v) => String(v).trim()).filter(Boolean))],
+    mandateDeadline: patch.mandateDeadline === undefined ? current.mandateDeadline : String(patch.mandateDeadline || "").trim(),
+  };
+  const error = supportPolicyError(next);
+  if (error) return { ok: false, code: "RELEASE_SUPPORT_INVALID", message: error };
+  await db.insertInto("release_support").values({
+    channel, platform,
+    min_supported_version: next.minSupportedVersion || null,
+    blocked_versions: JSON.stringify(next.blockedVersions),
+    mandate_deadline: next.mandateDeadline ? new Date(next.mandateDeadline) : null,
+    updated_by: "admin", updated_at: new Date(),
+  }).onConflict((oc) => oc.columns(["channel", "platform"]).doUpdateSet({
+    min_supported_version: next.minSupportedVersion || null,
+    blocked_versions: JSON.stringify(next.blockedVersions),
+    mandate_deadline: next.mandateDeadline ? new Date(next.mandateDeadline) : null,
+    updated_by: "admin", updated_at: new Date(),
+  })).execute();
+  await audit(request, "release_support.update", "release_support", `${channel}:${platform}`, { from: current, to: next, reason: patch.reason || null });
+  return { ok: true, support: next };
+}
+
+export function registerAdminReleaseSupportRoutes(app, { audit }) {
+  app.patch(
+    "/api/admin/release-support/:channel/:platform",
+    {
+      schema: {
+        tags: ["admin:releases"],
+        summary: "Change what a channel × platform still supports (fields left out keep their value)",
+        description: "Minimum supported version (clients below must update), blocked versions (never offered; clients on one move to a newer version when one exists), and an optional deadline after which the mandate cannot be postponed.",
+        body: zodBody(supportSchema),
+        response: { 200: okResponse({ support: { type: "object", additionalProperties: true } }) },
+      },
+    },
+    async (request, reply) => {
+      const channel = String(request.params.channel || "");
+      if (!RELEASE_CHANNELS.includes(channel)) return reply.code(400).send({ ok: false, code: "RELEASE_CHANNEL_UNKNOWN", message: `Channel must be one of ${RELEASE_CHANNELS.join(", ")}.` });
+      const result = await writeReleaseSupport({ channel, platform: String(request.params.platform || ""), patch: supportSchema.parse(request.body || {}), audit, request });
+      if (!result.ok) return reply.code(400).send(result);
+      return result;
     },
   );
 }

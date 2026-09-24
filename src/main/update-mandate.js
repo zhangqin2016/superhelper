@@ -53,6 +53,8 @@ function createUpdateMandate(host) {
       currentVersion: state.currentVersion || host.appVersion(),
       latestVersion: state.hasUpdate ? state.latestVersion : "",
       releaseRequiredVersion: state.requiredVersion || "",
+      releaseRequiredReason: state.requiredReason || "",
+      mandateDeadline: state.mandateDeadline || "",
       policy: enforcement.normalizeUpdatePolicy(raw),
       deferral: readDeferral(),
       now: Date.now(),

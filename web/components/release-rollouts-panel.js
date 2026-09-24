@@ -4,7 +4,7 @@ import { DangerForm } from "./danger-form";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useI18n } from "../lib/use-i18n";
-import { rolloutAction } from "../app/admin/actions";
+import { rolloutAction, setReleaseSupportAction } from "../app/admin/actions";
 
 // The widening steps offered from a given percentage. Only upward: stopping is pause/halt.
 const STEPS = [1, 5, 10, 25, 50, 100];
@@ -98,6 +98,45 @@ function HaltedRollout({ rollout, copy }) {
   );
 }
 
+function localInput(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// What the platform still supports: the one place "must update" comes from.
+function SupportEditor({ platform, support = {}, copy }) {
+  return (
+    <details className="mt-3 rounded-lg border border-slate-200 p-3 text-sm">
+      <summary className="cursor-pointer">
+        <span className="font-medium">{copy.support}</span>{" "}
+        {support.minSupportedVersion
+          ? <span className="text-slate-700">{copy.minimum} <span className="font-mono">{support.minSupportedVersion}</span> · {copy.belowMinimum.replace("{n}", String(support.belowMinimum || 0))}</span>
+          : <span className="text-slate-500">{copy.noMinimum}</span>}
+        {(support.blockedVersions || []).map((v) => <Badge key={v} variant="danger" className="ms-1">{copy.blocked} {v}</Badge>)}
+        {support.mandateDeadline ? <span className="ms-1 text-xs text-slate-500">{copy.deadlineShort} {new Date(support.mandateDeadline).toLocaleDateString()}</span> : null}
+      </summary>
+      <form action={setReleaseSupportAction} className="mt-3 grid gap-2">
+        <input type="hidden" name="platform" value={platform} />
+        <input type="hidden" name="channel" value="stable" />
+        <label className="grid gap-1 text-xs text-slate-600">{copy.minimum}
+          <input name="minSupportedVersion" defaultValue={support.minSupportedVersion || ""} placeholder="0.1.185" className="rounded-md border border-slate-300 px-2 py-1 font-mono text-sm" />
+        </label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.blockedList}
+          <input name="blockedVersions" defaultValue={(support.blockedVersions || []).join(", ")} placeholder="0.1.184" className="rounded-md border border-slate-300 px-2 py-1 font-mono text-sm" />
+        </label>
+        <label className="grid gap-1 text-xs text-slate-600">{copy.deadline}
+          <input type="datetime-local" name="mandateDeadline" defaultValue={localInput(support.mandateDeadline)} className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+        </label>
+        <p className="text-xs text-slate-500">{copy.supportHelp}</p>
+        <div><Button variant="outline" size="sm">{copy.saveSupport}</Button></div>
+      </form>
+    </details>
+  );
+}
+
 /** Per platform: who gets what now, the rollout in progress, and how it is doing. */
 export function ReleaseRolloutsPanel({ platforms = [] }) {
   const { t } = useI18n();
@@ -117,9 +156,13 @@ export function ReleaseRolloutsPanel({ platforms = [] }) {
             {entry.full ? <span className="ms-2 text-xs text-slate-500">{copy.installed.replace("{n}", String(entry.full.installed || 0))}</span> : null}
           </p>
           {entry.active ? <ActiveRollout rollout={entry.active} copy={copy} /> : null}
+          {entry.betaActive ? (
+            <p className="mt-2 text-xs text-slate-600"><Badge variant="brand">beta</Badge> <span className="font-mono">{entry.betaActive.version}</span> {copy.states[entry.betaActive.state]} {entry.betaActive.percent}%</p>
+          ) : null}
           {!entry.active ? (entry.drafts || []).map((rollout) => <StartRollout key={rollout.id} rollout={rollout} copy={copy} />) : null}
           {(entry.halted || []).map((rollout) => <HaltedRollout key={rollout.id} rollout={rollout} copy={copy} />)}
           {!entry.active && !(entry.drafts || []).length && !(entry.halted || []).length ? <p className="mt-3 text-xs text-slate-500">{copy.nothingPending}</p> : null}
+          <SupportEditor platform={entry.platform} support={entry.support} copy={copy} />
         </section>
       ))}
     </div>

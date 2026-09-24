@@ -313,6 +313,36 @@ export async function rolloutAction(formData) {
   if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
 }
 
+// A channel × platform support policy: minimum supported version, blocked
+// versions, deadline. "block"/"unblock" edit the list for one version.
+export async function setReleaseSupportAction(formData) {
+  const channel = text(formData, "channel") || "stable";
+  const platform = text(formData, "platform");
+  const op = text(formData, "op");
+  let body;
+  if (op === "block" || op === "unblock") {
+    const current = text(formData, "blocked").split(",").map((v) => v.trim()).filter(Boolean);
+    const version = text(formData, "version");
+    body = { blockedVersions: op === "block" ? [...new Set([...current, version])] : current.filter((v) => v !== version), reason: op };
+  } else {
+    const deadline = text(formData, "mandateDeadline");
+    body = {
+      minSupportedVersion: text(formData, "minSupportedVersion"),
+      blockedVersions: text(formData, "blockedVersions").split(",").map((v) => v.trim()).filter(Boolean),
+      mandateDeadline: deadline ? new Date(deadline).toISOString() : "",
+    };
+  }
+  let failure = "";
+  try {
+    await apiPatch(`/api/admin/release-support/${encodeURIComponent(channel)}/${encodeURIComponent(platform)}`, body);
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
+  }
+  revalidatePath("/admin/releases");
+  revalidatePath("/admin");
+  if (failure) redirect(`/admin/releases?rolloutError=${encodeURIComponent(failure.slice(0, 300))}`);
+}
+
 export async function setReleaseForceAction(formData) {
   await apiPatch(`/api/admin/releases/${text(formData, "id")}`, { forceUpdate: text(formData, "forceUpdate") === "true" });
   revalidatePath("/admin/releases");

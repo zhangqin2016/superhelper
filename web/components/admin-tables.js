@@ -16,6 +16,7 @@ import {
   setConfigProfileEnabledAction,
   setReleaseEnabledAction,
   setReleaseForceAction,
+  setReleaseSupportAction,
   setRuntimePackEnabledAction,
   setSkillPackageEnabledAction,
   setWorkspaceAppEnabledAction,
@@ -159,9 +160,10 @@ function fileName(url) {
   return decodeURIComponent(value.split("?")[0].split("/").pop() || "") || "-";
 }
 
-export function ReleasesTable({ rows, latest = {}, empty }) {
+export function ReleasesTable({ rows, latest = {}, support = {}, empty }) {
   const { t } = useI18n();
   const copy = t.admin.releasesList;
+  const rollouts = t.admin.rollouts;
   const columns = [
     { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.version}</span> },
     { accessorKey: "platform", header: t.admin.cols.platform },
@@ -177,12 +179,15 @@ export function ReleasesTable({ rows, latest = {}, empty }) {
       },
     },
     {
-      // Mandatory is a floor: every client below this version must update.
-      accessorKey: "force_update",
+      // "Must update" comes from the platform's support policy, shown on the row it names.
+      id: "support",
       header: t.admin.cols.force,
-      cell: ({ row }) => row.original.force_update
-        ? <Badge variant="danger" title={copy.mandatoryHint}>{copy.mandatory}</Badge>
-        : <span className="text-slate-400">{t.admin.cols.no}</span>,
+      cell: ({ row }) => {
+        const policy = support[row.original.platform] || {};
+        if ((policy.blockedVersions || []).includes(row.original.version)) return <Badge variant="danger">{rollouts.blocked}</Badge>;
+        if (policy.minSupportedVersion === row.original.version) return <Badge variant="warning" title={copy.mandatoryHint}>{rollouts.minimum}</Badge>;
+        return <span className="text-slate-400">—</span>;
+      },
     },
     { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? <span className="tabular-nums">{(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB</span> : "-" },
     { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
@@ -197,19 +202,47 @@ export function ReleasesTable({ rows, latest = {}, empty }) {
             <input type="hidden" name="enabled" value={row.original.enabled ? "false" : "true"} />
             <Button variant="outline" size="sm">{row.original.enabled ? t.admin.cols.disableAction : t.admin.cols.enableAction}</Button>
           </form>
-          {row.original.force_update ? (
-            <form action={setReleaseForceAction}>
-              <input type="hidden" name="id" value={row.original.id} />
-              <input type="hidden" name="forceUpdate" value="false" />
-              <Button variant="outline" size="sm">{copy.unmarkMandatory}</Button>
-            </form>
-          ) : (
-            <DangerForm action={setReleaseForceAction} confirm={copy.markMandatoryConfirm.replace("{version}", row.original.version).replace("{platform}", row.original.platform)}>
-              <input type="hidden" name="id" value={row.original.id} />
-              <input type="hidden" name="forceUpdate" value="true" />
-              <Button variant="outline" size="sm">{copy.markMandatory}</Button>
-            </DangerForm>
-          )}
+          {(() => {
+            const policy = support[row.original.platform] || {};
+            const isMinimum = policy.minSupportedVersion === row.original.version;
+            const blocked = policy.blockedVersions || [];
+            const isBlocked = blocked.includes(row.original.version);
+            const place = (text) => text.replace("{version}", row.original.version).replace("{platform}", row.original.platform);
+            return (
+              <>
+                {isMinimum ? (
+                  <form action={setReleaseForceAction}>
+                    <input type="hidden" name="id" value={row.original.id} />
+                    <input type="hidden" name="forceUpdate" value="false" />
+                    <Button variant="outline" size="sm">{copy.unmarkMandatory}</Button>
+                  </form>
+                ) : !isBlocked ? (
+                  <DangerForm action={setReleaseForceAction} confirm={place(rollouts.markMinimumConfirm)}>
+                    <input type="hidden" name="id" value={row.original.id} />
+                    <input type="hidden" name="forceUpdate" value="true" />
+                    <Button variant="outline" size="sm">{rollouts.markMinimum}</Button>
+                  </DangerForm>
+                ) : null}
+                {isBlocked ? (
+                  <form action={setReleaseSupportAction}>
+                    <input type="hidden" name="platform" value={row.original.platform} />
+                    <input type="hidden" name="op" value="unblock" />
+                    <input type="hidden" name="version" value={row.original.version} />
+                    <input type="hidden" name="blocked" value={blocked.join(",")} />
+                    <Button variant="outline" size="sm">{rollouts.unblock}</Button>
+                  </form>
+                ) : !isMinimum ? (
+                  <DangerForm action={setReleaseSupportAction} confirm={place(rollouts.blockConfirm)}>
+                    <input type="hidden" name="platform" value={row.original.platform} />
+                    <input type="hidden" name="op" value="block" />
+                    <input type="hidden" name="version" value={row.original.version} />
+                    <input type="hidden" name="blocked" value={blocked.join(",")} />
+                    <Button variant="danger" size="sm">{rollouts.block}</Button>
+                  </DangerForm>
+                ) : null}
+              </>
+            );
+          })()}
         </RowActions>
       ),
     },

@@ -48,9 +48,10 @@ await check("a forced release is a floor, not a flag on the newest row", () => {
   assert.equal(compare("0.1.0-beta", "0.1.0") < 0, true, "a pre-release comes before its release");
   assert.deepEqual([...releaseVersions.forcedFloors([{ platform: "darwin-arm64", version: "0.1.185", force_update: true }, { platform: "darwin-arm64", version: "0.1.190", force_update: false }])], [["darwin-arm64", "0.1.185"]]);
   const catalog = fs.readFileSync(path.join(ROOT, "server/src/routes/public/catalog.js"), "utf8");
-  // The endpoint answers the floor through the one offer decision (release-offer.js).
-  assert.match(catalog, /const \{ release, requiredVersion \} = offerRelease\(/, "the update endpoint answers the floor");
-  assert.match(fs.readFileSync(path.join(ROOT, "server/src/services/release-offer.js"), "utf8"), /requiredVersionFor\(visible, currentVersion\)/);
+  // The endpoint answers the floor through the one offer decision (release-offer.js),
+  // which takes it from the platform's support policy (release-support.js).
+  assert.match(catalog, /const \{ release, requiredVersion, requiredReason, mandateDeadline \} = offerRelease\(/, "the update endpoint answers the floor");
+  assert.match(fs.readFileSync(path.join(ROOT, "server/src/services/release-offer.js"), "utf8"), /supportRequirement\(policy, \{ currentVersion, offeredVersion/);
   assert.match(catalog, /force: Boolean\(requiredVersion\)/);
   assert.ok(!/function compareVersions/.test(catalog), "version order is not re-implemented in the endpoint");
 });
@@ -95,6 +96,21 @@ await check("the decision: which floor binds, whether a build reaches it, what m
   assert.deepEqual([tuned.countdownSeconds, tuned.deferMinutes, tuned.maxDeferrals], [10, 1440, 3], "a malformed payload is bounded, never trusted");
   assert.equal(policy(null).source, "fallback");
   assert.equal(policy({ update: { countdownSeconds: 30 } }).source, "delivered");
+});
+
+await check("a deadline ends postponement; a blocked version says so", () => {
+  const p = policy({ update: { countdownSeconds: 30, deferMinutes: 20, maxDeferrals: 3 } });
+  const input = { currentVersion: "0.1.180", latestVersion: "0.1.186", releaseRequiredVersion: "0.1.185", policy: p };
+  const before = decide({ ...input, mandateDeadline: new Date(2_000_000).toISOString() });
+  assert.equal(before.canDefer, true);
+  assert.equal(before.pastDeadline, false);
+  const after = decide({ ...input, mandateDeadline: new Date(500_000).toISOString(), deferral: { version: "0.1.185", count: 1, until: 3_000_000 } });
+  assert.equal(after.canDefer, false, "past the deadline no more postponement");
+  assert.equal(after.deferredUntil, null, "and an earlier postponement no longer holds");
+  assert.equal(decide({ ...input, releaseRequiredReason: "blocked" }).reasons[0], "blocked");
+  const { requirementOf } = enforcement;
+  assert.deepEqual(requirementOf({ requiredVersion: "0.1.185", requiredReason: "below_minimum", mandateDeadline: "2026-10-01T00:00:00.000Z" }), { requiredVersion: "0.1.185", requiredReason: "below_minimum", mandateDeadline: "2026-10-01T00:00:00.000Z" });
+  assert.equal(requirementOf({ force: true, version: "0.1.9" }).requiredVersion, "0.1.9", "an older server's newest-row flag still binds");
 });
 
 await check("postponements belong to one mandate and run out", () => {
@@ -244,7 +260,7 @@ try {
 await check("the console can mark a shipped release mandatory, and shows who is still below it", () => {
   const releases = fs.readFileSync(path.join(ROOT, "server/src/routes/admin/releases.js"), "utf8");
   assert.match(releases, /forceUpdate: z\.boolean\(\)\.optional\(\)/, "an existing release can be made mandatory");
-  assert.match(releases, /force_update: input\.forceUpdate/);
+  assert.match(releases, /\? \{ minSupportedVersion: release\.version \}/, "which sets the platform's minimum supported version");
   const attention = fs.readFileSync(path.join(ROOT, "server/src/services/admin-attention.js"), "utf8");
   assert.match(attention, /kind: "fleetBelowRequired"/, "the dashboard counts active devices below the floor");
   const tables = fs.readFileSync(path.join(ROOT, "web/components/admin-tables.js"), "utf8");
@@ -268,7 +284,9 @@ await check("only --mandatory makes a release mandatory; --force can no longer d
   assert.ok(!/publishArgs\.push\("--force"\)|serverArgs\.push\("--force"\)/.test(oneClick), "--force is not forwarded to a release step");
   assert.match(oneClick, /if \(options\.mandatory\) serverArgs\.push\("--mandatory"\)/);
   assert.match(oneClick, /if \(options\.force\) catalogArgs\.push\("--force"\)/, "--force keeps its catalog meaning");
-  assert.match(fs.readFileSync(path.join(ROOT, "scripts/publish-release-server.mjs"), "utf8"), /forceUpdate: Boolean\(options\.mandatory\)/);
+  const serverScript = fs.readFileSync(path.join(ROOT, "scripts/publish-release-server.mjs"), "utf8");
+  assert.match(serverScript, /forceUpdate: false,/, "no row-level mandatory flag is written");
+  assert.match(serverScript, /if \(options\.mandatory\) \{[\s\S]*release-support\/[\s\S]*minSupportedVersion: options\.version/, "--mandatory sets the platform's minimum supported version");
   assert.match(fs.readFileSync(path.join(ROOT, "scripts/release-admin.mjs"), "utf8"), /force: Boolean\(options\.mandatory\),/);
   const { spawnSync } = await import("node:child_process");
   for (const script of ["scripts/publish-release-server.mjs", "scripts/release-admin.mjs"]) {

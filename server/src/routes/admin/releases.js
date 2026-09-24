@@ -7,6 +7,8 @@ import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/ad
 import { latestReleases } from "../../services/release-versions.js";
 import { DEFAULT_CHANNEL } from "../../services/release-offer.js";
 import { transitionRollout } from "../../services/release-rollouts.js";
+import { normalizeSupport } from "../../services/release-support.js";
+import { writeReleaseSupport } from "./rollouts.js";
 
 const createReleaseSchema = z.object({
   version: z.string().min(1).max(40),
@@ -25,6 +27,7 @@ const createReleaseSchema = z.object({
   // rollout row and is therefore offered to everyone.
   rolloutPercent: z.number().int().min(1).max(100).optional(),
   draft: z.boolean().optional(),
+  channel: z.enum(["stable", "beta"]).optional(),
 });
 
 // A release can be switched on/off, and marked mandatory after the fact: an
@@ -83,15 +86,19 @@ export function registerAdminReleaseRoutes(app, { audit }) {
       return reply.code(400).send({ ok: false, code: "ROLLOUT_DRAFT_AND_PERCENT", message: "Pass either draft or rolloutPercent, not both." });
     }
     const id = publicId("rel");
-    const staged = input.draft || input.rolloutPercent !== undefined;
+    const channel = input.channel || DEFAULT_CHANNEL;
+    // A beta release is always staged: without a rollout it would be legacy — offered to everyone.
+    const staged = input.draft || input.rolloutPercent !== undefined || channel !== DEFAULT_CHANNEL;
     let rollout = null;
     if (staged) {
-      rollout = { id: publicId("rol"), release_id: id, platform: input.platform, version: input.version, channel: DEFAULT_CHANNEL, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
-      if (input.rolloutPercent !== undefined) {
+      rollout = { id: publicId("rol"), release_id: id, platform: input.platform, version: input.version, channel, state: "draft", percent: 0, notes: input.notes || null, created_by: "admin" };
+      // Beta is opt-in: a beta release with no percentage goes to all of beta.
+      const startAt = input.rolloutPercent ?? (!input.draft && channel !== DEFAULT_CHANNEL ? 100 : undefined);
+      if (startAt !== undefined) {
         const active = await db.selectFrom("release_rollouts").select(["id", "version"])
-          .where("channel", "=", DEFAULT_CHANNEL).where("platform", "=", input.platform)
+          .where("channel", "=", channel).where("platform", "=", input.platform)
           .where("state", "in", ["rolling", "paused"]).executeTakeFirst();
-        const decided = transitionRollout({ ...rollout, immutable_feed: input.immutableFeed }, { action: "start", percent: input.rolloutPercent }, { otherActive: active || null });
+        const decided = transitionRollout({ ...rollout, immutable_feed: input.immutableFeed }, { action: "start", percent: startAt }, { otherActive: active || null });
         if (!decided.ok) return reply.code(400).send(decided);
         rollout = { ...rollout, ...decided.patch };
       }
@@ -130,15 +137,29 @@ export function registerAdminReleaseRoutes(app, { audit }) {
         response: { 200: okResponse({ id: { type: "string" } }) },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const input = updateReleaseSchema.parse(request.body);
-      const changes = {
-        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-        ...(input.forceUpdate !== undefined ? { force_update: input.forceUpdate } : {}),
-      };
-      await db.updateTable("releases").set(changes).where("id", "=", request.params.id).execute();
-      await audit(request, "release.update", "release", request.params.id, changes);
-      return { ok: true, id: request.params.id };
+      const release = await db.selectFrom("releases").select(["id", "version", "platform"]).where("id", "=", request.params.id).executeTakeFirst();
+      if (!release) return reply.code(404).send({ ok: false, code: "RELEASE_NOT_FOUND" });
+      if (input.enabled !== undefined) {
+        await db.updateTable("releases").set({ enabled: input.enabled }).where("id", "=", release.id).execute();
+        await audit(request, "release.update", "release", release.id, { enabled: input.enabled });
+      }
+      // "Mandatory" is the platform's minimum supported version, not a flag on
+      // a row: making a release mandatory sets that floor; unmarking clears it
+      // only if it is this release's version.
+      if (input.forceUpdate !== undefined) {
+        const current = normalizeSupport(await db.selectFrom("release_support").selectAll()
+          .where("channel", "=", DEFAULT_CHANNEL).where("platform", "=", release.platform).executeTakeFirst());
+        const patch = input.forceUpdate
+          ? { minSupportedVersion: release.version }
+          : current.minSupportedVersion === release.version ? { minSupportedVersion: "" } : null;
+        if (patch) {
+          const written = await writeReleaseSupport({ channel: DEFAULT_CHANNEL, platform: release.platform, patch, audit, request });
+          if (!written.ok) return reply.code(400).send(written);
+        }
+      }
+      return { ok: true, id: release.id };
     },
   );
 }

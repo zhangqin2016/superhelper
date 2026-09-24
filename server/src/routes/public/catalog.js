@@ -10,6 +10,7 @@ import {
 } from "../../services/qiniu-upload.js";
 import { compareVersions, newestRelease } from "../../services/release-versions.js";
 import { DEFAULT_CHANNEL, offerRelease, releaseFeedUrl } from "../../services/release-offer.js";
+import { resolveUpdateChannel } from "../../services/release-channel.js";
 
 const contactRequestSchema = z.object({
   name: z.string().min(1).max(120),
@@ -130,7 +131,7 @@ export async function publicCatalogRoutes(app) {
     const platform = String(request.query?.platform || "");
     const currentVersion = String(request.query?.version || "");
     const deviceId = String(request.headers["x-lily-device-id"] || "").trim();
-    const [releases, rollouts] = await Promise.all([
+    const [releases, rollouts, channel] = await Promise.all([
       db.selectFrom("releases").selectAll()
         .where("platform", "=", platform)
         .where("enabled", "=", true)
@@ -139,13 +140,20 @@ export async function publicCatalogRoutes(app) {
         .execute(),
       db.selectFrom("release_rollouts").selectAll()
         .where("platform", "=", platform)
-        .where("channel", "=", DEFAULT_CHANNEL)
         .execute()
         .catch(() => []), // before the rollout migration: every release is offered, as before
+      resolveUpdateChannel(deviceId),
     ]);
+    // The channel's own support policy, else stable's; none = no floor, as before.
+    const supportRows = await db.selectFrom("release_support").selectAll()
+      .where("platform", "=", platform)
+      .where("channel", "in", [...new Set([channel, DEFAULT_CHANNEL])])
+      .execute()
+      .catch(() => []);
+    const support = supportRows.find((row) => row.channel === channel) || supportRows.find((row) => row.channel === DEFAULT_CHANNEL) || null;
 
     // What this device may see is decided in one place (release-offer.js).
-    const { release, requiredVersion } = offerRelease({ releases, rollouts, deviceId, currentVersion });
+    const { release, requiredVersion, requiredReason, mandateDeadline } = offerRelease({ releases, rollouts, deviceId, currentVersion, channel, support });
     if (!release) return { hasUpdate: false };
     return {
       hasUpdate: compareVersions(release.version, currentVersion) > 0,
@@ -157,6 +165,9 @@ export async function publicCatalogRoutes(app) {
       notes: release.notes || "",
       force: Boolean(requiredVersion),
       requiredVersion,
+      requiredReason,
+      mandateDeadline,
+      channel,
       feedUrl: releaseFeedUrl(config.qiniuPublicBaseUrl, release),
     };
   });

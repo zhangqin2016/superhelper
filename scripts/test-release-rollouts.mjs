@@ -76,6 +76,33 @@ await check("a staged release reaches its slice, and only its slice", () => {
   assert.equal(releaseVisibleTo(rel("x", "1"), null, ""), true);
 });
 
+await check("support policy: a floor, a block that stops the spread, never a downgrade", async () => {
+  const { supportRequirement, normalizeSupport, supportPolicyError } = await import("../server/src/services/release-support.js");
+  const support = normalizeSupport({ min_supported_version: "0.1.180", blocked_versions: ["0.1.184"], mandate_deadline: "2026-10-01T00:00:00Z" });
+  assert.deepEqual(supportRequirement(support, { currentVersion: "0.1.175", offeredVersion: "0.1.183" }), { requiredVersion: "0.1.180", reason: "below_minimum", deadline: "2026-10-01T00:00:00.000Z" });
+  assert.equal(supportRequirement(support, { currentVersion: "0.1.184", offeredVersion: "0.1.185" }).reason, "blocked", "on a blocked version with a newer one: move");
+  assert.equal(supportRequirement(support, { currentVersion: "0.1.184", offeredVersion: "0.1.183" }).requiredVersion, "", "no newer build: the block forces no one (installers do not downgrade)");
+  assert.equal(supportRequirement(normalizeSupport(null), { currentVersion: "0.1.1", offeredVersion: "0.1.9" }).requiredVersion, "", "no policy: no floor, as today");
+  const releases = [rel("r1", "0.1.183"), rel("r2", "0.1.184")];
+  assert.equal(offerRelease({ releases, rollouts: [], support: { blocked_versions: ["0.1.184"] } }).release.version, "0.1.183", "a blocked version is offered to no one");
+  assert.match(supportPolicyError({ minSupportedVersion: "0.1.184", blockedVersions: ["0.1.184"] }), /both/);
+  assert.match(supportPolicyError({ minSupportedVersion: "latest" }), /version/);
+});
+
+await check("channels: beta sees stable and its own; a beta-only release is invisible to stable", async () => {
+  const releases = [rel("r1", "0.1.183"), rel("r2", "0.1.184", { immutable_feed: true })];
+  const betaOnly = [{ id: "rol_b", release_id: "r2", channel: "beta", state: "complete", percent: 100 }];
+  assert.equal(offerRelease({ releases, rollouts: betaOnly, deviceId: "dev_1" }).release.version, "0.1.183");
+  assert.equal(offerRelease({ releases, rollouts: betaOnly, deviceId: "dev_1", channel: "beta" }).release.version, "0.1.184");
+  const { channelFromProfiles } = await import("../server/src/services/release-channel.js");
+  assert.equal(channelFromProfiles([]), "stable");
+  assert.equal(channelFromProfiles([{ config: { policy: { updateChannel: "beta" } } }]), "beta");
+  assert.equal(channelFromProfiles([{ config: { policy: { updateChannel: "beta" } } }, { config: JSON.stringify({ policy: { updateChannel: "stable" } }) }]), "stable", "the later (more specific) rule wins");
+  assert.equal(channelFromProfiles([{ config: { policy: { updateChannel: "nightly" } } }]), "stable", "an unknown channel is never riskier than stable");
+  const { updatePolicyError } = await import("../server/src/services/update-policy.js");
+  assert.match(updatePolicyError({ updateChannel: "nightly" }).message, /stable or beta/);
+});
+
 await check("the rollout state machine: only widens, needs its own feed, one at a time", () => {
   const base = { state: "draft", percent: 0, immutable_feed: true };
   assert.deepEqual(transitionRollout(base, { action: "start", percent: 10 }, { now: new Date(0) }).patch, { state: "rolling", percent: 10, started_at: new Date(0) });
@@ -109,7 +136,8 @@ await check("health compares like with like", () => {
 
 await check("the update endpoint decides through the offer, and survives the migration not having run", () => {
   const catalog = read("server/src/routes/public/catalog.js");
-  assert.match(catalog, /offerRelease\(\{ releases, rollouts, deviceId, currentVersion \}\)/);
+  assert.match(catalog, /offerRelease\(\{ releases, rollouts, deviceId, currentVersion, channel, support \}\)/);
+  assert.match(catalog, /resolveUpdateChannel\(deviceId\)/, "the channel is resolved on the server from the device's delivery rules");
   assert.match(catalog, /request\.headers\["x-lily-device-id"\]/);
   assert.match(catalog, /\.catch\(\(\) => \[\]\), \/\/ before the rollout migration/);
   assert.match(catalog, /feedUrl: releaseFeedUrl\(config\.qiniuPublicBaseUrl, release\)/);
@@ -120,7 +148,7 @@ await check("the update endpoint decides through the offer, and survives the mig
 
 await check("a staged publish leaves the shared fallbacks alone", () => {
   const oneClick = read("scripts/release-one-click.mjs");
-  assert.match(oneClick, /const offerEveryoneNow = !options\.draft && \(rolloutPercent === null \|\| rolloutPercent === 100\);/, "omitting --rollout is today's behaviour");
+  assert.match(oneClick, /const offerEveryoneNow = releaseChannel === "stable" && !options\.draft && \(rolloutPercent === null \|\| rolloutPercent === 100\);/, "omitting --rollout is today's behaviour; beta never moves the stable fallbacks");
   const pointerBlock = oneClick.slice(oneClick.indexOf("if (!offerEveryoneNow) {"), oneClick.indexOf('label: "mutable latest pointers"'));
   assert.match(pointerBlock, /\} else if \(options\.upload \|\| options\["dry-run"\]\) \{/, "pointer uploads only in the everyone-now branch");
   assert.match(oneClick, /const cdnUrls = offerEveryoneNow \? \[/, "and only then refreshes the shared pointers");

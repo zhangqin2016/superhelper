@@ -2405,7 +2405,7 @@
   "diagnostics.issue": "{label}：{detail}",
   "update.mandate.pill": "必须更新",
   "update.mandate.title": "需要更新到 {version}",
-  "update.mandate.reasonRelease": "管理员已将此版本设为强制更新。",
+  "update.mandate.reasonRelease": "管理员设置的最低支持版本高于你当前的版本。",
   "update.mandate.reasonPolicy": "管理员要求此设备的最低版本不低于该版本。",
   "update.mandate.reasonBoth": "管理员已设为强制更新，且此设备要求最低版本。",
   "update.mandate.countdown": "{seconds} 秒后自动重启安装，未保存的输入请先处理。",
@@ -2419,5 +2419,8 @@
   "update.mandate.blocked.NO_AUTO_UPDATE_FEED": "必须更新到 {version}，但自动更新源不可用，请联系管理员获取安装包。",
   "update.mandate.blocked.DOWNLOAD_FAILED": "必须更新到 {version}，自动下载失败，可点下方按钮手动下载，稍后也会自动重试。",
   "update.error.DEFER_NOT_ALLOWED": "推迟次数已用完，更新将在倒计时结束后安装。",
-  "update.error.DEFER_NOT_SAVED": "无法记录推迟，请稍后再试。"
+  "update.error.DEFER_NOT_SAVED": "无法记录推迟，请稍后再试。",
+  "update.mandate.reasonBlocked": "你当前的版本已被管理员停用，需要更新到新版本。",
+  "update.mandate.deadline": "须在 {when} 前完成更新。",
+  "update.mandate.deadlinePassed": "更新截止时间（{when}）已过，不能再推迟。"
 }

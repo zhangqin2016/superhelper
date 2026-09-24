@@ -4,8 +4,10 @@
  * Whether this client MUST update, to what, and how — decided in one place.
  *
  * Two floors can make an update mandatory, and both come from the server:
- *   - a release marked mandatory (the update endpoint answers `requiredVersion`,
- *     the highest forced release above this client);
+ *   - the platform's support policy on the server (the update endpoint answers
+ *     `requiredVersion` + `requiredReason`: below the minimum supported version,
+ *     or on a blocked version with a newer one available), with an optional
+ *     `mandateDeadline` after which it can no longer be postponed;
  *   - the delivered `policy.minAppVersion` of this client's scope (global,
  *     group, license, device — set on a delivery rule).
  * How a mandatory update lands — the restart countdown, how long "later"
@@ -61,19 +63,33 @@ function normalizeUpdatePolicy(raw) {
 const NOT_REQUIRED = Object.freeze({ required: false });
 
 /**
+ * The mandate an update answer carries: the server's floor, why, and until
+ * when it may be postponed. Older servers only flagged the newest release.
+ */
+function requirementOf(answer = {}) {
+  return {
+    requiredVersion: String(answer.requiredVersion || (answer.force ? answer.version : "") || ""),
+    requiredReason: String(answer.requiredReason || ""),
+    mandateDeadline: String(answer.mandateDeadline || ""),
+  };
+}
+
+/**
  * @param {object} input
  * @param {string} input.currentVersion
  * @param {string} input.latestVersion            newest installable release
  * @param {string} [input.releaseRequiredVersion] from the update endpoint
  * @param {ReturnType<typeof normalizeUpdatePolicy>} input.policy
  * @param {{ version?: string, count?: number, until?: number } | null} [input.deferral]  persisted
+ * @param {string} [input.releaseRequiredReason]  "below_minimum" | "blocked" from the server
+ * @param {string} [input.mandateDeadline]        ISO date; after it, no more postponement
  * @param {number} input.now
  * @param {(a: string, b: string) => number} input.compareVersions
  */
-function decideUpdateEnforcement({ currentVersion, latestVersion, releaseRequiredVersion = "", policy, deferral = null, now, compareVersions }) {
+function decideUpdateEnforcement({ currentVersion, latestVersion, releaseRequiredVersion = "", releaseRequiredReason = "", mandateDeadline = "", policy, deferral = null, now, compareVersions }) {
   const above = (version) => Boolean(version) && compareVersions(version, currentVersion) > 0;
   const floors = [];
-  if (above(releaseRequiredVersion)) floors.push({ version: String(releaseRequiredVersion), reason: "release" });
+  if (above(releaseRequiredVersion)) floors.push({ version: String(releaseRequiredVersion), reason: releaseRequiredReason === "blocked" ? "blocked" : "release" });
   if (above(policy?.minAppVersion)) floors.push({ version: String(policy.minAppVersion), reason: "policy" });
   if (!floors.length) return NOT_REQUIRED;
 
@@ -82,7 +98,10 @@ function decideUpdateEnforcement({ currentVersion, latestVersion, releaseRequire
   const sameMandate = deferral && deferral.version === requiredVersion;
   const used = sameMandate ? Math.max(0, Number(deferral.count) || 0) : 0;
   const until = sameMandate ? Number(deferral.until) || 0 : 0;
-  const deferralsLeft = Math.max(0, policy.maxDeferrals - used);
+  // Past the deadline the mandate can no longer be postponed (it still waits for running work).
+  const deadlineAt = Date.parse(mandateDeadline || "");
+  const pastDeadline = Number.isFinite(deadlineAt) && now >= deadlineAt;
+  const deferralsLeft = pastDeadline ? 0 : Math.max(0, policy.maxDeferrals - used);
   return {
     required: true,
     requiredVersion,
@@ -93,7 +112,9 @@ function decideUpdateEnforcement({ currentVersion, latestVersion, releaseRequire
     deferMinutes: policy.deferMinutes,
     deferralsLeft,
     canDefer: deferralsLeft > 0,
-    deferredUntil: until > now ? until : null,
+    deferredUntil: !pastDeadline && until > now ? until : null,
+    deadline: Number.isFinite(deadlineAt) ? new Date(deadlineAt).toISOString() : "",
+    pastDeadline,
     policySource: policy.source,
   };
 }
@@ -113,6 +134,7 @@ module.exports = {
   FALLBACK_UPDATE_POLICY,
   UPDATE_POLICY_BOUNDS,
   normalizeUpdatePolicy,
+  requirementOf,
   decideUpdateEnforcement,
   nextDeferral,
 };

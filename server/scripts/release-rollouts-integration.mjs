@@ -152,6 +152,49 @@ try {
   assert.equal(draft.body.rolloutState, "draft");
   assert.equal(await share("0.1.186"), 0);
 
+  step("support: a minimum supported version and deadline come back with the offer");
+  const deadline = "2026-12-01T00:00:00.000Z";
+  const setSupport = await call("PATCH", `/api/admin/release-support/stable/${platform}`, { minSupportedVersion: "0.1.183", mandateDeadline: deadline }, asAdmin);
+  assert.equal(setSupport.status, 200, JSON.stringify(setSupport.body));
+  const below = await offered("dev_0001", "0.1.150");
+  assert.deepEqual([below.requiredVersion, below.requiredReason, below.mandateDeadline, below.force], ["0.1.183", "below_minimum", deadline, true]);
+  const atFloor = await offered("dev_0001", "0.1.183");
+  assert.equal(atFloor.requiredVersion, "", "a client at the floor owes nothing");
+  assert.equal((await call("PATCH", `/api/admin/release-support/stable/${platform}`, { minSupportedVersion: "not-a-version" }, asAdmin)).body.code, "RELEASE_SUPPORT_INVALID");
+
+  step("block: a bad version is offered to no one; clients on it move once something newer exists");
+  assert.equal((await call("PATCH", `/api/admin/release-support/stable/${platform}`, { blockedVersions: ["0.1.184"] }, asAdmin)).status, 200);
+  assert.equal(await share("0.1.184"), 0, "the blocked full version is withdrawn");
+  assert.equal((await offered("")).version, "0.1.183", "everyone falls back to the previous full version");
+  const onBlocked = await offered("dev_0001", "0.1.184");
+  assert.equal(onBlocked.requiredVersion, "", "no newer build yet: the block forces no downgrade");
+  const fix = await call("POST", "/api/admin/releases", release("0.1.187", { immutableFeed: true, rolloutPercent: 100 }), asAdmin);
+  assert.equal(fix.status, 201, JSON.stringify(fix.body));
+  const moved = await offered("dev_0001", "0.1.184");
+  assert.deepEqual([moved.version, moved.requiredVersion, moved.requiredReason], ["0.1.187", "0.1.187", "blocked"]);
+
+  step("the row shortcut sets the same support policy, one concept one place");
+  const fixRow = (await pool.query("select id from releases where version='0.1.187'")).rows[0].id;
+  assert.equal((await call("PATCH", `/api/admin/releases/${fixRow}`, { forceUpdate: true }, asAdmin)).status, 200);
+  const floorRow = (await pool.query("select min_supported_version, blocked_versions from release_support where channel='stable' and platform=$1", [platform])).rows[0];
+  assert.equal(floorRow.min_supported_version, "0.1.187");
+  assert.deepEqual(floorRow.blocked_versions, ["0.1.184"], "setting the floor leaves the block alone");
+  assert.equal(Number((await pool.query("select count(*)::int n from releases where force_update")).rows[0].n), 0, "no row-level flag is written");
+  await call("PATCH", `/api/admin/releases/${fixRow}`, { forceUpdate: false }, asAdmin);
+  assert.equal((await pool.query("select min_supported_version from release_support where channel='stable' and platform=$1", [platform])).rows[0].min_supported_version, null);
+
+  step("beta: a device a rule puts on beta sees beta releases; everyone else does not");
+  await pool.query("insert into devices (id, platform, arch, app_version) values ('dev_beta_1', 'darwin', 'arm64', '0.1.187')");
+  const rule = await call("POST", "/api/admin/config-profiles", { id: "beta-tester", name: "beta tester", scope: "device", targetId: "dev_beta_1", priority: 0, rolloutPercent: 100, enabled: true, config: { policy: { updateChannel: "beta" } } }, asAdmin);
+  assert.equal(rule.status, 201, JSON.stringify(rule.body));
+  const beta = await call("POST", "/api/admin/releases", release("0.1.190", { immutableFeed: true, channel: "beta" }), asAdmin);
+  assert.equal(beta.status, 201, JSON.stringify(beta.body));
+  assert.equal(beta.body.rolloutState, "complete", "beta is opt-in: a beta release goes to all of beta");
+  const betaOffer = await offered("dev_beta_1", "0.1.187");
+  assert.deepEqual([betaOffer.version, betaOffer.channel], ["0.1.190", "beta"]);
+  assert.equal(await share("0.1.190"), 0, "no stable device sees it");
+  assert.equal((await offered("")).version, "0.1.187", "nor the download page");
+
   step("every move is audited");
   const actions = (await pool.query("select action from audit_logs where target_id=$1 order by id", [rolloutId])).rows.map((r) => r.action);
   assert.deepEqual(actions, ["rollout.raise", "rollout.halt", "rollout.reopen", "rollout.resume", "rollout.complete"]);

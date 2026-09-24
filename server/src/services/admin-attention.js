@@ -18,7 +18,7 @@ import { db } from "../db.js";
 
 // Version meaning lives in one place; re-exported for existing importers.
 export { compareVersions, latestReleases } from "./release-versions.js";
-import { compareVersions, latestReleases, forcedFloors } from "./release-versions.js";
+import { compareVersions, latestReleases } from "./release-versions.js";
 
 async function one(builder, fallback = {}) {
   try {
@@ -37,7 +37,7 @@ async function many(builder) {
 }
 
 export async function adminAttention() {
-  const [fleet, versions, licenses, failures, failureKinds, releases, platformVersions] = await Promise.all([
+  const [fleet, versions, licenses, failures, failureKinds, releases, platformVersions, supportRows] = await Promise.all([
     one(db.selectFrom("devices").select([
       sql`count(*) filter (where last_seen_at > now() - interval '1 day')`.as("d1"),
       sql`count(*) filter (where last_seen_at > now() - interval '7 days')`.as("d7"),
@@ -69,7 +69,7 @@ export async function adminAttention() {
       .orderBy(sql`count(*)`, "desc")
       .limit(5)),
     many(db.selectFrom("releases")
-      .select(["platform", "version", "force_update"])
+      .select(["platform", "version"])
       .where("enabled", "=", true)),
     // The same week's fleet by platform-arch, so each device is held to the
     // forced floor of the platform it actually runs.
@@ -78,6 +78,7 @@ export async function adminAttention() {
       .where(sql`last_seen_at`, ">", sql`now() - interval '7 days'`)
       .where("app_version", "is not", null)
       .groupBy([sql`platform || '-' || arch`, "app_version"])),
+    many(db.selectFrom("release_support").select(["platform", "min_supported_version"]).where("channel", "=", "stable")),
   ]);
 
   const n = (value) => Number(value || 0);
@@ -102,9 +103,9 @@ export async function adminAttention() {
     }
   }
 
-  // Devices in use this week that are below a release marked mandatory for
-  // their platform: the ones a forced update is still waiting on.
-  const floors = forcedFloors(releases);
+  // Devices in use this week below their platform's minimum supported version:
+  // the ones a mandatory update is still waiting on.
+  const floors = new Map(supportRows.filter((row) => row.min_supported_version).map((row) => [String(row.platform), String(row.min_supported_version)]));
   let belowRequired = 0;
   for (const row of platformVersions) {
     const floor = floors.get(String(row.platform));

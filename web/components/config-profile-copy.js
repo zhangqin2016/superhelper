@@ -4,6 +4,9 @@
 
 export const labels = {
   zh: {
+    updateChannel: "更新渠道",
+    updateChannelHelp: "beta 渠道的设备会先收到 beta 发布；按全局、分组、授权、设备范围生效。",
+    updateChannelInherit: "默认（stable）",
     minVersionHelp: "低于此版本的客户端必须升级（按本规则的范围生效）。",
     updateTitle: "强制升级方式",
     updateHelp: "有强制升级时：先等任务结束，再倒计时重启；用户可推迟有限次数。留空沿用默认值，服务端会校验取值范围。",
@@ -69,6 +72,9 @@ export const labels = {
     gatewayName: "网关配置",
   },
   en: {
+    updateChannel: "Update channel",
+    updateChannelHelp: "Devices on beta receive beta releases first; applies to global, group, license and device scopes.",
+    updateChannelInherit: "default (stable)",
     minVersionHelp: "Clients below this version must update (within this rule's scope).",
     updateTitle: "How a mandatory update lands",
     updateHelp: "When an update is mandatory: wait for running tasks, then restart after a countdown; users may postpone a limited number of times. Leave blank to inherit the default; the server checks the ranges.",
@@ -134,6 +140,9 @@ export const labels = {
     gatewayName: "gateway config",
   },
   ar: {
+    updateChannel: "قناة التحديث",
+    updateChannelHelp: "تتلقى أجهزة beta إصدارات beta أولًا؛ يسري على النطاقات العامة والمجموعة والترخيص والجهاز.",
+    updateChannelInherit: "افتراضي (stable)",
     minVersionHelp: "يجب على العملاء الأقدم من هذا الإصدار التحديث (ضمن نطاق هذه القاعدة).",
     updateTitle: "طريقة تطبيق التحديث الإلزامي",
     updateHelp: "عند وجود تحديث إلزامي: انتظار المهام الجارية ثم إعادة التشغيل بعد عد تنازلي؛ يمكن للمستخدم التأجيل عددًا محدودًا من المرات. اتركه فارغًا لاستخدام القيمة الافتراضية؛ يتحقق الخادم من النطاقات.",
