@@ -468,20 +468,20 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("assistant:remember-convention", { sessionId, text }),
   listMemory: (sessionId, options = {}) =>
     ipcRenderer.invoke("assistant:memory:list", { sessionId, ...(options || {}) }),
-  exportMemory: (sessionId) =>
-    ipcRenderer.invoke("assistant:memory:export", { sessionId }),
-  setMemoryCategoryEnabled: (sessionId, kind, enabled) =>
-    ipcRenderer.invoke("assistant:memory:set-category-enabled", { sessionId, kind, enabled }),
-  removeLearnedMemory: (sessionId, key) =>
-    ipcRenderer.invoke("assistant:memory:remove-learned", { sessionId, key }),
-  clearLearnedMemory: (sessionId) =>
-    ipcRenderer.invoke("assistant:memory:clear-learned", { sessionId }),
+  exportMemory: (sessionId, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory:export", { sessionId, projectId }),
+  setMemoryCategoryEnabled: (sessionId, kind, enabled, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory:set-category-enabled", { sessionId, kind, enabled, projectId }),
+  removeLearnedMemory: (sessionId, key, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory:remove-learned", { sessionId, key, projectId }),
+  clearLearnedMemory: (sessionId, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory:clear-learned", { sessionId, projectId }),
   listMemoryProposals: (sessionId, options = {}) =>
     ipcRenderer.invoke("assistant:memory-proposals:list", { sessionId, ...(options || {}) }),
-  approveMemoryProposal: (sessionId, key) =>
-    ipcRenderer.invoke("assistant:memory-proposals:approve", { sessionId, key }),
-  dismissMemoryProposal: (sessionId, key) =>
-    ipcRenderer.invoke("assistant:memory-proposals:dismiss", { sessionId, key }),
+  approveMemoryProposal: (sessionId, key, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory-proposals:approve", { sessionId, key, projectId }),
+  dismissMemoryProposal: (sessionId, key, projectId = "") =>
+    ipcRenderer.invoke("assistant:memory-proposals:dismiss", { sessionId, key, projectId }),
   revealInFolder: (filePath, sessionId = "") =>
     ipcRenderer.invoke("filetree:reveal", { filePath, sessionId }),
   openLocalFile: (filePath, sessionId = "") =>

@@ -17,6 +17,7 @@ import { createWorkspaceProjectHeader } from "./workspace-project-header.js";
 import { sortSessionsByRecency, sessionElapsedParts } from "./workspace-switcher-model.js";
 import { showWorkspaceVersionDialog } from "./workspace-version-dialog.js";
 import { openWorkspaceCollaboration } from "./workspace-collaboration-entry.js";
+import { openMemorySettingsForProject } from "./memory-settings.js";
 
 const container = () => $("projectTree");
 
@@ -475,6 +476,11 @@ function showProjectMenu(e, project) {
     {
       label: t("ctx.sharePack"),
       action: () => shareWorkspacePack(project),
+    },
+    {
+      label: t("ctx.memory"),
+      actionId: "workspace-memory",
+      action: () => void openMemorySettingsForProject(project.id),
     },
     {
       label: t("collaboration.workspace.entry"),

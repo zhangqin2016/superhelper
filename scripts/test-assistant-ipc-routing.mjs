@@ -239,6 +239,19 @@ try {
     categories: ["learned_conventions", "project_memory"],
   });
 
+  // Memory is per workspace: a request may name the workspace directly (the
+  // memory page's picker, a workspace's context menu). The named workspace
+  // wins over the session's, and with no session bound to it nothing is refreshed.
+  const memoryByProject = await handlers.get("assistant:memory:list")(null, {
+    sessionId: "target-session",
+    projectId: "other-project",
+  });
+  assert.equal(memoryByProject.ok, true);
+  assert.equal(memoryByProject.projectId, "other-project", "explicit projectId must win over the session's workspace");
+  assert.equal(memoryByProject.sessionId, null, "no session is bound when the named workspace has none");
+  const memoryNoSessionNoProject = await handlers.get("assistant:memory:list")(null, { sessionId: "missing" });
+  assert.deepEqual(memoryNoSessionNoProject, { ok: false, error: "NO_SESSION" });
+
   const rememberResult = await handlers.get("assistant:remember-convention")(null, {
     sessionId: "target-session",
     text: "记住这个项目的输出格式",

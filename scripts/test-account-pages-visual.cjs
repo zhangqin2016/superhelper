@@ -69,6 +69,12 @@ const fixtures = {
   usage: { ok: true, deviceId: "dev-4f1c2a9e", source: "local", localReason: "syncing", summary: usageFixture() },
   policy: { region: "china", features: { account: true, usage: true } },
   searchProvider: "iqs",
+  memoryCalls: [],
+};
+
+const MEMORY_BY_PROJECT = {
+  ws_a: [{ key: "a1", text: "回复用中文，代码注释用英文。", createdAt: "2026-09-01" }],
+  ws_b: [{ key: "b1", text: "周报固定用三段式。", createdAt: "2026-09-10" }, { key: "b2", text: "数据表默认导出为 xlsx。", createdAt: "2026-09-12" }],
 };
 
 function registerFixtureIpc() {
@@ -104,7 +110,12 @@ function registerFixtureIpc() {
   handle("skills:get-preset-guide", ok({ guide: null }));
   handle("skills:check-updates", ok({ updates: [] }));
   handle("apps:catalog", ok({ json: { apps: [] } }));
-  handle("assistant:memory:list", ok({ memories: [] }));
+  handle("assistant:memory:list", (_event, payload) => {
+    fixtures.memoryCalls.push({ sessionId: payload?.sessionId ?? null, projectId: payload?.projectId ?? null });
+    const projectId = payload?.projectId || "ws_a";
+    return { ok: true, sessionId: payload?.sessionId ?? null, projectId, learned: MEMORY_BY_PROJECT[projectId] || [], proposals: [],
+      preferences: { schemaVersion: 1, disabledKinds: [] }, categories: ["learned_conventions", "project_memory"] };
+  });
   handle("agents:list", ok({ agents: [] }));
   handle("agents:get-session", ok({ agent: null }));
 
@@ -330,6 +341,77 @@ async function main() {
 
   await openPage("license");
   await capture("license-inactive");
+
+  // Memory is per workspace and the page says so: a workspace picker leads,
+  // switching it re-reads that workspace's memory, a workspace's context menu
+  // lands here pre-selected, and the nav files the page under "工作区".
+  await execute(`
+    const store = (await import("./modules/state.js")).default;
+    store.set("projects", [
+      { id: "ws_a", name: "learnenglish", path: "/tmp/ws-a", sessions: [{ id: "s_a", title: "新对话", updatedAt: new Date().toISOString() }] },
+      { id: "ws_b", name: "2026-ai-platform", path: "/tmp/ws-b", sessions: [{ id: "s_b", title: "新对话", updatedAt: new Date().toISOString() }] },
+    ]);
+    store.set("activeProjectId", "ws_a");
+    store.set("activeSessionId", "s_a");
+  `);
+  fixtures.memoryCalls.length = 0;
+  await openPage("memory");
+  const memoryA = await q(`
+    const select = document.getElementById("memoryWorkspaceSelect");
+    const nav = [...document.querySelectorAll(".settings-nav > *")];
+    const groupIndex = nav.findIndex((el) => el.classList.contains("settings-nav-group") && el.textContent.trim() === "工作区");
+    const memoryIndex = nav.findIndex((el) => el.dataset.settingsPage === "memory");
+    return {
+      options: [...select.options].map((o) => o.textContent),
+      selected: select.value,
+      learned: [...document.querySelectorAll("#memoryLearnedList .settings-memory-text")].map((el) => el.textContent),
+      navGrouped: groupIndex >= 0 && memoryIndex === groupIndex + 1,
+      desc: document.querySelector("#settingsPageMemory .settings-section-desc").textContent,
+    };
+  `);
+  assert.deepEqual(memoryA.options, ["learnenglish", "2026-ai-platform"]);
+  assert.equal(memoryA.selected, "ws_a", "picker follows the active workspace by default");
+  assert.deepEqual(memoryA.learned, ["回复用中文，代码注释用英文。"]);
+  assert.equal(memoryA.navGrouped, true, "memory sits under its own 工作区 nav group");
+  assert.match(memoryA.desc, /按工作区/);
+  assert.deepEqual(fixtures.memoryCalls.at(-1), { sessionId: "s_a", projectId: "ws_a" });
+
+  await execute(`
+    const select = document.getElementById("memoryWorkspaceSelect");
+    select.value = "ws_b";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  `);
+  await settle(300);
+  const memoryB = await q(`return {
+    selected: document.getElementById("memoryWorkspaceSelect").value,
+    learned: [...document.querySelectorAll("#memoryLearnedList .settings-memory-text")].map((el) => el.textContent),
+  };`);
+  assert.equal(memoryB.selected, "ws_b");
+  assert.deepEqual(memoryB.learned, ["周报固定用三段式。", "数据表默认导出为 xlsx。"], "picking a workspace shows that workspace's memory");
+  assert.deepEqual(fixtures.memoryCalls.at(-1), { sessionId: null, projectId: "ws_b" }, "another workspace is addressed by projectId, not the active session");
+
+  // Context-menu path: land on the page with the workspace pre-selected.
+  await openPage("general");
+  await execute(`
+    const { openMemorySettingsForProject } = await import("./modules/memory-settings.js");
+    await openMemorySettingsForProject("ws_b");
+  `);
+  await settle(600);
+  const memoryViaMenu = await q(`return { page: document.getElementById("settingsPageMemory").hidden === false, selected: document.getElementById("memoryWorkspaceSelect").value };`);
+  assert.deepEqual(memoryViaMenu, { page: true, selected: "ws_b" });
+  await capture("memory-workspace-b");
+
+  // Sidebar account menu: 意见反馈 sits between 设置 and 帮助与关于 and opens the feedback page.
+  await execute(`document.getElementById("settingsCloseBtn").click();`);
+  await settle(200);
+  const feedbackMenu = await q(`
+    return [...document.querySelectorAll("#accountMenuPopover .account-menu-item")].map((el) => el.textContent.trim());
+  `);
+  assert.deepEqual(feedbackMenu.slice(-3), ["设置", "意见反馈", "帮助与关于"]);
+  await execute(`document.querySelector('#accountMenuPopover [data-account-action="feedback"]').click();`);
+  await settle(600);
+  const feedbackPage = await q(`return document.getElementById("settingsPageFeedback").hidden === false && document.getElementById("settingsPageFeedback").classList.contains("is-active");`);
+  assert.equal(feedbackPage, true, "意见反馈 menu item opens the feedback page");
 
   // `hidden` must win over a component's own display rule, app-wide: the
   // SearXNG URL row is toggled with .hidden while its class says display:flex.

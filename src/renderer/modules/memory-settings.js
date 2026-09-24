@@ -7,6 +7,50 @@ import { $ } from "./dom.js";
 import { activeSession } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
 import { showToast } from "./toast.js";
+import store from "./state.js";
+
+// Which workspace the page is showing. Null follows the active workspace; a
+// value is an explicit pick (the page's own picker, or a workspace's context
+// menu) and stays until the active workspace changes underneath it.
+let viewProjectId = null;
+let followedProjectId = null;
+
+function projects() {
+  return store.get("projects") || [];
+}
+
+function targetProjectId() {
+  const list = projects();
+  if (viewProjectId && list.some((project) => project.id === viewProjectId)) return viewProjectId;
+  viewProjectId = null;
+  return store.get("activeProjectId") || list[0]?.id || null;
+}
+
+function sessionIdFor(projectId) {
+  const active = activeSession();
+  if (active && store.get("activeProjectId") === projectId) return active.id;
+  return null;
+}
+
+/** A workspace's context menu lands here: show that workspace's memory. */
+export async function openMemorySettingsForProject(projectId) {
+  viewProjectId = projectId || null;
+  followedProjectId = store.get("activeProjectId") || null;
+  const { openSettingsPage } = await import("./settings-panel.js");
+  openSettingsPage("memory");
+}
+
+function renderWorkspacePicker(select, projectId) {
+  select.replaceChildren();
+  for (const project of projects()) {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name || project.path || project.id;
+    option.selected = project.id === projectId;
+    select.appendChild(option);
+  }
+  select.disabled = select.options.length === 0;
+}
 
 function emptyRow(message) {
   const el = document.createElement("p");
@@ -58,7 +102,7 @@ async function runAndRefresh(action, successKey) {
   }
 }
 
-function renderLearned(listEl, sessionId, learned = []) {
+function renderLearned(listEl, sessionId, projectId, learned = []) {
   listEl.replaceChildren();
   if (!learned.length) {
     listEl.appendChild(emptyRow(t("settings.memoryEmptyLearned")));
@@ -80,7 +124,7 @@ function renderLearned(listEl, sessionId, learned = []) {
       });
       if (!ok) return;
       await runAndRefresh(
-        () => window.assistantClient.removeLearnedMemory(sessionId, item.key),
+        () => window.assistantClient.removeLearnedMemory(sessionId, item.key, projectId),
         "settings.memoryRemoved",
       );
     });
@@ -89,7 +133,7 @@ function renderLearned(listEl, sessionId, learned = []) {
   }
 }
 
-function renderProposals(listEl, sessionId, proposals = []) {
+function renderProposals(listEl, sessionId, projectId, proposals = []) {
   listEl.replaceChildren();
   const pending = proposals.filter((item) => item.status === "proposed");
   if (!pending.length) {
@@ -101,14 +145,14 @@ function renderProposals(listEl, sessionId, proposals = []) {
     const approve = actionButton(t("settings.memoryApprove"), "settings-action-btn--primary");
     approve.addEventListener("click", () =>
       runAndRefresh(
-        () => window.assistantClient.approveMemoryProposal(sessionId, item.key),
+        () => window.assistantClient.approveMemoryProposal(sessionId, item.key, projectId),
         "settings.memoryApproved",
       ),
     );
     const dismiss = actionButton(t("settings.memoryDismiss"));
     dismiss.addEventListener("click", () =>
       runAndRefresh(
-        () => window.assistantClient.dismissMemoryProposal(sessionId, item.key),
+        () => window.assistantClient.dismissMemoryProposal(sessionId, item.key, projectId),
         "settings.memoryDismissed",
       ),
     );
@@ -123,7 +167,7 @@ function categoryLabel(kind) {
   return value === key ? kind : value;
 }
 
-function renderCategories(listEl, sessionId, categories = [], preferences = {}) {
+function renderCategories(listEl, sessionId, projectId, categories = [], preferences = {}) {
   listEl.replaceChildren();
   const disabled = new Set(preferences.disabledKinds || []);
   for (const kind of categories) {
@@ -136,7 +180,7 @@ function renderCategories(listEl, sessionId, categories = [], preferences = {}) 
     text.textContent = categoryLabel(kind);
     input.addEventListener("change", async () => {
       try {
-        const result = await window.assistantClient.setMemoryCategoryEnabled(sessionId, kind, input.checked);
+        const result = await window.assistantClient.setMemoryCategoryEnabled(sessionId, kind, input.checked, projectId);
         if (!result?.ok) throw new Error(result?.error || "set category failed");
         showToast(t("settings.memoryCategorySaved"), "success");
       } catch {
@@ -153,20 +197,29 @@ export async function refreshMemorySettings() {
   const learnedEl = $("memoryLearnedList");
   const proposalEl = $("memoryProposalList");
   const categoryEl = $("memoryCategoryList");
+  const pickerEl = $("memoryWorkspaceSelect");
   if (!learnedEl || !proposalEl || !categoryEl) return;
-  const sessionId = activeSession()?.id;
-  if (!sessionId) {
+  // An explicit pick follows the user only until they move to another workspace.
+  const activeProjectId = store.get("activeProjectId") || null;
+  if (followedProjectId !== activeProjectId) {
+    viewProjectId = null;
+    followedProjectId = activeProjectId;
+  }
+  const projectId = targetProjectId();
+  if (pickerEl) renderWorkspacePicker(pickerEl, projectId);
+  if (!projectId) {
     learnedEl.replaceChildren(emptyRow(t("settings.memoryNoSession")));
     proposalEl.replaceChildren(emptyRow(t("settings.memoryNoSession")));
     categoryEl.replaceChildren(emptyRow(t("settings.memoryNoSession")));
     return;
   }
+  const sessionId = sessionIdFor(projectId);
   try {
-    const result = await window.assistantClient.listMemory(sessionId);
+    const result = await window.assistantClient.listMemory(sessionId, { projectId });
     if (!result?.ok) throw new Error(result?.error || "list memory failed");
-    renderCategories(categoryEl, sessionId, result.categories || [], result.preferences || {});
-    renderLearned(learnedEl, sessionId, result.learned || []);
-    renderProposals(proposalEl, sessionId, result.proposals || []);
+    renderCategories(categoryEl, sessionId, projectId, result.categories || [], result.preferences || {});
+    renderLearned(learnedEl, sessionId, projectId, result.learned || []);
+    renderProposals(proposalEl, sessionId, projectId, result.proposals || []);
   } catch {
     learnedEl.replaceChildren(emptyRow(t("settings.memoryLoadFailed")));
     proposalEl.replaceChildren(emptyRow(t("settings.memoryLoadFailed")));
@@ -175,11 +228,18 @@ export async function refreshMemorySettings() {
 }
 
 export function initMemorySettings() {
+  $("memoryWorkspaceSelect")?.addEventListener("change", (event) => {
+    viewProjectId = event.target.value || null;
+    followedProjectId = store.get("activeProjectId") || null;
+    void refreshMemorySettings();
+  });
+
   $("memoryExportBtn")?.addEventListener("click", async () => {
-    const sessionId = activeSession()?.id;
-    if (!sessionId) return;
+    const projectId = targetProjectId();
+    if (!projectId) return;
+    const sessionId = sessionIdFor(projectId);
     try {
-      const result = await window.assistantClient.exportMemory(sessionId);
+      const result = await window.assistantClient.exportMemory(sessionId, projectId);
       if (!result?.ok) throw new Error(result?.error || "export failed");
       await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
       showToast(t("settings.memoryExported"), "success");
@@ -189,8 +249,9 @@ export function initMemorySettings() {
   });
 
   $("memoryClearLearnedBtn")?.addEventListener("click", async () => {
-    const sessionId = activeSession()?.id;
-    if (!sessionId) return;
+    const projectId = targetProjectId();
+    if (!projectId) return;
+    const sessionId = sessionIdFor(projectId);
     const ok = await confirmDialog({
       title: t("settings.memoryClearTitle"),
       message: t("settings.memoryClearMessage"),
@@ -200,7 +261,7 @@ export function initMemorySettings() {
     });
     if (!ok) return;
     await runAndRefresh(
-      () => window.assistantClient.clearLearnedMemory(sessionId),
+      () => window.assistantClient.clearLearnedMemory(sessionId, projectId),
       "settings.memoryCleared",
     );
   });

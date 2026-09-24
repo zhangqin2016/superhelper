@@ -814,6 +814,26 @@
   margin-bottom: 10px;
 }
 
+/* Memory page: which workspace's memory is on screen is the first control,
+   not a footnote. The export button rides on the same row. */
+.memory-scope-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.memory-scope-field {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  margin-bottom: 0;
+}
+
+.memory-scope-row .settings-action-btn {
+  flex-shrink: 0;
+}
+
 .settings-memory-list {
   display: flex;
   flex-direction: column;

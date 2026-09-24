@@ -9,7 +9,7 @@ import { openSettingsPage, accountFeatureEnabled } from "./settings-panel.js";
 // still opens the panel. Fail-open: any error just leaves the default labels.
 
 // Menu action → settings page id. (设置 is handled by settingsBtn's own binding.)
-const ACTION_PAGE = { account: "account", license: "license", mobile: "mobile", help: "help" };
+const ACTION_PAGE = { account: "account", license: "license", mobile: "mobile", feedback: "feedback", help: "help" };
 
 const el = (id) => document.getElementById(id);
 let accountMenuRefreshGeneration = 0;
