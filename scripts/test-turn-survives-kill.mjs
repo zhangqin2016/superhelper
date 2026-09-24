@@ -184,4 +184,18 @@ const assistantOf = (sessionId, turnId) =>
   check("the bus coalesces streamed deltas, persists everything else at once and in order, and flushes on quit — with no window at all");
 }
 
+{
+  // Windows shutdown / log-off emits session-end, never before-quit: the flush
+  // must be wired to both, or a Windows user loses the window on every shutdown.
+  const main = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  for (const event of ["before-quit", "session-end"]) {
+    const at = main.indexOf(`app.on("${event}"`);
+    assert.ok(at >= 0, `main.js handles ${event}`);
+    const body = main.slice(at, main.indexOf("\n});", at));
+    assert.match(body, /flushPersistence/, `${event} flushes buffered streamed text`);
+    assert.match(body, /saveImmediate/, `${event} saves the session index`);
+  }
+  check("buffered streamed text is flushed on quit and on Windows shutdown / log-off");
+}
+
 console.log(`turn-survives-kill: ok (${checks} checks)`);

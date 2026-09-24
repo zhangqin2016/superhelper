@@ -633,6 +633,16 @@ app.whenReady().then(async () => {
   } finally { databaseRecoveryTransition = false; }
 });
 
+// Windows shutdown / log-off never emits before-quit — Electron sends
+// session-end and the OS ends the process right after. What must be on disk
+// (streamed text still in its persistence window, the session index) is
+// written here too; the rest of before-quit is process teardown the OS is
+// about to do anyway.
+app.on("session-end", () => {
+  try { runtimeEventBusRef?.flushPersistence?.(); } catch { /* best effort */ }
+  try { sessionManagerRef?.saveImmediate(); } catch { /* best effort */ }
+});
+
 app.on("before-quit", () => {
   // Reaching here is what makes the next launch's gate cheap; a crash or a
   // force quit never gets here, and the marker stays dirty on purpose.
