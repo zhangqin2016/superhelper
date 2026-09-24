@@ -37,32 +37,27 @@ function safeMemoryUsage() {
   }
 }
 
-// A machine that sleeps is not an app that froze. The wall clock keeps running
-// through a sleep while the monotonic clock (mach_absolute_time on macOS,
-// CLOCK_MONOTONIC on Linux) stands still, so their difference IS the sleep.
-// Measured 2026-09-23: both "main event loop lag" warnings of the day — 136,715
-// and 2,841,042 ms — matched the system power log's clamshell sleeps to the
-// second, and a diagnosis that trusted them would have hunted a freeze that
-// never happened. Lag and staleness are measured on the monotonic clock; the
-// gap between the clocks is reported as what it is. powerMonitor's
-// suspend/resume is the second signal, for a platform whose monotonic clock
-// might count sleep.
+// A machine that sleeps is not an app that froze. Measured 2026-09-23: both
+// "main event loop lag" warnings of the day — 136,715 and 2,841,042 ms —
+// matched the system power log's clamshell sleeps to the second.
+//
+// The signal is the OS saying it is going to sleep. A first attempt measured
+// lag on the monotonic clock instead, on the belief that it stands still while
+// asleep; on macOS the clock Node reads does not (2026-09-24: lag 1,581,298 ms
+// reported across a sleep, and 91,467 ms at a DarkWake — the machine briefly
+// awake for maintenance, the timer firing, no resume event at all). So from
+// powerMonitor "suspend" until "resume", every tick is the sleep — DarkWakes
+// included — and resume restarts both baselines at the moment of waking.
 function createWatchdog(options = {}) {
   const now = options.now || (() => Date.now());
-  // An injected wall clock with no monotonic one is a test driving time by
-  // hand: both clocks are then the same clock, and nothing reads as sleep.
-  const monotonic = options.monotonic || (options.now ? options.now : () => performance.now());
   const log = options.log || getLogger("app-watchdog");
   const rendererStaleMs = Number(options.rendererStaleMs) || DEFAULT_RENDERER_STALE_MS;
   const mainLagMs = Number(options.mainLagMs) || DEFAULT_MAIN_LAG_MS;
   const state = {
     startedAt: now(),
     lastMainTickAt: now(),
-    lastMainTickMono: monotonic(),
     lastRendererHeartbeatAt: 0,
-    lastRendererHeartbeatMono: 0,
     suspendedAt: 0,
-    lastSleepReportedAt: 0,
     rendererSeq: 0,
     rendererLagMs: 0,
     lastRendererStaleLoggedAt: 0,
@@ -106,7 +101,6 @@ function createWatchdog(options = {}) {
 
   function receiveRendererHeartbeat(payload = {}) {
     state.lastRendererHeartbeatAt = now();
-    state.lastRendererHeartbeatMono = monotonic();
     state.rendererSeq = Number(payload.seq) || state.rendererSeq + 1;
     state.rendererLagMs = Number(payload.rendererLagMs) || 0;
     if (state.rendererLagMs >= rendererStaleMs) {
@@ -120,7 +114,12 @@ function createWatchdog(options = {}) {
 
   function checkRendererHeartbeat() {
     if (!state.lastRendererHeartbeatAt) return null;
-    const staleMs = monotonic() - state.lastRendererHeartbeatMono;
+    // Asleep (or in a DarkWake): the renderer is not stale, the machine is off.
+    if (state.suspendedAt) {
+      state.lastRendererHeartbeatAt = now();
+      return null;
+    }
+    const staleMs = now() - state.lastRendererHeartbeatAt;
     if (staleMs < rendererStaleMs) return null;
     if (now() - state.lastRendererStaleLoggedAt < rendererStaleMs) return null;
     state.lastRendererStaleLoggedAt = now();
@@ -131,21 +130,12 @@ function createWatchdog(options = {}) {
     });
   }
 
-  function reportSleep(sleptMs, source) {
-    state.lastSleepReportedAt = now();
-    return emit("system_sleep", { sleptMs: Math.round(sleptMs), source });
-  }
-
   function checkMainLoop() {
     const current = now();
-    const currentMono = monotonic();
-    const wallGap = current - state.lastMainTickAt;
-    const monoGap = currentMono - state.lastMainTickMono;
+    const lagMs = current - state.lastMainTickAt - (Number(options.tickMs) || DEFAULT_TICK_MS);
     state.lastMainTickAt = current;
-    state.lastMainTickMono = currentMono;
-    const sleptMs = wallGap - monoGap;
-    if (sleptMs >= mainLagMs) reportSleep(sleptMs, "clock_gap");
-    const lagMs = monoGap - (Number(options.tickMs) || DEFAULT_TICK_MS);
+    // Between suspend and resume every tick is the sleep, DarkWakes included.
+    if (state.suspendedAt) return null;
     if (lagMs < mainLagMs) return null;
     if (current - state.lastMainLagLoggedAt < mainLagMs) return null;
     state.lastMainLagLoggedAt = current;
@@ -156,22 +146,16 @@ function createWatchdog(options = {}) {
     state.suspendedAt = now();
   }
 
-  // Whatever the clocks did, time spent suspended is not lag and not a stale
-  // renderer: restart both baselines from the moment of waking.
+  // Time spent suspended is not lag and not a stale renderer: restart both
+  // baselines from the moment of waking, and record the sleep for what it was.
   function systemResumed() {
     const current = now();
-    const currentMono = monotonic();
     const suspendedAt = state.suspendedAt;
     state.suspendedAt = 0;
     state.lastMainTickAt = current;
-    state.lastMainTickMono = currentMono;
-    if (state.lastRendererHeartbeatAt) {
-      state.lastRendererHeartbeatAt = current;
-      state.lastRendererHeartbeatMono = currentMono;
-    }
-    // The clock gap may already have reported this sleep on the first tick.
-    if (!suspendedAt || state.lastSleepReportedAt >= suspendedAt) return null;
-    return reportSleep(current - suspendedAt, "power_monitor");
+    if (state.lastRendererHeartbeatAt) state.lastRendererHeartbeatAt = current;
+    if (!suspendedAt) return null;
+    return emit("system_sleep", { sleptMs: Math.round(current - suspendedAt), source: "power_monitor" });
   }
 
   function snapshot(extra = {}) {
@@ -251,8 +235,7 @@ function startAppWatchdog(ctx = {}, options = {}) {
     powerMonitor?.on?.("suspend", () => watchdog.systemSuspended());
     powerMonitor?.on?.("resume", () => watchdog.systemResumed());
   } catch (err) {
-    // The clock gap still tells sleep from lag without it.
-    log.warn("powerMonitor unavailable; sleep is detected from the clocks alone: %s", err?.message || err);
+    log.warn("powerMonitor unavailable; a system sleep may be reported as lag: %s", err?.message || err);
   }
 
   const timer = setInterval(() => {
