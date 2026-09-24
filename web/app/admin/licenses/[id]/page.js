@@ -70,7 +70,7 @@ export default async function LicenseDetailPage({ params }) {
               </thead>
               <tbody>{devices.map((device) => (
                 <tr key={device.id} className="border-t border-slate-100">
-                  <td className="px-4 py-2 font-mono"><Link href={`/admin/devices/${device.id}`} className="text-brand hover:underline">{device.device_id}</Link></td>
+                  <td className="px-4 py-2 font-mono"><Link href={`/admin/devices/${encodeURIComponent(device.device_id)}`} className="text-brand hover:underline">{device.device_id}</Link></td>
                   <td className="px-4 py-2">{[device.platform, device.arch].filter(Boolean).join(" / ") || "-"}</td>
                   <td className="px-4 py-2">{device.app_version || "-"}</td>
                   <td className="px-4 py-2">{device.status}</td>

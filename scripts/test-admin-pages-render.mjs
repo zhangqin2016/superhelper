@@ -405,6 +405,17 @@ await check("releases read as tasks in plain words, each consequence shown befor
   samples.clear();
 });
 
+await check("a license's devices link to the device, not to the license binding", async () => {
+  // Field case: the license page linked /admin/devices/ldev_… (the binding row's
+  // id) while showing dev_… — every click landed on "Device not found".
+  samples.set("/api/admin/licenses/", { license: { id: "lic_1", plan: "pro", seats: 2, status: "active", expires_at: "2027-01-01T00:00:00Z", features: [] },
+    devices: [{ id: "ldev_binding", license_id: "lic_1", device_id: "dev_real", status: "active", platform: "darwin", arch: "arm64" }], usage: {} });
+  const html = await renderPage("app/admin/licenses/[id]/page.js");
+  assert.ok(html.includes('href="/admin/devices/dev_real"'), "the link opens the device");
+  assert.ok(!html.includes("/admin/devices/ldev_"), "never the binding id");
+  samples.clear();
+});
+
 await check("no toggle is labelled with a state word", () => {
   const offenders = [];
   for (const dir of ["web/components", "web/app/admin"]) {
