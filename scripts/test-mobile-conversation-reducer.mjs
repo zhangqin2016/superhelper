@@ -117,4 +117,43 @@ const history = [
   assert.equal(reduce(s, { type: "nope" }), s);
 }
 
+// --- a phone that slept through turn.ended is told by the snapshot ------------
+// Field case: the desktop had answered, the phone (screen locked → socket
+// dropped → reconnected) kept showing 处理中 forever. The reconnect snapshot
+// says the desktop is idle; that ends it — for a desktop that sends
+// runningTurnId, and for one that predates it (no turn ids, phase only).
+{
+  // Old desktop: turn.started carries no commandId; context carries no turn ids.
+  let s = run([context([], { phase: "idle" }), { type: "sent", commandId: "cmd_9", text: "查一下C盘" }]);
+  s = reduce(s, frame({ type: "command.admitted", commandId: "cmd_9" }));
+  s = reduce(s, frame({ type: "turn.started", turnId: "t9" }));
+  s = reduce(s, frame({ type: "assistant.delta", turnId: "t9", text: "查到了" }));
+  assert.equal(isBusy(s), true);
+  s = reduce(s, { type: "disconnected" }); // the screen locked; turn.ended never arrived
+  const oldDesktop = [{ role: "user", text: "查一下C盘" }, { role: "assistant", text: "查到了，合计 23.90 GiB" }];
+  s = reduce(s, context(oldDesktop, { phase: "running", queueLength: 0 }));
+  assert.equal(isBusy(s), true, "a running desktop keeps the live turn");
+  s = reduce(s, context(oldDesktop, { phase: "idle", queueLength: 0 }));
+  assert.equal(isBusy(s), false, "an idle desktop ends it");
+  assert.deepEqual(shape(s), [["user", "查一下C盘", "", "history"], ["assistant", "查到了，合计 23.90 GiB", "", "history"]], "the answer shows once, from history");
+
+  // A task admitted but whose turn start was missed is not left 排队中 by an idle, empty-queued desktop…
+  let q = run([context([], { phase: "idle" }), { type: "sent", commandId: "cmd_a", text: "a" }, { type: "sent", commandId: "cmd_b", text: "b" }]);
+  q = reduce(q, frame({ type: "command.admitted", commandId: "cmd_a" }));
+  q = reduce(q, context(oldDesktop, { phase: "idle", queueLength: 0 }));
+  assert.deepEqual(q.pending.map((p) => p.commandId), ["cmd_b"], "admitted-and-run is gone; not-yet-admitted stays");
+  // …but is kept while the desktop still has a queue.
+  q = reduce(q, frame({ type: "command.admitted", commandId: "cmd_b" }));
+  q = reduce(q, context(oldDesktop, { phase: "idle", queueLength: 1 }));
+  assert.deepEqual(q.pending.map((p) => p.commandId), ["cmd_b"]);
+
+  // New desktop mid-turn: runningTurnId wins over any phase.
+  let n = run([context(history, { phase: "idle" }), frame({ type: "turn.started", turnId: "t5", commandId: "" })]);
+  n = reduce(n, context(history, { phase: "idle", runningTurnId: "t5" }));
+  assert.equal(isBusy(n), true, "runningTurnId says it runs");
+  // Unknown phase (empty) changes nothing.
+  n = reduce(n, context(history, {}));
+  assert.equal(isBusy(n), true, "no phase, no runningTurnId: not enough to end it");
+}
+
 console.log("mobile-conversation-reducer: ok");

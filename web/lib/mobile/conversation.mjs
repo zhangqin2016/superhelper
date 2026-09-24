@@ -106,8 +106,21 @@ function onFrame(state, frame) {
       const history = Array.isArray(frame.recent) ? frame.recent : [];
       const switched = state.session && state.session.id !== frame.sessionId;
       let live = switched ? null : state.live;
+      let pending = switched ? [] : state.pending;
       // The desktop's history now holds the finished turn: stop showing the copy.
       if (live && history.some((m) => m.role === "assistant" && m.turnId === live.turnId && m.status !== "running")) live = null;
+      // The snapshot is the desktop's word on whether anything runs. A phone
+      // that slept through turn.ended (a locked screen drops the socket) must
+      // not keep "处理中" forever: a desktop that says it is idle has finished
+      // this turn, and its history already holds the answer. That word is
+      // `runningTurnId` (present while a turn runs), or — from a desktop that
+      // predates it and sends no turn ids — its phase.
+      const idle = !frame.runningTurnId && frame.phase === "idle";
+      if (idle) {
+        live = null;
+        // Nothing waits on an idle desktop: what it admitted has already run.
+        if (!Number(frame.queueLength)) pending = pending.filter((p) => p.state !== "queued");
+      }
       // Joined mid-turn (reopened the page): pick the running turn up from history.
       if (!live && frame.runningTurnId) {
         const partial = history.find((m) => m.role === "assistant" && m.turnId === frame.runningTurnId);
@@ -126,7 +139,7 @@ function onFrame(state, frame) {
         selectedSessionId: frame.sessionId || state.selectedSessionId,
         history,
         live,
-        pending: switched ? [] : state.pending,
+        pending,
       };
     }
 
