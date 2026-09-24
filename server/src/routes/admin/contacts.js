@@ -4,6 +4,7 @@ import { config } from "../../config.js";
 import { db } from "../../db.js";
 import { okResponse, zodBody } from "../../openapi.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
+import { diagnosticsForAdmin, inflateStoredLog } from "../../services/contact-diagnostics.js";
 
 function publicUrlFromObjectKey(objectKey) {
   const key = String(objectKey || "").trim().replace(/^\/+/, "");
@@ -69,6 +70,16 @@ export function registerAdminContactRoutes(app, { audit } = {}) {
           .orderBy("created_at", "asc")
           .execute()
       : [];
+    // Never select log_gzip here: the list needs to know a log exists, not carry it.
+    const diagnosticsRows = ids.length
+      ? await db
+          .selectFrom("contact_request_diagnostics")
+          .select(["contact_request_id", "report", "log_bytes", "log_compressed_bytes", "log_truncated", "log_sha256"])
+          .where("contact_request_id", "in", ids)
+          .execute()
+          .catch(() => [])
+      : [];
+    const diagnosticsById = new Map(diagnosticsRows.map((row) => [row.contact_request_id, diagnosticsForAdmin(row)]));
     const byContactId = new Map();
     for (const attachment of attachments) {
       const list = byContactId.get(attachment.contact_request_id) || [];
@@ -82,9 +93,42 @@ export function registerAdminContactRoutes(app, { audit } = {}) {
       contacts: contacts.map((contact) => ({
         ...contact,
         attachments: byContactId.get(contact.id) || [],
+        diagnostics: diagnosticsById.get(contact.id) || null,
       })),
     };
   });
+
+  app.get(
+    "/api/admin/contact-requests/:id/log",
+    {
+      schema: {
+        tags: ["admin:contacts"],
+        summary: "Download the log a feedback request carried",
+        description: "Returns the redacted main-process log tail the desktop client attached, as plain text. Every download is audited: the log can carry conversation text.",
+      },
+    },
+    async (request, reply) => {
+      const row = await db
+        .selectFrom("contact_request_diagnostics")
+        .select(["log_gzip"])
+        .where("contact_request_id", "=", request.params.id)
+        .executeTakeFirst();
+      if (!row?.log_gzip) return reply.code(404).send({ ok: false, error: "not_found" });
+      let text;
+      try {
+        text = inflateStoredLog(row.log_gzip);
+      } catch {
+        return reply.code(500).send({ ok: false, error: "log_unreadable" });
+      }
+      await audit?.(request, "contact.log.download", "contact_request", request.params.id, { bytes: text.length });
+      const safeId = String(request.params.id).replace(/[^a-zA-Z0-9_-]+/g, "_");
+      return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("content-disposition", `attachment; filename="lily-${safeId}.log"`)
+        .header("cache-control", "no-store")
+        .send(text);
+    },
+  );
 
   app.patch(
     "/api/admin/contact-requests/:id",

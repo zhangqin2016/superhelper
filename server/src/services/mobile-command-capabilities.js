@@ -108,6 +108,10 @@ function mobileCapabilitiesPayload({ flags = {} } = {}) {
     ok: true,
     phase: "phase1-web-demo",
     fallback: CHAT_ONLY_FALLBACK,
+    // The relay protocols this server speaks. A desktop reads this before
+    // opening its control channel, so a server that predates it is reported
+    // as such instead of looking like a network that never connects.
+    relay: { controlChannel: 2 },
     capabilities,
   };
 }

@@ -10,6 +10,8 @@ import { requireAccountSession } from "../../services/account-session-guard.js";
 import { createGrantToken, verifyGrantToken } from "../../services/mobile-grant-token.js";
 import { createDirectCode, consumeDirectCode } from "../../services/mobile-direct-connect.js";
 import { signModelGatewayToken } from "../../services/model-gateway/auth.js";
+import { relayControl } from "../../services/mobile-relay.js";
+import { mobileLabelFromUserAgent } from "../../services/mobile-device-label.js";
 import {
   createPairingChallenge,
   consumePairingChallenge,
@@ -30,6 +32,39 @@ import { registerMobileCommandSurfaceRoutes } from "./mobile-command-surface.js"
 // + account session), supplies real Kysely queries, and maps result codes to
 // HTTP status. The security decisions are unit-tested; end-to-end DB integration
 // is covered in Phase 1-6.
+
+
+// The relay mirrors the pairing row: after any change, the desktop's control
+// channel learns the row's state (pending → show the approval, active → route
+// the phone, anything else → end its sockets). One publisher for every route,
+// so no route can change a pairing without the live connections following.
+async function publishGrantState(grantId) {
+  if (!grantId) return;
+  try {
+    const row = await db.selectFrom("mobile_pairing_grants").selectAll().where("id", "=", grantId).executeTakeFirst();
+    if (!row) return;
+    if (row.status === "active") relayControl.grantActivated(row);
+    else if (row.status === "pending_approval") relayControl.pairingRequested(row);
+    else relayControl.grantEnded(row.id, row.revoked_reason || row.status);
+  } catch {
+    // The HTTP answer never depends on the live channel; the next connect's
+    // hello carries the truth.
+  }
+}
+
+// A re-scan replaces the old pairing of the same phone.
+async function supersedeLivePairs({ desktopDeviceId, mobileDeviceId, now }) {
+  const rows = await db
+    .updateTable("mobile_pairing_grants")
+    .set({ status: "revoked", terminal_at: now.toISOString(), revoked_reason: "superseded" })
+    .where("desktop_device_id", "=", desktopDeviceId)
+    .where("mobile_device_id", "=", mobileDeviceId)
+    .where("status", "in", ["pending_approval", "active"])
+    .returning("id")
+    .execute();
+  for (const row of rows) await publishGrantState(row.id);
+  return rows;
+}
 
 const deviceBase = {
   deviceId: z.string().min(6).max(120),
@@ -118,17 +153,14 @@ export function registerPublicMobileRoutes(app) {
           .returningAll()
           .executeTakeFirst()),
         resolveDesktopLicense: async (deviceId) => (await validLicenseScope({ deviceId })) || null,
-        supersedeLivePairs: ({ desktopDeviceId, mobileDeviceId, now }) => db
-          .updateTable("mobile_pairing_grants")
-          .set({ status: "revoked", terminal_at: now.toISOString(), revoked_reason: "superseded" })
-          .where("desktop_device_id", "=", desktopDeviceId)
-          .where("mobile_device_id", "=", mobileDeviceId)
-          .where("status", "in", ["pending_approval", "active"])
+        supersedeLivePairs,
+        insertGrant: (row) => db.insertInto("mobile_pairing_grants")
+          .values({ ...row, mobile_label: mobileLabelFromUserAgent(request.headers["user-agent"]) })
           .execute(),
-        insertGrant: (row) => db.insertInto("mobile_pairing_grants").values(row).execute(),
         issueGrantToken: ({ grantId, mobileDeviceId }) => createGrantToken({ grantId, mobileDeviceId }),
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      await publishGrantState(result.grantId);
       return reply.send({ ok: true, grantId: result.grantId, mobileToken: result.mobileToken, desktopDeviceId: result.desktopDeviceId, approvalExpiresAt: result.approvalExpiresAt });
     },
   );
@@ -155,6 +187,7 @@ export function registerPublicMobileRoutes(app) {
         },
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      await publishGrantState(result.grantId);
       return reply.send({ ok: true, grantId: result.grantId, status: result.status });
     },
   );
@@ -180,6 +213,7 @@ export function registerPublicMobileRoutes(app) {
         },
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      await publishGrantState(result.grantId);
       return reply.send({ ok: true, grantId: result.grantId, status: result.status });
     },
   );
@@ -206,6 +240,7 @@ export function registerPublicMobileRoutes(app) {
         },
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      await publishGrantState(result.grantId);
       return reply.send({ ok: true, grantId: result.grantId, status: result.status });
     },
   );
@@ -310,17 +345,14 @@ export function registerPublicMobileRoutes(app) {
           .where("id", "=", id)
           .execute(),
         resolveDesktopLicense: async (deviceId) => (await validLicenseScope({ deviceId })) || null,
-        supersedeLivePairs: ({ desktopDeviceId, mobileDeviceId, now }) => db
-          .updateTable("mobile_pairing_grants")
-          .set({ status: "revoked", terminal_at: now.toISOString(), revoked_reason: "superseded" })
-          .where("desktop_device_id", "=", desktopDeviceId)
-          .where("mobile_device_id", "=", mobileDeviceId)
-          .where("status", "in", ["pending_approval", "active"])
+        supersedeLivePairs,
+        insertGrant: (row) => db.insertInto("mobile_pairing_grants")
+          .values({ ...row, mobile_label: mobileLabelFromUserAgent(request.headers["user-agent"]) })
           .execute(),
-        insertGrant: (row) => db.insertInto("mobile_pairing_grants").values(row).execute(),
         issueGrantToken: ({ grantId, mobileDeviceId }) => createGrantToken({ grantId, mobileDeviceId }),
       });
       if (!result.ok) return reply.code(409).send({ ok: false, code: result.code });
+      await publishGrantState(result.grantId);
       return reply.send({ ok: true, grantId: result.grantId, mobileToken: result.mobileToken, desktopDeviceId: result.desktopDeviceId });
     },
   );
@@ -352,6 +384,31 @@ export function registerPublicMobileRoutes(app) {
         userId: grant.user_id,
       });
       return reply.send({ ok: true, asrToken });
+    },
+  );
+
+  // Sliding renewal: a phone still holding a valid grant token for an ACTIVE
+  // pairing gets a fresh one. Without it every phone was logged out two days
+  // after pairing, however much it was used. An expired token cannot renew —
+  // that phone scans again, so possession of the desktop stays the root.
+  app.post(
+    "/api/mobile/grant/refresh",
+    { schema: { tags: ["public:mobile"], summary: "Paired phone renews its grant token", body: zodBody(asrTokenSchema), response: { 200: okResponse({ mobileToken: { type: "string" }, expiresAt: { type: "string" } }) } } },
+    async (request, reply) => {
+      const input = asrTokenSchema.parse(request.body);
+      if (!(await deviceOnly(request, reply, input))) return;
+      const v = verifyGrantToken(input.token);
+      if (!v.ok) return reply.code(401).send({ ok: false, code: v.code || "GRANT_TOKEN_INVALID" });
+      if (v.grantId !== input.grantId || v.mobileDeviceId !== input.deviceId) {
+        return reply.code(403).send({ ok: false, code: "GRANT_MISMATCH" });
+      }
+      const grant = await db.selectFrom("mobile_pairing_grants").select(["id", "mobile_device_id"])
+        .where("id", "=", input.grantId).where("status", "=", "active").executeTakeFirst();
+      if (!grant) return reply.code(409).send({ ok: false, code: "GRANT_INACTIVE" });
+      if (grant.mobile_device_id !== input.deviceId) return reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" });
+      const mobileToken = createGrantToken({ grantId: grant.id, mobileDeviceId: input.deviceId });
+      const renewed = verifyGrantToken(mobileToken);
+      return reply.send({ ok: true, mobileToken, expiresAt: renewed.expiresAt || "" });
     },
   );
 

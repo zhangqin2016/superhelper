@@ -843,6 +843,54 @@ try {
   );
   assert.equal(adminAttachment.publicUrl, adminAttachment.public_url);
   assert.ok(contacts.json().contacts.some((item) => item.id === legacyContact.json().id));
+  assert.equal(adminContact.diagnostics, null, "a ticket without diagnostics lists none");
+
+  // Feedback with the diagnostics report + gzipped log tail the desktop sends.
+  const logText = "2026-09-24 10:00:00.000 ERROR turn failed: EMPTY_COMPLETION\n";
+  const zlib = await import("node:zlib");
+  const diagContact = await app.inject({
+    method: "POST",
+    url: "/api/contact-requests",
+    payload: {
+      name: "Diag Contact",
+      email: "diag@example.com",
+      message: "It keeps failing with an empty reply.",
+      source: "desktop-feedback",
+      diagnostics: {
+        report: { summary: { status: "warning", issueCount: 1 }, checks: [{ id: "turns.recentFailures", status: "warning", label: "近期失败", detail: "EMPTY_COMPLETION×3" }] },
+        log: { encoding: "gzip+base64", data: zlib.gzipSync(Buffer.from(logText)).toString("base64"), truncated: true },
+      },
+    },
+  });
+  assert.equal(diagContact.statusCode, 201);
+  assert.deepEqual(diagContact.json().diagnostics, { report: true, log: true });
+  const bombContact = await app.inject({
+    method: "POST",
+    url: "/api/contact-requests",
+    payload: {
+      name: "Bomb Contact",
+      email: "bomb@example.com",
+      message: "A malformed log must not lose this feedback.",
+      diagnostics: { log: { encoding: "gzip+base64", data: zlib.gzipSync(Buffer.alloc(5 * 1024 * 1024)).toString("base64") } },
+    },
+  });
+  assert.equal(bombContact.statusCode, 201, "bad diagnostics never reject the ticket");
+  assert.equal(bombContact.json().diagnostics, null);
+  const diagList = await app.inject({ method: "GET", url: "/api/admin/contact-requests?status=all", headers: adminHeaders });
+  const listed = diagList.json().contacts.find((item) => item.id === diagContact.json().id);
+  assert.equal(listed.diagnostics.hasLog, true);
+  assert.equal(listed.diagnostics.logBytes, Buffer.byteLength(logText));
+  assert.equal(listed.diagnostics.logTruncated, true);
+  assert.equal(listed.diagnostics.report.summary.status, "warning");
+  assert.ok(!JSON.stringify(listed).includes("log_gzip"), "the list never carries log bytes");
+  const logDownload = await app.inject({ method: "GET", url: `/api/admin/contact-requests/${diagContact.json().id}/log`, headers: adminHeaders });
+  assert.equal(logDownload.statusCode, 200);
+  assert.equal(logDownload.body, logText);
+  assert.match(logDownload.headers["content-disposition"], /attachment; filename="lily-contact_/);
+  const logAnon = await app.inject({ method: "GET", url: `/api/admin/contact-requests/${diagContact.json().id}/log` });
+  assert.equal(logAnon.statusCode, 401, "the log is admin-only");
+  const noLog = await app.inject({ method: "GET", url: `/api/admin/contact-requests/${contact.json().id}/log`, headers: adminHeaders });
+  assert.equal(noLog.statusCode, 404);
 
   const release = await app.inject({
     method: "POST",

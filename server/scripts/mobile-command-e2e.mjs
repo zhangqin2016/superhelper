@@ -154,8 +154,10 @@ try {
 
   // --- 2. Mobile consumes it with NO login — just its device id + the token.
   // The response carries a grant-scoped token that is the phone's only credential. ---
+  const IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
   const consume = await app.inject({
     method: "POST", url: "/api/mobile/pairing/consume",
+    headers: { "user-agent": IPHONE_UA },
     payload: { deviceId: mobileDeviceId, token: pairingToken },
   });
   assert.equal(consume.statusCode, 200, `consume ok: ${consume.body}`);
@@ -168,6 +170,7 @@ try {
   const pending = await desktopPost("/api/mobile/pairing/pending", desktopBody({}));
   assert.equal(pending.statusCode, 200, "pending ok");
   assert.ok(pending.json().grants.some((g) => g.grantId === grantId || g.id === grantId), "the pending grant is listed for the desktop");
+  assert.equal(pending.json().grants.find((g) => g.grantId === grantId)?.mobileLabel, "iPhone · Safari", "the desktop is told WHICH phone asks (from its User-Agent)");
 
   // --- 4. Relay must refuse before approval (grant not active). ---
   {
@@ -186,13 +189,14 @@ try {
   assert.equal(approve.statusCode, 200, `approve ok: ${approve.body}`);
   assert.equal(approve.json().status, "active", "grant is active after approval");
 
-  // --- 6. Both roles connect the relay. ---
+  // --- 6. Both roles connect the relay; each is told the other is there. ---
   const desktopWs = connectRelay(base, { role: "desktop", grantId, deviceId: desktopDeviceId, token: desktopToken });
+  await waitForFrame(desktopWs, (f) => f.type === "relay.ready", "desktop relay.ready");
+  const desktopSeesPhone = waitForFrame(desktopWs, (f) => f.type === "relay.presence" && f.mobilesOnline === 1, "desktop sees the phone come online");
   const mobileWs = connectRelay(base, { role: "mobile", grantId, deviceId: mobileDeviceId, token: mobileToken });
-  await Promise.all([
-    waitForFrame(desktopWs, (f) => f.type === "relay.ready", "desktop relay.ready"),
-    waitForFrame(mobileWs, (f) => f.type === "relay.ready", "mobile relay.ready"),
-  ]);
+  const mobileSeesDesktop = waitForFrame(mobileWs, (f) => f.type === "relay.presence" && f.desktopOnline === true, "phone sees the desktop online");
+  await waitForFrame(mobileWs, (f) => f.type === "relay.ready", "mobile relay.ready");
+  await Promise.all([desktopSeesPhone, mobileSeesDesktop]);
 
   // --- 7. Mobile command frame reaches the desktop socket (dumb-pipe relay). ---
   const commandId = `cmd_e2e_${runId}`;
@@ -210,7 +214,11 @@ try {
   const ack = await mobileGotAck;
   assert.equal(ack.effectiveMode, "queue", "the admission ack round-trips back to mobile");
 
-  try { desktopWs.close(); mobileWs.close(); } catch { /* noop */ }
+  // --- 8a. The desktop drops off: the phone is told, instead of typing into the void. ---
+  const phoneSeesOffline = waitForFrame(mobileWs, (f) => f.type === "relay.presence" && f.desktopOnline === false, "phone sees the desktop go offline");
+  desktopWs.close();
+  await phoneSeesOffline;
+  const mobileClosed = new Promise((resolve) => mobileWs.on("close", (code) => resolve(code)));
 
   // --- 8b. Re-scan while a grant is ALREADY LIVE: consume must supersede the
   // old pairing (revoke it) and succeed, not fail PAIRING_ALREADY_LIVE. This is
@@ -224,6 +232,8 @@ try {
   });
   assert.equal(consume2.statusCode, 200, `re-scan consume supersedes the live grant: ${consume2.body}`);
   assert.ok(consume2.json().grantId && consume2.json().grantId !== grantId, "re-scan yields a fresh grant");
+  const supersededCode = await Promise.race([mobileClosed, new Promise((r) => setTimeout(() => r("still-open"), 3000))]);
+  assert.equal(supersededCode, 4001, "the superseded pairing's OPEN socket is closed at once, not left authenticated");
 
   // --- 9. Revoke the (current) grant; a fresh connect is refused. ---
   const grant2 = consume2.json().grantId;
@@ -273,6 +283,80 @@ try {
   assert.ok(asrOk.json().asrToken, "returns a vision-scoped ASR token");
   const asrBadDevice = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: "dev_other_xxxx", grantId: directGrant, token: directToken } });
   assert.equal(asrBadDevice.statusCode, 403, "a mismatched device is refused an ASR token");
+
+  // --- 12. Token renewal (sliding) and revocation of a LIVE connection. ---
+  const renewed = await app.inject({ method: "POST", url: "/api/mobile/grant/refresh", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: directToken } });
+  assert.equal(renewed.statusCode, 200, `refresh ok: ${renewed.body}`);
+  assert.ok(renewed.json().mobileToken?.startsWith("lily_mgrant_") && renewed.json().expiresAt, "a paired phone renews its token");
+  const renewedWs = connectRelay(base, { role: "mobile", grantId: directGrant, deviceId: mobileDeviceId, token: renewed.json().mobileToken });
+  await waitForFrame(renewedWs, (f) => f.type === "relay.ready", "renewed token joins the relay");
+  const renewedClosed = new Promise((resolve) => renewedWs.on("close", (code) => resolve(code)));
+  const badRefresh = await app.inject({ method: "POST", url: "/api/mobile/grant/refresh", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: "lily_mgrant_forged.token" } });
+  assert.equal(badRefresh.statusCode, 401, "a forged token cannot renew");
+  const revokeDirect = await desktopPost("/api/mobile/pairing/revoke", desktopBody({ grantId: directGrant, reason: "e2e" }));
+  assert.equal(revokeDirect.statusCode, 200);
+  const revokedCode = await Promise.race([renewedClosed, new Promise((r) => setTimeout(() => r("still-open"), 3000))]);
+  assert.equal(revokedCode, 4001, "revoking kicks the phone's live connection immediately");
+  const deadRefresh = await app.inject({ method: "POST", url: "/api/mobile/grant/refresh", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: renewed.json().mobileToken } });
+  assert.equal(deadRefresh.statusCode, 409, "a revoked pairing cannot renew");
+  assert.equal(deadRefresh.json().code, "GRANT_INACTIVE");
+
+  // --- 13. Protocol 2: the desktop's ONE control channel. The server pushes
+  // every pairing change down it — nothing is polled. ---
+  const channel = connectRelay(base, { role: "desktop", grantId: "", deviceId: desktopDeviceId, token: desktopToken });
+  const channelFrames = [];
+  channel.on("message", (d) => { try { channelFrames.push(JSON.parse(d.toString())); } catch { /* ignore */ } });
+  const hello = await waitForFrame(channel, (f) => f.type === "control.hello", "channel hello");
+  assert.equal(hello.protocol, 2);
+  assert.ok(Array.isArray(hello.grants) && Array.isArray(hello.pending), "hello carries the full state (reconnect = reconcile)");
+  assert.ok(!hello.grants.some((g) => g.grantId === directGrant), "an ended pairing is not in the snapshot");
+
+  // A phone scans → the desktop hears about it at once.
+  const challenge3 = await desktopPost("/api/mobile/pairing/challenge", desktopBody({}));
+  const pendingPushed = waitForFrame(channel, (f) => f.type === "control.pairing.pending", "pending pushed to the desktop");
+  const consume3 = await app.inject({ method: "POST", url: "/api/mobile/pairing/consume", headers: { "user-agent": IPHONE_UA }, payload: { deviceId: mobileDeviceId, token: challenge3.json().token } });
+  assert.equal(consume3.statusCode, 200);
+  const grant3 = consume3.json().grantId;
+  const pendingFrame = await pendingPushed;
+  assert.equal(pendingFrame.grant.grantId, grant3);
+  assert.equal(pendingFrame.grant.mobileLabel, "iPhone · Safari");
+
+  // Approve → the pairing joins the live channel, pushed.
+  const activePushed = waitForFrame(channel, (f) => f.type === "control.grant.active" && f.grant.grantId === grant3, "activation pushed");
+  await desktopPost("/api/mobile/pairing/approve", desktopBody({ grantId: grant3 }));
+  await activePushed;
+
+  // The phone connects: the channel is told, and frames flow both ways, wrapped.
+  const presencePushed = waitForFrame(channel, (f) => f.type === "control.presence" && f.grantId === grant3 && f.mobilesOnline === 1, "channel sees the phone");
+  const phone3 = connectRelay(base, { role: "mobile", grantId: grant3, deviceId: mobileDeviceId, token: consume3.json().mobileToken });
+  const phoneSeesDesktop = waitForFrame(phone3, (f) => f.type === "relay.presence" && f.desktopOnline === true, "phone sees the channel desktop");
+  await Promise.all([presencePushed, phoneSeesDesktop]);
+  const wrapped = waitForFrame(channel, (f) => f.type === "relay.frame" && f.grantId === grant3 && f.frame?.type === "command", "command arrives wrapped with its pairing");
+  phone3.send(JSON.stringify({ type: "command", commandId: "cmd_ch_1", text: "经控制通道" }));
+  assert.equal((await wrapped).frame.text, "经控制通道");
+  const phoneGetsReply = waitForFrame(phone3, (f) => f.type === "assistant.delta", "phone receives the inner frame");
+  channel.send(JSON.stringify({ type: "relay.frame", grantId: grant3, frame: { type: "assistant.delta", text: "收到" } }));
+  assert.equal((await phoneGetsReply).text, "收到");
+
+  // The channel cannot reach a pairing that is not its own.
+  const refusedFrame = waitForFrame(channel, (f) => f.type === "relay.error", "unbound pairing refused");
+  channel.send(JSON.stringify({ type: "relay.frame", grantId: grantId, frame: { type: "assistant.delta", text: "越权" } }));
+  assert.equal((await refusedFrame).code, "RELAY_GRANT_NOT_BOUND");
+
+  // Revoke → the channel is told, the phone is closed.
+  const phone3Closed = new Promise((r) => phone3.on("close", (code) => r(code)));
+  const endedPushed = waitForFrame(channel, (f) => f.type === "control.grant.ended" && f.grantId === grant3, "ending pushed");
+  await desktopPost("/api/mobile/pairing/revoke", desktopBody({ grantId: grant3, reason: "user_action" }));
+  assert.equal((await endedPushed).reason, "user_action");
+  assert.equal(await phone3Closed, 4001);
+
+  // Reconnecting the channel replaces the old one and re-sends the truth.
+  const oldClosed = new Promise((r) => channel.on("close", (code) => r(code)));
+  const channel2 = connectRelay(base, { role: "desktop", grantId: "", deviceId: desktopDeviceId, token: desktopToken });
+  const hello2 = await waitForFrame(channel2, (f) => f.type === "control.hello", "second hello");
+  assert.equal(await oldClosed, 4000, "the stale channel is replaced");
+  assert.ok(!hello2.grants.some((g) => g.grantId === grant3), "the revoked pairing is gone from the snapshot");
+  channel2.close();
 
   console.log("mobile-command-e2e: ok");
 } finally {

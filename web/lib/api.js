@@ -24,6 +24,14 @@ export async function apiGet(path) {
   return response.json();
 }
 
+/** The raw response, for a download the caller streams back unchanged. */
+export async function apiGetRaw(path) {
+  return fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    headers: await adminHeaders(),
+  });
+}
+
 export async function apiPost(path, body) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",

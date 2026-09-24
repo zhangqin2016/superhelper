@@ -8,6 +8,7 @@ import {
   normalizeFeedbackAttachmentInput,
   normalizeSubmittedAttachment,
 } from "../../services/qiniu-upload.js";
+import { normalizeSubmittedDiagnostics } from "../../services/contact-diagnostics.js";
 import { compareVersions, newestRelease } from "../../services/release-versions.js";
 import { DEFAULT_CHANNEL, offerRelease, releaseFeedUrl } from "../../services/release-offer.js";
 import { resolveUpdateChannel } from "../../services/release-channel.js";
@@ -21,7 +22,13 @@ const contactRequestSchema = z.object({
   message: z.string().min(8).max(4000),
   source: z.string().max(80).optional().nullable(),
   attachments: z.array(z.unknown()).max(5).optional(),
+  // Redacted diagnostics report + gzipped log tail. Validated in
+  // normalizeSubmittedDiagnostics, which drops what it cannot accept instead
+  // of failing the request.
+  diagnostics: z.unknown().optional().nullable(),
 });
+
+const CONTACT_BODY_LIMIT_BYTES = 4 * 1024 * 1024;
 
 const attachmentUploadSchema = z.object({
   draftId: z.string().max(120).optional().nullable(),
@@ -34,6 +41,7 @@ async function createContactRequest(request, reply) {
   const input = contactRequestSchema.parse(request.body);
   const id = publicId("contact");
   const attachments = (await Promise.all((input.attachments || []).map(normalizeSubmittedAttachment))).filter(Boolean);
+  const diagnostics = normalizeSubmittedDiagnostics(input.diagnostics);
   await db.transaction().execute(async (trx) => {
     await trx
       .insertInto("contact_requests")
@@ -56,8 +64,14 @@ async function createContactRequest(request, reply) {
         .values(attachments.map((attachment) => ({ ...attachment, contact_request_id: id })))
         .execute();
     }
+    if (diagnostics) {
+      await trx
+        .insertInto("contact_request_diagnostics")
+        .values({ ...diagnostics, contact_request_id: id })
+        .execute();
+    }
   });
-  return reply.code(201).send({ ok: true, id });
+  return reply.code(201).send({ ok: true, id, diagnostics: diagnostics ? { report: Boolean(diagnostics.report), log: Boolean(diagnostics.log_gzip) } : null });
 }
 
 async function createContactAttachmentUploadToken(request, reply) {
@@ -89,8 +103,10 @@ export async function publicCatalogRoutes(app) {
         summary: "Submit a contact / support request",
         description: "Stores a contact request with optional uploaded attachments.",
         body: zodBody(contactRequestSchema),
-        response: { 201: okResponse({ id: { type: "string" } }) },
+        response: { 201: okResponse({ id: { type: "string" }, diagnostics: { type: ["object", "null"], additionalProperties: true } }) },
       },
+      // A feedback may carry a gzipped log tail; nothing legitimate is bigger.
+      bodyLimit: CONTACT_BODY_LIMIT_BYTES,
     },
     createContactRequest,
   );
@@ -102,8 +118,10 @@ export async function publicCatalogRoutes(app) {
         summary: "Submit a contact / support request (alias)",
         description: "Alias of POST /api/contact-requests.",
         body: zodBody(contactRequestSchema),
-        response: { 201: okResponse({ id: { type: "string" } }) },
+        response: { 201: okResponse({ id: { type: "string" }, diagnostics: { type: ["object", "null"], additionalProperties: true } }) },
       },
+      // A feedback may carry a gzipped log tail; nothing legitimate is bigger.
+      bodyLimit: CONTACT_BODY_LIMIT_BYTES,
     },
     createContactRequest,
   );

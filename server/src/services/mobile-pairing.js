@@ -220,6 +220,8 @@ export function shapePendingGrant(row) {
   return {
     grantId: row.id,
     mobileDeviceId: row.mobile_device_id,
+    // The desktop user is approving a phone they can see — say which one.
+    mobileLabel: row.mobile_label || null,
     approvalExpiresAt: row.approval_expires_at,
     createdAt: row.created_at,
   };
@@ -241,6 +243,7 @@ export function shapeGrant(row) {
   return {
     grantId: row.id,
     mobileDeviceId: row.mobile_device_id,
+    mobileLabel: row.mobile_label || null,
     status: row.status,
     approvalExpiresAt: row.approval_expires_at,
     approvedAt: row.approved_at || null,

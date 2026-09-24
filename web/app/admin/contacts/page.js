@@ -1,5 +1,6 @@
 import { AdminShell } from "../../../components/admin-shell";
 import { AdminContactAttachments } from "../../../components/admin-contact-attachments";
+import { AdminContactDiagnostics } from "../../../components/admin-contact-diagnostics";
 import { AdminEmpty } from "../../../components/admin-empty";
 import { Pagination } from "../../../components/pagination";
 import { ListFilter } from "../../../components/list-filter";
@@ -72,6 +73,7 @@ export default async function ContactsPage({ searchParams }) {
                   <td className="max-w-xl whitespace-pre-wrap px-4 py-2 leading-6 text-slate-600">{contact.message}</td>
                   <td className="px-4 py-2">
                     <AdminContactAttachments attachments={contact.attachments || []} />
+                    <AdminContactDiagnostics contactId={contact.id} diagnostics={contact.diagnostics} copy={copy} />
                   </td>
                   <td className="px-4 py-2">{contact.source || "-"}</td>
                   <td className="px-4 py-2">
