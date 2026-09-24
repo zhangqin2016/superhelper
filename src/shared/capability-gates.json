@@ -2183,6 +2183,26 @@
       "tests": [
         "scripts/test-no-undeclared-identifiers.mjs"
       ]
+    },
+    {
+      "id": "compaction-outcome-truth",
+      "protects": "A compaction is recorded by what the engine did: the summarize wait has one bound (compaction-timeout) that every layer uses, a wait that ends first leaves the outcome to the engine's real settlement, and no second summary starts over one still running.",
+      "baseline": "A summary within the wait is recorded as before; a real error is recorded as a failure at once; the turn still proceeds uncompacted whenever the summary is not in hand.",
+      "failureFallback": "A settlement that never comes (serve death) rejects through the engine work lease and is recorded as a failure, never as success; the in-flight mark is process memory and cannot outlive the run.",
+      "tests": [
+        "scripts/test-compaction-outcome.mjs",
+        "scripts/test-opencode-runtime-ownership.mjs",
+        "scripts/test-opencode-agent-session.mjs"
+      ]
+    },
+    {
+      "id": "watchdog-sleep-not-lag",
+      "protects": "A machine that slept is reported as a system sleep with its length, never as main-loop lag or a stale renderer: lag and staleness are measured on the monotonic clock, and powerMonitor resume restarts both baselines.",
+      "baseline": "A real freeze advances both clocks and is reported exactly as before; a test that injects only the wall clock behaves as before.",
+      "failureFallback": "Without powerMonitor the clock gap alone separates sleep from lag; a platform whose monotonic clock counts sleep is covered by the resume reset.",
+      "tests": [
+        "scripts/test-app-watchdog.mjs"
+      ]
     }
   ]
 }
