@@ -1,33 +1,19 @@
+import { committedMessageKey } from "./committed-message-equivalence.js";
+
+// Identity comes from the one definition every merge of conversation history
+// uses: a message bound to a turn is that turn's message, whatever id it
+// arrives under. This module used to try the id FIRST — and an engine copy of a
+// round is a group of step messages identified by its latest step, so a round
+// still growing arrived under a new id on every refresh and stood beside its
+// earlier copies (2026-09-24: three partial cards of one task under its answer).
 export function conversationMessageKey(message, index = 0) {
-  const id = String(message?.id || message?.engineMessageId || "").trim();
-  if (id) return `id:${id}`;
-  if (message?.turnId && message?.role) {
-    // Two user messages can share a turn (插话). Without the discriminator the
-    // second overwrote the first when an older page was merged in, so a question
-    // disappeared from the transcript and the rail.
-    if (message.steer || message.meta?.steer) {
-      const seq = message.steerSeq ?? message.meta?.steerSeq ?? String(message.content || "").replace(/\s+/g, " ").trim();
-      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
-    }
-    return `turn:${message.role}:${message.turnId}`;
-  }
-  return ["fallback", message?.role || "", message?.timestamp || "", message?.content || "", index].join(":");
+  const key = committedMessageKey(message || {});
+  return key.startsWith("fallback:") ? `${key}:${index}` : key;
 }
 
 function stableConversationMessageKey(message) {
-  const id = String(message?.id || message?.engineMessageId || "").trim();
-  if (id) return `id:${id}`;
-  if (message?.turnId && message?.role) {
-    // Two user messages can share a turn (插话). Without the discriminator the
-    // second overwrote the first when an older page was merged in, so a question
-    // disappeared from the transcript and the rail.
-    if (message.steer || message.meta?.steer) {
-      const seq = message.steerSeq ?? message.meta?.steerSeq ?? String(message.content || "").replace(/\s+/g, " ").trim();
-      return `turn:${message.role}:${message.turnId}:steer:${seq}`;
-    }
-    return `turn:${message.role}:${message.turnId}`;
-  }
-  return "";
+  const key = committedMessageKey(message || {});
+  return key.startsWith("fallback:") ? "" : key;
 }
 
 function timestampMs(value) {

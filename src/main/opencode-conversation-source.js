@@ -555,7 +555,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
       ...opts,
       includeOpen: true,
     });
-    const withProjections = mergeProjectionConversation(mergedOfficial, projections);
+    const withProjections = mergeProjectionConversation(require("./running-round-history").withoutRunningRound(mergedOfficial, ctx, session.id), projections);
     const conversation = mergeProjectionConversation(withProjections, localConversation);
     return {
       ...page,

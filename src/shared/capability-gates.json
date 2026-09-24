@@ -2252,6 +2252,17 @@
       "tests": [
         "scripts/test-release-rollouts.mjs"
       ]
+    },
+    {
+      "id": "running-round-not-history",
+      "protects": "A round Lily is still running is shown only by its live card: the main process leaves every engine assistant message written since the running turn started out of official history until the turn ends (identified by start time, since a long round pushes its own question out of the 50-message page and nothing binds), and the renderer's history merge identifies a message bound to a turn as that turn's message whatever id it arrives under (the shared committed-message identity).",
+      "baseline": "Settled turns, other turns and sessions without turn state return history exactly as before; steered questions and unbound messages keep their own identity.",
+      "failureFallback": "Without an orchestrator snapshot nothing is held back; an unreadable snapshot holds nothing back.",
+      "tests": [
+        "scripts/test-running-round-not-history.mjs",
+        "scripts/test-conversation-pagination.mjs",
+        "scripts/test-opencode-conversation-source.mjs"
+      ]
     }
   ]
 }

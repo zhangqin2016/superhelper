@@ -328,6 +328,7 @@ class TurnOrchestrator {
       sessionId,
       phase: state.phase,
       turnId: state.turnId,
+      turnStartedAt: state.phase === "idle" ? 0 : Number(state.startedAt) || 0,
       canSend: state.phase === "idle",
       canInterrupt: state.phase !== "idle" && state.phase !== "finalizing",
       queueLength: state.queue.length,
