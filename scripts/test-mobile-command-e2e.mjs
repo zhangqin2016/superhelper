@@ -8,9 +8,12 @@
 //   port runtime events ──▶ mirror ──▶ relay ──▶ phone
 //   server pairing events (pending / active / ended) ──▶ desktop state push
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -51,6 +54,9 @@ const base = `http://127.0.0.1:${app.server.address().port}`;
 // --- desktop: the real composition root over a fake port -----------------------
 const bus = new RuntimeEventBus(() => null);
 const admits = [];
+const producedFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "lily-e2e-file-")), "纪要.pdf");
+const producedBytes = crypto.randomBytes(400_000); // three chunks: exercises the relay's real 256 KB frame limit
+fs.writeFileSync(producedFile, producedBytes);
 const pendingPrompts = [];
 const promptAnswers = [];
 const port = {
@@ -70,8 +76,9 @@ const port = {
   turnCommandId: (_sid, turnId) => (turnId === "turn_phone" ? "cmd_e2e_1" : ""),
   readConversation: async () => [
     { id: "u", role: "user", content: "端到端：整理会议纪要", turnId: "turn_phone" },
-    { id: "a", role: "assistant", content: "纪要已整理", turnId: "turn_phone" },
+    { id: "a", role: "assistant", content: "纪要已整理", turnId: "turn_phone", record: { artifacts: [{ artifactId: "art_minutes", fileName: "纪要.pdf", kind: "file", bytes: 400000 }] } },
   ],
+  resolveArtifact: (_sid, id) => (id === "art_minutes" ? { ok: true, artifactId: id, path: producedFile, artifact: { mimeType: "application/pdf" } } : { ok: false }),
   admit: async (env) => { admits.push(env); return { ok: true, commandId: env.commandId, correlationId: env.correlationId, state: "admitted", requestedMode: "queue", effectiveMode: "queue" }; },
   interrupt: async () => ({ ok: true }),
   materializeAttachments: async () => [],
@@ -146,6 +153,22 @@ await until(() => phoneFrames.some((f) => f.type === "prompt.ack" && f.requestId
 assert.deepEqual(promptAnswers, [{ sid: "s1", method: "respondPermission", requestId: "perm_e2e", decision: { allow: true, remember: false } }], "decided through the orchestrator seam");
 assert.equal(phoneFrames.find((f) => f.type === "prompt.ack").ok, true);
 await until(() => phoneFrames.filter((f) => f.type === "prompts.updated").at(-1).prompts.length === 0, "and the card is gone everywhere");
+
+// 4c. A file the turn produced, fetched through the real relay, byte for byte.
+{
+  const { createFileReceiver } = await import(pathToFileURL(path.join(ROOT, "web/lib/mobile/file-receive.mjs")).href);
+  assert.deepEqual(phoneFrames.filter((f) => f.type === "session.context").at(-1).recent.at(-1).artifacts, [{ artifactId: "art_minutes", name: "纪要.pdf", kind: "file", bytes: 400000 }], "the phone sees the produced file");
+  const receiver = createFileReceiver();
+  let done = null;
+  const fileFrames = [];
+  phone.on("message", async (d) => { const f = JSON.parse(String(d)); if (f.type?.startsWith("file.")) { fileFrames.push(f); done = (await receiver.onFrame(f))?.done || done; } });
+  phone.send(JSON.stringify({ type: "file.request", requestId: "req_e2e", artifactId: "art_minutes" }));
+  await until(() => done, "the file arrives on the phone");
+  assert.equal(Buffer.compare(Buffer.from(done.bytes), producedBytes), 0, "byte for byte, through the relay");
+  assert.equal(fileFrames.filter((f) => f.type === "file.chunk").length, 3);
+  phone.send(JSON.stringify({ type: "file.request", requestId: "req_bad", artifactId: "art_not_here" }));
+  await until(() => fileFrames.some((f) => f.type === "file.error" && f.requestId === "req_bad"), "a file not in the conversation is refused");
+}
 
 // 5. Server pushes: a phone scans (pending), is approved (active) — no polling.
 table.set("g2", row("g2", "pending_approval"));

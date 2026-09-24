@@ -12,6 +12,7 @@ import { createDirectCode, consumeDirectCode } from "../../services/mobile-direc
 import { signModelGatewayToken } from "../../services/model-gateway/auth.js";
 import { relayControl } from "../../services/mobile-relay.js";
 import { mobileLabelFromUserAgent } from "../../services/mobile-device-label.js";
+import { removeSubscription, saveSubscription, vapidPublicKey } from "../../services/mobile-push.js";
 import {
   createPairingChallenge,
   consumePairingChallenge,
@@ -79,6 +80,10 @@ const revokeSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(12
 const directCreateSchema = z.object({ ...deviceBase });
 const directConsumeSchema = z.object({ ...deviceBase, code: z.string().min(4).max(40), password: z.string().min(3).max(40) });
 const asrTokenSchema = z.object({ ...deviceBase, grantId: z.string().min(6).max(120), token: z.string().min(10).max(400) });
+const pushSubscriptionSchema = asrTokenSchema.extend({
+  subscription: z.object({ endpoint: z.string().url().max(2000), keys: z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }) }),
+});
+const pushUnsubscribeSchema = asrTokenSchema.extend({ endpoint: z.string().max(2000) });
 
 export function registerPublicMobileRoutes(app) {
   // Both guards: the device signature proves key possession, the account token
@@ -100,6 +105,24 @@ export function registerPublicMobileRoutes(app) {
   async function deviceOnly(request, reply, input) {
     await upsertDevice(input);
     return true;
+  }
+
+  // A paired phone proves itself with its grant token: valid, for this grant
+  // and this phone, and the pairing still active. The grant row, or null
+  // after replying with why not.
+  async function activeGrantFor(request, reply, input) {
+    if (!(await deviceOnly(request, reply, input))) return null;
+    const v = verifyGrantToken(input.token);
+    if (!v.ok) { reply.code(401).send({ ok: false, code: v.code || "GRANT_TOKEN_INVALID" }); return null; }
+    if (v.grantId !== input.grantId || v.mobileDeviceId !== input.deviceId) {
+      reply.code(403).send({ ok: false, code: "GRANT_MISMATCH" });
+      return null;
+    }
+    const grant = await db.selectFrom("mobile_pairing_grants").selectAll()
+      .where("id", "=", input.grantId).where("status", "=", "active").executeTakeFirst();
+    if (!grant) { reply.code(409).send({ ok: false, code: "GRANT_INACTIVE" }); return null; }
+    if (grant.mobile_device_id !== input.deviceId) { reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" }); return null; }
+    return grant;
   }
 
   app.post(
@@ -367,16 +390,8 @@ export function registerPublicMobileRoutes(app) {
     { schema: { tags: ["public:mobile"], summary: "Paired phone gets a vision-scoped token for server ASR", body: zodBody(asrTokenSchema), response: { 200: okResponse({ asrToken: { type: "string" } }) } } },
     async (request, reply) => {
       const input = asrTokenSchema.parse(request.body);
-      if (!(await deviceOnly(request, reply, input))) return;
-      const v = verifyGrantToken(input.token);
-      if (!v.ok) return reply.code(401).send({ ok: false, code: v.code || "GRANT_TOKEN_INVALID" });
-      if (v.grantId !== input.grantId || v.mobileDeviceId !== input.deviceId) {
-        return reply.code(403).send({ ok: false, code: "GRANT_MISMATCH" });
-      }
-      const grant = await db.selectFrom("mobile_pairing_grants").selectAll()
-        .where("id", "=", input.grantId).where("status", "=", "active").executeTakeFirst();
-      if (!grant) return reply.code(409).send({ ok: false, code: "GRANT_INACTIVE" });
-      if (grant.mobile_device_id !== input.deviceId) return reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" });
+      const grant = await activeGrantFor(request, reply, input);
+      if (!grant) return;
       const asrToken = signModelGatewayToken({
         deviceId: input.deviceId,
         licenseId: grant.license_id,
@@ -396,19 +411,51 @@ export function registerPublicMobileRoutes(app) {
     { schema: { tags: ["public:mobile"], summary: "Paired phone renews its grant token", body: zodBody(asrTokenSchema), response: { 200: okResponse({ mobileToken: { type: "string" }, expiresAt: { type: "string" } }) } } },
     async (request, reply) => {
       const input = asrTokenSchema.parse(request.body);
-      if (!(await deviceOnly(request, reply, input))) return;
-      const v = verifyGrantToken(input.token);
-      if (!v.ok) return reply.code(401).send({ ok: false, code: v.code || "GRANT_TOKEN_INVALID" });
-      if (v.grantId !== input.grantId || v.mobileDeviceId !== input.deviceId) {
-        return reply.code(403).send({ ok: false, code: "GRANT_MISMATCH" });
-      }
-      const grant = await db.selectFrom("mobile_pairing_grants").select(["id", "mobile_device_id"])
-        .where("id", "=", input.grantId).where("status", "=", "active").executeTakeFirst();
-      if (!grant) return reply.code(409).send({ ok: false, code: "GRANT_INACTIVE" });
-      if (grant.mobile_device_id !== input.deviceId) return reply.code(403).send({ ok: false, code: "DEVICE_MISMATCH" });
+      const grant = await activeGrantFor(request, reply, input);
+      if (!grant) return;
       const mobileToken = createGrantToken({ grantId: grant.id, mobileDeviceId: input.deviceId });
       const renewed = verifyGrantToken(mobileToken);
       return reply.send({ ok: true, mobileToken, expiresAt: renewed.expiresAt || "" });
+    },
+  );
+
+  // Web Push: the phone is told when a task finishes or the desktop waits on
+  // it, while its page is closed (services/mobile-push.js). No content travels.
+  app.post(
+    "/api/mobile/push/key",
+    { schema: { tags: ["public:mobile"], summary: "The Web Push public key a paired phone subscribes with", body: zodBody(asrTokenSchema), response: { 200: okResponse({ publicKey: { type: "string" } }) } } },
+    async (request, reply) => {
+      const input = asrTokenSchema.parse(request.body);
+      if (!(await activeGrantFor(request, reply, input))) return;
+      try {
+        return reply.send({ ok: true, publicKey: await vapidPublicKey() });
+      } catch {
+        return reply.code(503).send({ ok: false, code: "PUSH_UNAVAILABLE" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/mobile/push/subscribe",
+    { schema: { tags: ["public:mobile"], summary: "A paired phone subscribes to task notifications", body: zodBody(pushSubscriptionSchema), response: { 200: okResponse({}) } } },
+    async (request, reply) => {
+      const input = pushSubscriptionSchema.parse(request.body);
+      const grant = await activeGrantFor(request, reply, input);
+      if (!grant) return;
+      const saved = await saveSubscription({ grantId: grant.id, mobileDeviceId: input.deviceId, subscription: input.subscription });
+      return saved.ok ? reply.send({ ok: true }) : reply.code(400).send(saved);
+    },
+  );
+
+  app.post(
+    "/api/mobile/push/unsubscribe",
+    { schema: { tags: ["public:mobile"], summary: "A paired phone stops task notifications", body: zodBody(pushUnsubscribeSchema), response: { 200: okResponse({}) } } },
+    async (request, reply) => {
+      const input = pushUnsubscribeSchema.parse(request.body);
+      const grant = await activeGrantFor(request, reply, input);
+      if (!grant) return;
+      await removeSubscription({ grantId: grant.id, endpoint: input.endpoint });
+      return reply.send({ ok: true });
     },
   );
 

@@ -59,7 +59,39 @@ function TodoList({ todos }) {
   );
 }
 
-function AssistantBlock({ message, onStop }) {
+const FILE_ICON = { image: "🖼", video: "🎬", audio: "🎵", document: "📄", spreadsheet: "📊", presentation: "📽", code: "⌨" };
+const FILE_ERROR = { FILE_TOO_LARGE: "文件超过 20 MB，请在电脑上查看", FILE_NOT_FOUND: "电脑上找不到这个文件了", FILE_NOT_IN_CONVERSATION: "这个文件不属于当前会话" };
+
+function sizeText(bytes) {
+  if (!bytes) return "";
+  return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+// The turn's produced files, as the desktop's cards list them; tap to fetch.
+function FileList({ artifacts, downloads, onFile }) {
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {artifacts.map((a) => {
+        const state = downloads?.[a.artifactId] || null;
+        const busy = state && !state.done && !state.error;
+        return (
+          <button key={a.artifactId} type="button" disabled={busy} onClick={() => onFile?.(a.artifactId)}
+            className="flex min-w-0 items-center gap-2.5 rounded-xl border border-[#ebe8e1] bg-white px-3 py-2 text-left active:bg-[#f7f5f1] disabled:opacity-70">
+            <span className="flex-shrink-0 text-base">{FILE_ICON[a.kind] || "📎"}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-[#1f2328]">{a.name}</span>
+              <span className={`block text-xs ${state?.error ? "text-[#c8453b]" : "text-[#8a8479]"}`}>
+                {state?.error ? (FILE_ERROR[state.error] || "没能取回，请重试") : busy ? `正在取回 ${Math.round((state.progress || 0) * 100)}%` : state?.done ? "已取回，再点一次重新打开" : [sizeText(a.bytes), "点一下取回到手机"].filter(Boolean).join(" · ")}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssistantBlock({ message, onStop, downloads, onFile }) {
   const running = message.live && message.status === "running";
   const label = message.status === "completed" ? "" : STATUS_LABEL[message.status] || "";
   const failed = message.status === "failed" || message.status === "stalled";
@@ -68,6 +100,7 @@ function AssistantBlock({ message, onStop }) {
       <div className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#2f7de1] text-[11px] font-semibold text-white">L</div>
       <div className="min-w-0 flex-1 text-[15px] leading-6 text-[#1f2328]">
         {message.text ? <div className="space-y-1">{renderMarkdown(message.text)}</div> : (running ? <TypingDots /> : null)}
+        {message.artifacts?.length ? <FileList artifacts={message.artifacts} downloads={downloads} onFile={onFile} /> : null}
         {running && message.todos?.length ? <TodoList todos={message.todos} /> : null}
         {running && (message.tool || message.steps) ? (
           <div className="mt-1.5 truncate text-xs text-[#8a8479]">
@@ -146,7 +179,7 @@ function Composer({ client, offline, onSend, onNotice }) {
   );
 }
 
-export function ChatScreen({ conversation, messages, client, offline, onSend, onStop, onNotice, onAnswer }) {
+export function ChatScreen({ conversation, messages, client, offline, onSend, onStop, onNotice, onAnswer, downloads, onFile }) {
   const scrollRef = useRef(null);
   const last = messages[messages.length - 1];
   useEffect(() => {
@@ -168,7 +201,7 @@ export function ChatScreen({ conversation, messages, client, offline, onSend, on
         {conversation.session?.truncated ? <p className="text-center text-xs text-[#a9a397]">更早的消息请在电脑上查看</p> : null}
         {messages.map((m) => (m.role === "user"
           ? <UserBubble key={m.key} message={m} />
-          : <AssistantBlock key={m.key} message={m} onStop={onStop} />))}
+          : <AssistantBlock key={m.key} message={m} onStop={onStop} downloads={downloads} onFile={(id) => { if (!onFile?.(id)) onNotice("手机尚未连接电脑"); }} />))}
         {(conversation.prompts || []).map((p) => (
           <PromptCard key={p.requestId} prompt={p} busy={Boolean(conversation.answering?.[p.requestId])} onAnswer={answer} />
         ))}

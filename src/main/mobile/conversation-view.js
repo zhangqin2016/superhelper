@@ -20,6 +20,22 @@
 const { messageText } = require("../conversation-message-text");
 
 const DEFAULT_LIMIT = 30;
+const MAX_ARTIFACTS = 8;
+
+// The turn's produced-file cards, as the desktop shows them — id, name, kind,
+// size; never the desktop path (the phone asks by id, see file-send.js).
+function artifactsOf(message) {
+  const list = message?.artifacts || message?.record?.artifacts || [];
+  return (Array.isArray(list) ? list : [])
+    .filter((a) => a && (a.artifactId || a.id) && a.display !== "compact")
+    .slice(0, MAX_ARTIFACTS)
+    .map((a) => ({
+      artifactId: String(a.artifactId || a.id),
+      name: String(a.fileName || a.name || String(a.relativePath || a.path || "").split(/[\\/]/).pop() || "文件").slice(0, 120),
+      kind: String(a.kind || "file"),
+      bytes: Number.isFinite(a.bytes) ? a.bytes : 0,
+    }));
+}
 const MAX_TEXT_CHARS = 6000;
 // The relay drops frames over 256 KB. Measured in UTF-8 BYTES, not characters:
 // Chinese is three bytes a character, so a character budget overflowed it.
@@ -52,7 +68,8 @@ function mobileConversationView(conversation, { limit = DEFAULT_LIMIT, maxTextCh
     if (role === "assistant" && message?.meta?.superseded === true) continue;
     const full = messageText(message).trim();
     const files = Array.isArray(message?.files) ? message.files.length : 0;
-    if (!full && !files) continue;
+    const artifacts = role === "assistant" ? artifactsOf(message) : [];
+    if (!full && !files && !artifacts.length) continue;
     const text = full.length > maxTextChars ? `${full.slice(0, maxTextChars)}…` : full;
     visible.push({
       id: String(message.id || message.turnId || `${role}:${visible.length}`),
@@ -66,6 +83,7 @@ function mobileConversationView(conversation, { limit = DEFAULT_LIMIT, maxTextCh
         ? { status: runningTurnId && message.turnId === runningTurnId ? "running" : assistantStatus(message) }
         : {}),
       ...(files ? { files } : {}),
+      ...(artifacts.length ? { artifacts } : {}),
       ...(text.length < full.length ? { cut: true } : {}),
     });
   }

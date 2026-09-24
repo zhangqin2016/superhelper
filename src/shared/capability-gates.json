@@ -2310,6 +2310,26 @@
         "scripts/test-mobile-command-e2e.mjs",
         "scripts/test-turn-orchestrator.mjs"
       ]
+    },
+    {
+      "id": "mobile-push",
+      "protects": "A paired phone whose page is closed is notified — only when a task finished (turn.ended completed/failed/stalled) or the desktop waits on its user (prompts.updated with prompts) — with a payload that carries no conversation content, sent to the pairing's own subscriptions (grant-token authorized), VAPID-signed and encrypted, rate-limited, and dropped with the pairing.",
+      "baseline": "Without a subscription nothing changes: the relay routes exactly as before; a connected phone gets frames as before and is never also pushed.",
+      "failureFallback": "Any push failure (unreachable push service such as FCM from mainland China, bad keys, database error) is contained in the push service: the relay's routing is unaffected, the subscription's failures are counted and a gone or repeatedly failing one is dropped.",
+      "tests": [
+        "scripts/test-mobile-push.mjs",
+        "scripts/test-mobile-relay-core.mjs"
+      ]
+    },
+    {
+      "id": "mobile-file-send",
+      "protects": "A paired phone can fetch a file a task produced — only by artifactId, only when that id is on a produced-file card of the conversation the phone drives and the desktop's artifact registry resolves that exact id in the session's workspace (a path is never accepted: the registry resolves any existing file by path) — bounded to 20 MB, chunked under the relay's 256 KB frame, sha256-verified on the phone, never stored on the server.",
+      "baseline": "Without a request nothing changes: the conversation the phone sees only gains each turn's produced-file names (id, name, kind, size — no desktop path).",
+      "failureFallback": "Any file that cannot be served answers file.error with why (not in this conversation, not found, too large); nothing else is read or sent.",
+      "tests": [
+        "scripts/test-mobile-file-send.mjs",
+        "scripts/test-mobile-command-e2e.mjs"
+      ]
     }
   ]
 }

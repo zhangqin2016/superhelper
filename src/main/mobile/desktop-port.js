@@ -72,6 +72,21 @@ function createDesktopPort(ctx, { tmpDir, log = { warn() {} } } = {}) {
       return result;
     },
 
+    /**
+     * An artifact of the session's workspace, by its registry id only (a path
+     * would resolve any file). The workspace is the one the desktop built the
+     * session's artifacts in (turn-archive: project path, else session's).
+     */
+    resolveArtifact(sessionId, artifactId) {
+      return safe(() => {
+        const session = sessions()?.findById?.(sessionId);
+        const project = session?.projectId ? projects()?.find?.(session.projectId) : null;
+        const workspacePath = project?.path || session?.workspacePath || "";
+        if (!workspacePath || !artifactId) return { ok: false };
+        return require("../artifact-registry").resolveArtifactReference({ workspacePath, artifactId });
+      }, { ok: false });
+    },
+
     /** Answer a pending prompt through the orchestrator seam the desktop's cards use. */
     respondPrompt(sessionId, method, requestId, decision) {
       const fn = ctx.turnOrchestrator?.[method];

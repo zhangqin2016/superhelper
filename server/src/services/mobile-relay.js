@@ -164,6 +164,11 @@ export function registerMobileRelay(app, deps = {}) {
   const lookupGrant = deps.lookupActiveGrant || lookupActiveGrant;
   const loadState = deps.loadDesktopState || loadDesktopState;
   const registry = deps.registry || createRelayRegistry();
+  // A desktop frame no phone page is connected to receive: the push service
+  // decides whether it is worth a notification (a turn ended, the desktop
+  // waits on its user). Loaded lazily; fire-and-forget; never the relay's error.
+  const undelivered = deps.notifyUndelivered || ((grantId, frame) => import("./mobile-push.js").then((m) => m.notifyUndelivered(grantId, frame)));
+  const pushCleanup = deps.removeGrantPush || ((grantId) => import("./mobile-push.js").then((m) => m.removeGrantSubscriptions(grantId)));
   const authForRole = (role, token) => {
     if (role === "desktop") {
       const v = verifyToken(token);
@@ -219,6 +224,7 @@ export function registerMobileRelay(app, deps = {}) {
       for (const connId of mobiles) closeConn(connId, CLOSE_GRANT_ENDED, "GRANT_ENDED");
       if (legacyDesktop) closeConn(legacyDesktop, CLOSE_GRANT_ENDED, "GRANT_ENDED");
       if (channel) send(channel, { type: "control.grant.ended", grantId, reason });
+      Promise.resolve().then(() => pushCleanup(grantId)).catch(() => {});
       return mobiles.length + (legacyDesktop ? 1 : 0);
     },
   };
@@ -253,6 +259,10 @@ export function registerMobileRelay(app, deps = {}) {
       }
       if (!routed.deliveries.length) {
         if (conn.kind === "mobile") send(connId, peerOfflineFrameForMessage(frame));
+        else {
+          const grantId = conn.kind === "legacy" ? conn.grantId : frame.grantId;
+          Promise.resolve().then(() => undelivered(grantId, routed.frame)).catch(() => {});
+        }
         return;
       }
       const raw = JSON.stringify(routed.frame);

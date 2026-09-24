@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { initialConversation, isBusy, messages, reduce } from "../../lib/mobile/conversation.mjs";
 import { toDesktop } from "../../lib/mobile/protocol.mjs";
 import { createRelayClient, parseScanHash } from "../../lib/mobile/relay-client.mjs";
+import { createFileReceiver } from "../../lib/mobile/file-receive.mjs";
 
 function ensureDeviceId() {
   try {
@@ -22,9 +23,27 @@ function ensureDeviceId() {
   }
 }
 
+// Hand a received file to the phone: an image or PDF opens in a new tab (where
+// the browser shows it, and offers to save), anything else downloads.
+function saveFile({ name, mimeType, bytes }) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: mimeType || "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url;
+  if (/^image\/|^application\/pdf$/.test(mimeType || "")) a.target = "_blank";
+  else a.download = name || "file";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function useMobileCommand() {
   const [conversation, dispatch] = useReducer(reduce, undefined, initialConversation);
   const [status, setStatus] = useState({ phase: "idle", message: "" });
+  // Files being fetched from the desktop: artifactId → { progress, error }.
+  const [downloads, setDownloads] = useState({});
+  const receiverRef = useRef(createFileReceiver());
+  const requestsRef = useRef(new Map()); // requestId → artifactId
   const [scanned, setScanned] = useState(null); // { url, token } from a QR deep link
   const [deviceId, setDeviceId] = useState("");
   const clientRef = useRef(null);
@@ -36,7 +55,10 @@ export function useMobileCommand() {
     const client = createRelayClient({
       deviceId: id,
       pageOrigin: origin,
-      onFrame: (frame) => dispatch({ type: "frame", frame }),
+      onFrame: (frame) => {
+        if (typeof frame?.type === "string" && frame.type.startsWith("file.")) { void onFileFrame(frame); return; }
+        dispatch({ type: "frame", frame });
+      },
       onStatus: (next) => {
         setStatus(next);
         if (next.phase === "online") {
@@ -80,6 +102,23 @@ export function useMobileCommand() {
     return true;
   }, [deviceId, conversation.selectedSessionId]);
 
+  async function onFileFrame(frame) {
+    const result = await receiverRef.current.onFrame(frame);
+    const artifactId = requestsRef.current.get(frame.requestId);
+    if (!result || !artifactId) return;
+    if (result.error) {
+      requestsRef.current.delete(frame.requestId);
+      setDownloads((d) => ({ ...d, [artifactId]: { error: result.error } }));
+      return;
+    }
+    setDownloads((d) => ({ ...d, [artifactId]: { progress: result.progress || 0 } }));
+    if (result.done) {
+      requestsRef.current.delete(frame.requestId);
+      saveFile(result.done);
+      setDownloads((d) => ({ ...d, [artifactId]: { progress: 1, done: true } }));
+    }
+  }
+
   const actions = useMemo(() => ({
     pair: (code) => clientRef.current?.pair(code),
     directConnect: (code, password) => clientRef.current?.directConnect(code, password),
@@ -92,6 +131,14 @@ export function useMobileCommand() {
     selectProject: (projectId) => {
       dispatch({ type: "switching", projectId });
       clientRef.current?.send(toDesktop.selectProject(projectId));
+    },
+    /** Fetch a file the task produced; false when the phone is not connected. */
+    requestFile: (artifactId) => {
+      const frame = toDesktop.requestFile(artifactId);
+      if (!clientRef.current?.send(frame)) return false;
+      requestsRef.current.set(frame.requestId, artifactId);
+      setDownloads((d) => ({ ...d, [artifactId]: { progress: 0 } }));
+      return true;
     },
     /** A new conversation in the workspace this phone drives. */
     newSession: () => {
@@ -112,6 +159,7 @@ export function useMobileCommand() {
     conversation,
     messages: messages(conversation),
     busy: isBusy(conversation),
+    downloads,
     scanned,
     client: clientRef.current,
     actions,

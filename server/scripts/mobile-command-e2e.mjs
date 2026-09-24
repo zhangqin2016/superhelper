@@ -284,6 +284,49 @@ try {
   const asrBadDevice = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: "dev_other_xxxx", grantId: directGrant, token: directToken } });
   assert.equal(asrBadDevice.statusCode, 403, "a mismatched device is refused an ASR token");
 
+  // --- 11b. Web Push: the phone subscribes with its grant token; a desktop
+  // frame worth waking it for, sent while no phone page is connected, becomes
+  // a real push attempt (encrypted with the service's VAPID keys) — and a
+  // frame the connected phone receives never does. ---
+  {
+    const b64u = (b) => Buffer.from(b).toString("base64url");
+    const ecdh = crypto.createECDH("prime256v1"); ecdh.generateKeys();
+    const subscription = { endpoint: `https://127.0.0.1:9/push/${runId}`, keys: { p256dh: b64u(ecdh.getPublicKey()), auth: b64u(crypto.randomBytes(16)) } };
+    const pushBody = { deviceId: mobileDeviceId, grantId: directGrant, token: directToken };
+    const key = await app.inject({ method: "POST", url: "/api/mobile/push/key", payload: pushBody });
+    assert.equal(key.statusCode, 200, `push key: ${key.body}`);
+    assert.ok(key.json().publicKey.length > 60, "a VAPID public key, generated on first use");
+    const again = await app.inject({ method: "POST", url: "/api/mobile/push/key", payload: pushBody });
+    assert.equal(again.json().publicKey, key.json().publicKey, "and kept");
+    const forged = await app.inject({ method: "POST", url: "/api/mobile/push/subscribe", payload: { ...pushBody, token: "lily_mgrant_forged.token", subscription } });
+    assert.equal(forged.statusCode, 401, "only the pairing's own token subscribes");
+    const sub = await app.inject({ method: "POST", url: "/api/mobile/push/subscribe", payload: { ...pushBody, subscription } });
+    assert.equal(sub.statusCode, 200, `subscribe: ${sub.body}`);
+    const row = async () => (await pool.query("select failures, last_sent_at from mobile_push_subscriptions where grant_id = $1", [directGrant])).rows;
+    assert.equal((await row()).length, 1);
+
+    const desktopDirect = connectRelay(base, { role: "desktop", grantId: directGrant, deviceId: desktopDeviceId, token: desktopToken });
+    await waitForFrame(desktopDirect, (f) => f.type === "relay.ready", "desktop joins the direct pairing");
+    // Connected phone: it gets the frame; no push.
+    const phoneOn = connectRelay(base, { role: "mobile", grantId: directGrant, deviceId: mobileDeviceId, token: directToken });
+    await waitForFrame(phoneOn, (f) => f.type === "relay.ready", "phone connected");
+    const got = waitForFrame(phoneOn, (f) => f.type === "turn.ended", "connected phone receives turn.ended");
+    desktopDirect.send(JSON.stringify({ type: "turn.ended", turnId: "t_on", status: "completed" }));
+    await got;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal((await row())[0].failures, 0, "a delivered frame is not also pushed");
+    // Phone asleep: the same kind of frame becomes a push attempt (the endpoint refuses; the attempt is counted).
+    const off = new Promise((r) => phoneOn.on("close", r));
+    phoneOn.close();
+    await off;
+    await new Promise((r) => setTimeout(r, 200));
+    desktopDirect.send(JSON.stringify({ type: "turn.ended", turnId: "t_off", status: "completed" }));
+    const deadline = Date.now() + 8000;
+    while ((await row())[0]?.failures !== 1 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await row())[0]?.failures, 1, "the undelivered frame was pushed (encrypted, sent, refused by the fake endpoint)");
+    try { desktopDirect.close(); } catch { /* noop */ }
+  }
+
   // --- 12. Token renewal (sliding) and revocation of a LIVE connection. ---
   const renewed = await app.inject({ method: "POST", url: "/api/mobile/grant/refresh", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: directToken } });
   assert.equal(renewed.statusCode, 200, `refresh ok: ${renewed.body}`);
@@ -297,6 +340,12 @@ try {
   assert.equal(revokeDirect.statusCode, 200);
   const revokedCode = await Promise.race([renewedClosed, new Promise((r) => setTimeout(() => r("still-open"), 3000))]);
   assert.equal(revokedCode, 4001, "revoking kicks the phone's live connection immediately");
+  {
+    const deadline = Date.now() + 5000;
+    const count = async () => Number((await pool.query("select count(*)::int n from mobile_push_subscriptions where grant_id = $1", [directGrant])).rows[0].n);
+    while ((await count()) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(await count(), 0, "an ended pairing takes its push subscriptions with it");
+  }
   const deadRefresh = await app.inject({ method: "POST", url: "/api/mobile/grant/refresh", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: renewed.json().mobileToken } });
   assert.equal(deadRefresh.statusCode, 409, "a revoked pairing cannot renew");
   assert.equal(deadRefresh.json().code, "GRANT_INACTIVE");

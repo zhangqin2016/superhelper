@@ -1,6 +1,9 @@
 "use client";
 
-// Bottom sheet: which workspace and session this phone drives. Pure view.
+// Bottom sheet: which workspace and session this phone drives, and whether it
+// is notified while closed.
+
+import { PushToggle } from "./push-toggle";
 //
 // Both are lists, not chips: a person can have a dozen workspaces with long
 // names, and wrapped chips grew past the sheet and off the screen. The sheet is
@@ -19,7 +22,7 @@ function Row({ label, selected, onClick }) {
   );
 }
 
-export function SessionSheet({ projects, selectedProjectId, sessions, selectedSessionId, onSelectProject, onSelectSession, onNewSession, onClose }) {
+export function SessionSheet({ projects, selectedProjectId, sessions, selectedSessionId, onSelectProject, onSelectSession, onNewSession, onClose, client, onNotice }) {
   const list = "min-h-0 overflow-y-auto overscroll-contain divide-y divide-[#efece6] rounded-2xl border border-[#ebe8e1] bg-white";
   return (
     <div className="fixed inset-0 z-20 flex flex-col justify-end bg-black/25" onClick={onClose}>
@@ -40,6 +43,7 @@ export function SessionSheet({ projects, selectedProjectId, sessions, selectedSe
             ? sessions.map((s) => <Row key={s.id} label={s.title || "未命名会话"} selected={s.id === selectedSessionId} onClick={() => onSelectSession(s.id)} />)
             : <li className="px-3.5 py-3 text-xs text-[#a9a397]">该工作空间暂无会话</li>}
         </ul>
+        {client ? <PushToggle client={client} onNotice={onNotice} /> : null}
         <button type="button" className="mt-3 w-full flex-shrink-0 rounded-xl border border-[#e2ded5] bg-white py-2.5 text-sm font-medium text-[#4a463f]" onClick={onClose}>完成</button>
       </div>
     </div>

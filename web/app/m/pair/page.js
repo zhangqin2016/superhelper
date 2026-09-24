@@ -35,7 +35,7 @@ function useToast() {
 }
 
 export default function MobilePairPage() {
-  const { status, conversation, messages, busy, client, actions } = useMobileCommand();
+  const { status, conversation, messages, busy, client, actions, downloads } = useMobileCommand();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [toast, showToast] = useToast();
   const [capabilitiesNote, setCapabilitiesNote] = useState("");
@@ -105,6 +105,8 @@ export default function MobilePairPage() {
           onSend={actions.send}
           onStop={actions.stop}
           onAnswer={actions.respondPrompt}
+          downloads={downloads}
+          onFile={actions.requestFile}
           onNotice={showToast}
         />
       ) : (
@@ -127,6 +129,8 @@ export default function MobilePairPage() {
           onSelectSession={(id) => { actions.selectSession(id); setSheetOpen(false); }}
           onNewSession={conversation.desktopFeatures?.prompts ? () => { if (actions.newSession()) setSheetOpen(false); } : null}
           onClose={() => setSheetOpen(false)}
+          client={client}
+          onNotice={showToast}
         />
       ) : null}
     </div>

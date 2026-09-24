@@ -42,6 +42,7 @@ const FROM_PHONE = Object.freeze({
   PROJECT_SELECT: "project.select",
   PROMPT_RESPOND: "prompt.respond",
   SESSION_CREATE: "session.create",
+  FILE_REQUEST: "file.request",
 });
 
 /** Desktop → phone. */
@@ -62,6 +63,9 @@ const TO_PHONE = Object.freeze({
   PROMPTS_UPDATED: "prompts.updated",
   PROMPT_ACK: "prompt.ack",
   TODOS_UPDATED: "todos.updated",
+  FILE_START: "file.start",
+  FILE_CHUNK: "file.chunk",
+  FILE_ERROR: "file.error",
 });
 
 const LIMITS = Object.freeze({

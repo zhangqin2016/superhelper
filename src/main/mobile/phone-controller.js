@@ -15,6 +15,7 @@
 const crypto = require("node:crypto");
 const { FROM_PHONE, LIMITS, PHONE_PROTOCOL, toPhone } = require("./protocol");
 const { desktopResponse } = require("./prompt-view");
+const { fileFrames, planFileSend, statFile } = require("./file-send");
 
 function payloadHashFor(text, attachments) {
   const canonical = JSON.stringify({ text: String(text || ""), attachments: attachments || [] });
@@ -169,7 +170,26 @@ function createPhoneController({ grantId, getDesktopDeviceId, port, snapshot, se
     return ack(Boolean(result?.ok), result?.ok ? "" : String(result?.error || "PROMPT_FAILED"));
   }
 
+  // A produced file of the session THIS phone drives, by artifact id only.
+  async function onFileRequest(frame) {
+    const requestId = String(frame.requestId || "").slice(0, 80);
+    const fail = (code) => send({ type: "file.error", requestId, code });
+    const driving = sessionId();
+    if (!driving) return fail("NO_TARGET_SESSION");
+    if (!frame.artifactId) return fail("FILE_REQUEST_INVALID");
+    let conversation = [];
+    try { conversation = await port.readConversation(driving); } catch { return fail("FILE_NOT_FOUND"); }
+    const plan = planFileSend({ artifactId: frame.artifactId, conversation, resolve: (id) => port.resolveArtifact(driving, id), stat: statFile });
+    if (!plan.ok) return fail(plan.code);
+    let buffer;
+    try { buffer = require("node:fs").readFileSync(plan.path); } catch { return fail("FILE_NOT_FOUND"); }
+    log.info("mobile file sent: grant=%s artifact=%s bytes=%d", grantId, String(frame.artifactId), buffer.length);
+    for (const out of fileFrames({ requestId, artifactId: String(frame.artifactId), name: plan.name, mimeType: plan.mimeType, buffer })) send(out);
+    return undefined;
+  }
+
   const routes = {
+    [FROM_PHONE.FILE_REQUEST]: onFileRequest,
     [FROM_PHONE.PROMPT_RESPOND]: onPromptRespond,
     // A new conversation in the workspace this phone drives, which it then drives.
     [FROM_PHONE.SESSION_CREATE]: async () => {

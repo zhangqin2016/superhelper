@@ -242,7 +242,7 @@ export function messages(state) {
   const out = [];
   for (const m of history) {
     if (live && m.role === "assistant" && m.turnId === live.turnId) continue; // shown live below
-    out.push({ key: m.id || `${m.role}:${m.turnId}:${out.length}`, role: m.role, text: m.text, files: m.files || 0, status: m.status || "" });
+    out.push({ key: m.id || `${m.role}:${m.turnId}:${out.length}`, role: m.role, text: m.text, files: m.files || 0, status: m.status || "", artifacts: Array.isArray(m.artifacts) ? m.artifacts : [] });
   }
   if (live) {
     const asked = live.userText && !history.some((m) => m.role === "user" && (m.turnId === live.turnId));
