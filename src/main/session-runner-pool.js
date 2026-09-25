@@ -144,7 +144,12 @@ class SessionRunnerPool {
         ? lilyEnv
         : { ...lilyEnv, LILY_MODEL_CAPABILITY_GRADE: capabilityGrade },
     );
-    if (extra.processJobGuidance) guidance += `\n\n${extra.processJobGuidance}`;
+    // The turn's process-job scope: attached by the identity plugin when the
+    // engine has the registry, else carried by the prompt (turn-scope.js).
+    const jobScope = require("./long-task/turn-scope").processJobScopeForRunner({
+      scope: extra.processJobScope, turnId: extra.processJobTurnId, hasRuntimeIdentity: Boolean(runtimeIdentity), log,
+    });
+    if (jobScope.guidance) guidance += `\n\n${jobScope.guidance}`;
     // The user's permission mode was invisible to the model: it drove tool
     // auto-approval only. A 全自主 session still got turns that ended by asking
     // the user to choose, sometimes with the model's own task list unfinished.
@@ -234,6 +239,7 @@ class SessionRunnerPool {
       guidance,
       configDir: extra.configDir,
       runtimeIdentity,
+      processJobScope: jobScope.processJobScope,
       refreshManagedModelConfig: async () => {
         const refreshed = await require("./ipc-utils").refreshRemoteConfigForSend({
           force: true,

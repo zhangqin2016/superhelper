@@ -311,17 +311,11 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     try {
       const owner = sessionManager.resolveTurnOwnerScope?.(sessionId);
       if (owner?.ok && owner.ownerScope) {
-        const turnScope = require("./long-task/turn-scope");
-        const scope = { ownerScope: owner.ownerScope, sessionId, projectId: session.projectId };
-        // Kept on the runner so each dispatch can issue the scope for its own
-        // turn id (opencode-runtime-identity.js) — a rescue or queued turn that
-        // skips this preflight still gets a token for the turn it actually is.
-        extra.processJobScope = scope;
-        extra.processJobGuidance = turnScope.buildProcessJobTurnGuidance({
-          secret: require("./long-task/secret").ensureLongTaskSecret(),
-          scope: { ...scope, turnId: opts.turnId },
-          tokenDelivery: turnScope.processJobScopeInjected() ? "host" : "prompt",
-        });
+        // The runner pool decides how the scope reaches the engine (attached
+        // by the identity plugin per dispatch, or carried by the prompt) and
+        // keeps it on the runner so each dispatch issues it for its own turn id.
+        extra.processJobScope = { ownerScope: owner.ownerScope, sessionId, projectId: session.projectId };
+        extra.processJobTurnId = opts.turnId;
       }
     } catch (err) {
       console.warn("[runner] process-job scope unavailable:", err?.message || err);

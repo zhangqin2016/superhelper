@@ -135,12 +135,22 @@ assert.deepEqual(reservations.at(-1).progressKeys, [], "success without a termin
 
 // The text follows where the task stands.
 {
-  const answered = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager, getTurnInputByTurnId: () => ({ ...source, terminalType: "turn.completed" }) } });
-  await answered(wake, job);
+  // The user has sent a newer message since the turn that started the jobs.
+  const movedOn = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager,
+    getTurnInputByTurnId: () => ({ ...source, terminalType: "turn.completed" }), getLastUserMessage: () => ({ role: "user", turnId: "turn-later", content: "next thing" }) } });
+  await movedOn(wake, job);
   const text = calls.at(-1)[3].engineText;
-  assert.match(text, /already delivered its final answer/);
+  assert.match(text, /moved on to a newer request/);
   assert.match(text, /Do not redo or re-verify/);
-  assert.doesNotMatch(text, /continue the original task/, "a finished task is reported on, not resumed");
+  assert.doesNotMatch(text, /continue the (original )?task/, "a task the user moved on from is reported on, not resumed");
+  // The turn answered while the jobs ran and nothing newer came: the jobs may
+  // be what the task was waiting on.
+  const answered = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager,
+    getTurnInputByTurnId: () => ({ ...source, terminalType: "turn.completed" }), getLastUserMessage: () => ({ role: "user", turnId: "turn-a", content: source.userText }) } });
+  await answered(wake, job);
+  const waiting = calls.at(-1)[3].engineText;
+  assert.match(waiting, /continue the task from there/, "a task that may be waiting on the jobs is continued");
+  assert.match(waiting, /Do not redo work that answer already did/);
   const open = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager, getTurnInputByTurnId: () => ({ ...source, status: "running", terminalType: null }) } });
   await open(wake, job);
   assert.match(calls.at(-1)[3].engineText, /continue the original task/, "an unfinished task is still continued");

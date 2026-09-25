@@ -14,7 +14,7 @@ const HTTP_URL_RE = /https?:\/\/[^\s<>"'`*\])}）】》;；，、]+/gi;
 // A host is a name or an address. Text that merely looks like a URL — a code
 // template's `http://{args.host}/…` — is not a source anyone can open, and
 // listing it as one is worse than listing nothing.
-const HOSTNAME_RE = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$|^\[[0-9a-f:.]+\]$/i;
+const HOSTNAME_RE = /^(?:[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?)(?:\.[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?)*$|^\[[0-9a-f:.]+\]$/i;
 
 function normalizeHttpUrl(value = "") {
   try {

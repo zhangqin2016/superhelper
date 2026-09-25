@@ -25,6 +25,30 @@ function processJobScopeInjected() {
   return process.env.LILY_RUNTIME_IDENTITY_V1 !== "0" && process.env.LILY_PROCESS_JOB_SCOPE_INJECT !== "0";
 }
 
+/**
+ * How this turn's scope reaches the engine, decided where the runner is
+ * assembled: attached per dispatch by the identity plugin when the engine is
+ * fed the identity registry, else carried by the prompt as before. Deciding
+ * from env alone left a session without the registry with neither route
+ * (2026-09-25 review catch). Never throws: a failure leaves no guidance, and
+ * the tool falls back to foreground shell behaviour as it always did.
+ */
+function processJobScopeForRunner({ scope, turnId, hasRuntimeIdentity = false, log = console } = {}) {
+  if (!scope || typeof scope !== "object") return { guidance: "", processJobScope: null };
+  const hosted = Boolean(hasRuntimeIdentity) && processJobScopeInjected();
+  try {
+    const guidance = buildProcessJobTurnGuidance({
+      secret: require("./secret").ensureLongTaskSecret(),
+      scope: { ...scope, turnId: String(turnId || "") },
+      tokenDelivery: hosted ? "host" : "prompt",
+    });
+    return { guidance, processJobScope: hosted ? scope : null };
+  } catch (err) {
+    log?.warn?.("process-job scope guidance unavailable: %s", err?.message || err);
+    return { guidance: "", processJobScope: null };
+  }
+}
+
 function buildProcessJobTurnGuidance({ secret, scope, now = Date.now, tokenDelivery = "prompt" } = {}) {
   const lines = [
     "## Process Job Scope",
@@ -58,4 +82,4 @@ function verifyProcessJobScope(input, options = {}) {
   return verified;
 }
 
-module.exports = { PROCESS_JOB_OPERATIONS, buildProcessJobTurnGuidance, issueProcessJobScopeToken, processJobScopeInjected, verifyProcessJobScope };
+module.exports = { PROCESS_JOB_OPERATIONS, buildProcessJobTurnGuidance, issueProcessJobScopeToken, processJobScopeForRunner, processJobScopeInjected, verifyProcessJobScope };

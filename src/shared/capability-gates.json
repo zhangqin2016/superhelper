@@ -2381,7 +2381,8 @@
       "tests": [
         "scripts/test-runtime-identity-plugin.mjs",
         "scripts/test-opencode-runtime-identity-wiring.mjs",
-        "scripts/test-long-task-scope.mjs"
+        "scripts/test-long-task-scope.mjs",
+        "scripts/test-process-job-scope-pool-wiring.mjs"
       ]
     },
     {

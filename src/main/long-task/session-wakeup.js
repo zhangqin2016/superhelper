@@ -55,18 +55,35 @@ function jobLines(job) {
  * this, every wake re-sent the original request with "continue the original
  * task", and a wake after a finished task spent eight minutes re-verifying it.
  */
-function wakeText(source, jobs) {
+function wakeText(source, jobs, { movedOn = false } = {}) {
   const answered = source.terminalType === "turn.completed" || source.status === "completed";
   const many = jobs.length > 1;
+  const instruction = movedOn
+    // The user has sent a newer message since: that task is not resumed.
+    ? "The user has since moved on to a newer request and that turn already delivered its final answer. Inspect each job's real outcome with lily_process_jobs (job_status, job_logs) and report it briefly, in the user's language. Do not redo or re-verify work that answer already covered; if an outcome contradicts it, say exactly what changed. Do not start the same job again."
+    : answered
+      // The turn ended with an answer while the jobs still ran: continue only
+      // what was waiting on them — never the work that answer already did.
+      ? "That turn ended with an answer while these jobs were still running. Inspect their real outcome with lily_process_jobs (job_status, job_logs). If the task was waiting on them, verify the outcome and continue the task from there; if the task was already complete, report the outcome briefly. Do not redo work that answer already did. Do not start the same job again."
+      : "Inspect their logs and declared outputs with lily_process_jobs. If they succeeded, verify and continue the original task. If one failed or its outcome is unknown, diagnose conservatively and recover only when replay is safe. Give the user the real outcome. Do not blindly start the same job again.";
   return [
     source.userText,
     `${many ? `${jobs.length} durable background processes` : "A durable background process"} started by this conversation reached terminal state:`,
     ...jobs.map(jobLines),
     `Original turn id: ${jobs[0].turnId}`,
-    answered
-      ? "That turn already delivered its final answer. Inspect each job's real outcome with lily_process_jobs (job_status, job_logs) and report it to the user briefly, in the user's language. Do not redo or re-verify work that answer already covered; if an outcome contradicts it, say exactly what changed. Do not start the same job again."
-      : "Inspect their logs and declared outputs with lily_process_jobs. If they succeeded, verify and continue the original task. If one failed or its outcome is unknown, diagnose conservatively and recover only when replay is safe. Give the user the real outcome. Do not blindly start the same job again.",
+    instruction,
   ].filter(Boolean).join("\n");
+}
+
+/** A newer user message than the turn that started the job exists. */
+function conversationMovedOn(manager, sessionId, turnId) {
+  try {
+    const last = manager.getLastUserMessage?.(sessionId);
+    const lastTurn = last?.turnId || last?.record?.turnId || "";
+    return Boolean(lastTurn) && lastTurn !== turnId;
+  } catch {
+    return false;
+  }
 }
 
 function createLongTaskWakeHandler(ctx) {
@@ -139,7 +156,7 @@ function createLongTaskWakeHandler(ctx) {
       source.userText,
       [],
       {
-        engineText: wakeText(source, jobs),
+        engineText: wakeText(source, jobs, { movedOn: conversationMovedOn(manager, wake.sessionId, job.turnId) }),
         recordUser: false,
         nonInteractive: true,
         queueOrigin: "long_task",
