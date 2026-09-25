@@ -118,6 +118,9 @@ function actionErrorMessage(error) {
   if (error === "ALREADY_RUNNING") return t("scheduled.alreadyRunning");
   if (error === "TASK_ACTIVE") return t("scheduled.taskActive");
   if (error === "CAPACITY") return t("scheduled.schedulerBusy");
+  if (error === "SCOPE_MISSING" || error === "SCOPE_MISMATCH") return t("scheduled.scopeGone");
+  if (error === "SCHEDULE_EXHAUSTED") return t("scheduled.scheduleExhausted");
+  if (error === "SCHEDULE_IN_PAST") return t("scheduled.scheduleInPast");
   return null;
 }
 
@@ -206,11 +209,19 @@ function renderTaskItem(task) {
   scopeLabel.textContent = `${owner.projectName} / ${owner.sessionTitle}`;
   const meta = document.createElement("span");
   const active = task.status === "queued" || task.status === "running";
+  const completed = task.status === "completed";
   const statusText = active
     ? (task.status === "queued" ? t("scheduled.queued") : t("scheduled.running"))
+    : completed ? t("scheduled.completed")
     : (task.enabled ? t("scheduled.enabled") : t("scheduled.paused"));
-  meta.textContent = `${task.scheduleText || "-"} · ${statusText} · ${t("scheduled.nextRun")} ${formatDateTime(task.nextRunAt)}`;
+  meta.textContent = completed || !task.enabled
+    ? `${task.scheduleText || "-"} · ${statusText}`
+    : `${task.scheduleText || "-"} · ${statusText} · ${t("scheduled.nextRun")} ${formatDateTime(task.nextRunAt)}`;
   main.append(title, scopeLabel, meta);
+  // What happened last time, and why the task stopped itself if it did. A
+  // task that fails or pauses is never mute in the list.
+  const detail = taskDetailLine(task);
+  if (detail) main.append(detail);
 
   const actions = document.createElement("div");
   actions.className = "scheduled-task-item-actions";
@@ -238,6 +249,31 @@ function renderTaskItem(task) {
 
   item.append(main, actions);
   return item;
+}
+
+function reasonText(reason) {
+  if (!reason || reason === "user") return "";
+  const key = `scheduled.reason.${reason}`;
+  const text = t(key);
+  return text === key ? reason : text;
+}
+
+function taskDetailLine(task) {
+  const parts = [];
+  const last = task.lastRun;
+  if (last?.finishedAt) {
+    const outcome = last.status === "succeeded" ? t("scheduled.lastRunOk") : t("scheduled.lastRunFailed");
+    const why = last.status !== "succeeded" && last.error ? `（${reasonText(last.error) || last.error}）` : "";
+    parts.push(`${t("scheduled.lastRun")} ${formatDateTime(last.finishedAt)} · ${outcome}${why}`);
+  }
+  const reason = reasonText(task.pausedReason);
+  if (reason && !(last?.error && reasonText(last.error) === reason)) parts.push(reason);
+  if (!parts.length) return null;
+  const line = document.createElement("span");
+  line.className = "scheduled-task-item-detail";
+  if (last && last.status && last.status !== "succeeded") line.classList.add("is-error");
+  line.textContent = parts.join(" · ");
+  return line;
 }
 
 export async function refreshScheduledTaskList() {

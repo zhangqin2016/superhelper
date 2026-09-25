@@ -126,7 +126,9 @@ function systemPrompt() {
     "The user may write Chinese, English, or Arabic. Preserve the task language in title/prompt.",
     "Never execute the task. Only draft a schedule.",
     "If the user says not to create/schedule/remind, or only describes content such as hourly forecasts, hourly charts, or plan text, return {}.",
-    "Use local time unless the user explicitly gives a timezone.",
+    "Now is given in the user's local time with its UTC offset and IANA timezone. Interpret the request in that local time unless the user names another timezone.",
+    'For {"type":"once"} write "at" as ISO-8601 with that same UTC offset (e.g. 2026-09-25T09:00:00+08:00), never as UTC unless the user asked for UTC.',
+    "A one-shot time that is already in the past relative to Now is not a schedule: return {}.",
     "Supported schedule schemas:",
     '{"type":"once","at":"ISO-8601 datetime"}',
     '{"type":"daily","hour":0-23,"minute":0-59}',
@@ -201,6 +203,20 @@ async function callModelApi({ url, protocol, apiKey, model, text, now, requestSh
   }
 }
 
+/** "2026-09-25T09:00:00+08:00 (Asia/Shanghai)": local wall clock plus offset
+ *  and zone, so the model never has to guess which clock the user means. */
+function describeNow(value) {
+  const date = value ? new Date(value) : new Date();
+  const at = Number.isNaN(date.getTime()) ? new Date() : date;
+  const offsetMinutes = -at.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const pad = (n) => String(Math.abs(n)).padStart(2, "0");
+  const local = new Date(at.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 19);
+  let zone = "";
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { zone = ""; }
+  return `${local}${sign}${pad(Math.trunc(offsetMinutes / 60))}:${pad(offsetMinutes % 60)}${zone ? ` (${zone})` : ""}`;
+}
+
 async function parseScheduledTaskDraftWithModel(payload = {}) {
   const text = String(payload.text || "").trim();
   if (!text) return { ok: false, error: "EMPTY" };
@@ -220,7 +236,7 @@ async function parseScheduledTaskDraftWithModel(payload = {}) {
     apiKey,
     model,
     text,
-    now: payload.now || new Date().toISOString(),
+    now: describeNow(payload.now),
     requestShape: require("./openai-request-shape").shapeFromEnv(env),
   });
   if (!result.ok) return result;
@@ -228,6 +244,7 @@ async function parseScheduledTaskDraftWithModel(payload = {}) {
 }
 
 module.exports = {
+  describeNow,
   parseScheduledTaskDraftWithModel,
   normalizeModelDraft,
   resolveMessagesUrl,

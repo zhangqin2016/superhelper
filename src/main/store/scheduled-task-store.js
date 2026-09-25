@@ -39,6 +39,9 @@ function taskFromRow(row) {
     lastRunAt: row.last_run_at || null,
     nextRunAt: row.next_run_at || null,
     missedRunPolicy: row.missed_run_policy,
+    pausedReason: row.paused_reason || null,
+    lastError: row.last_error || null,
+    timezone: row.timezone || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -128,6 +131,13 @@ class ScheduledTaskStore {
         CREATE INDEX scheduled_runs_turn_reconcile
           ON scheduled_task_runs(owner_principal, execution_session_id, turn_id);
       `),
+      // v3: a task that stops itself says why (paused_reason), keeps the last
+      // failure it saw (last_error), and remembers the timezone it was written in.
+      (db) => db.exec(`
+        ALTER TABLE scheduled_tasks ADD COLUMN paused_reason TEXT;
+        ALTER TABLE scheduled_tasks ADD COLUMN last_error TEXT;
+        ALTER TABLE scheduled_tasks ADD COLUMN timezone TEXT;
+      `),
     ]);
   }
 
@@ -148,8 +158,8 @@ class ScheduledTaskStore {
         id, owner_principal, project_id, origin_session_id, execution_session_id,
         title, prompt, schedule_json, schedule_text, permission_mode, enabled,
         status, overlap_policy, last_run_at, next_run_at, missed_run_policy,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at, updated_at, paused_reason, last_error, timezone
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         execution_session_id=excluded.execution_session_id,
         title=excluded.title, prompt=excluded.prompt,
@@ -157,12 +167,46 @@ class ScheduledTaskStore {
         permission_mode=excluded.permission_mode, enabled=excluded.enabled,
         status=excluded.status, overlap_policy=excluded.overlap_policy,
         last_run_at=excluded.last_run_at, next_run_at=excluded.next_run_at,
-        missed_run_policy=excluded.missed_run_policy, updated_at=excluded.updated_at
+        missed_run_policy=excluded.missed_run_policy, updated_at=excluded.updated_at,
+        paused_reason=excluded.paused_reason, last_error=excluded.last_error,
+        timezone=excluded.timezone
     `, task.id, task.ownerPrincipal, task.projectId, task.originSessionId,
     task.executionSessionId || null, task.title, task.prompt,
     JSON.stringify(task.schedule), task.scheduleText, task.permissionMode,
     task.enabled ? 1 : 0, task.status, task.overlapPolicy, task.lastRunAt,
-    task.nextRunAt, task.missedRunPolicy, task.createdAt, task.updatedAt);
+    task.nextRunAt, task.missedRunPolicy, task.createdAt, task.updatedAt,
+    task.pausedReason || null, task.lastError || null, task.timezone || null);
+  }
+
+  /** Terminal runs are history, not state: keep the newest `keepPerTask` per
+   *  task and anything newer than `olderThanIso`; drop the rest. Active runs
+   *  are never touched. Returns the number of rows removed. */
+  pruneTerminalRuns({ keepPerTask = 50, olderThanIso = "" } = {}) {
+    const active = [...ACTIVE_RUN_STATUSES].map((status) => `'${status}'`).join(", ");
+    const taskIds = this.db.all("SELECT DISTINCT task_id FROM scheduled_task_runs").map((row) => row.task_id);
+    let removed = 0;
+    const prune = this.db.transaction(() => {
+      for (const taskId of taskIds) {
+        const stale = this.db.all(`
+          SELECT id FROM scheduled_task_runs
+          WHERE task_id = ? AND status NOT IN (${active})
+          ORDER BY COALESCE(finished_at, queued_at) DESC
+          LIMIT -1 OFFSET ?
+        `, taskId, Math.max(0, keepPerTask)).map((row) => row.id);
+        const old = olderThanIso
+          ? this.db.all(`
+              SELECT id FROM scheduled_task_runs
+              WHERE task_id = ? AND status NOT IN (${active}) AND COALESCE(finished_at, queued_at) < ?
+            `, taskId, olderThanIso).map((row) => row.id)
+          : [];
+        for (const id of new Set([...stale, ...old])) {
+          this.db.run("DELETE FROM scheduled_task_runs WHERE id = ?", id);
+          removed += 1;
+        }
+      }
+    });
+    prune();
+    return removed;
   }
 
   deleteTask(taskId) {

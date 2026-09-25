@@ -13,7 +13,8 @@
 //   node scripts/run-all-tests.mjs                 # discover and run everything
 //   node scripts/run-all-tests.mjs test:runtime    # run a curated package.json chain
 import { execSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,12 +56,30 @@ const commands = (chainName ? chainCommands(chainName) : discoverCommands()).map
 const failures = [];
 const startedAt = Date.now();
 
+// A plain Node test cannot reach the real user-data store: config.js throws
+// without Electron unless the test stubs its own paths. A real Electron
+// harness can — `app.getPath("userData")` is the developer's live directory,
+// and on 2026-08-02 one wrote fixture rows into it that stayed enabled for
+// seven weeks. So every Electron command gets its own throwaway directory;
+// Node commands and their self-owned fixtures are left exactly as they are.
+function isolatedElectronEnv(command) {
+  const baseEnv = process.env || {};
+  if (!command.startsWith("npx electron") || baseEnv.LILY_USER_DATA_DIR) return undefined;
+  if (typeof mkdtempSync !== "function" || typeof tmpdir !== "function") return undefined;
+  try {
+    return { ...baseEnv, LILY_USER_DATA_DIR: mkdtempSync(path.join(tmpdir(), "lily-test-userdata-")) };
+  } catch {
+    return undefined;
+  }
+}
+
 for (const command of commands) {
   const t0 = Date.now();
+  const env = isolatedElectronEnv(command);
   try {
     // Force the direct shell to stop at the deadline. This is NOT a process-tree
     // kill: npx/Electron descendants may outlive it and need scoped diagnosis.
-    execSync(command, { stdio: "pipe", timeout: 180_000, killSignal: "SIGKILL" });
+    execSync(command, { stdio: "pipe", timeout: 180_000, killSignal: "SIGKILL", ...(env ? { env } : {}) });
     console.log(`PASS  ${command}  (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   } catch (error) {
     const output = `${error.stdout || ""}${error.stderr || ""}`;

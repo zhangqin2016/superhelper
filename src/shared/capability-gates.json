@@ -2330,6 +2330,18 @@
         "scripts/test-mobile-file-send.mjs",
         "scripts/test-mobile-command-e2e.mjs"
       ]
+    },
+    {
+      "id": "scheduler-self-heal",
+      "protects": "A scheduled task never fails silently and never blocks itself forever: a task whose session or workspace is gone records one failed run and pauses with the reason; a one-shot retires after it runs and a past one-shot is refused at creation; a run whose dispatch outcome stays unknown past its lease is closed as failed after consulting the durable turn; overlap/missed policies stored since v1 are honoured; finished run history is capped; the scheduler logs what it does and re-checks on system resume.",
+      "baseline": "Chat, the turn queue and the engine are untouched: scheduled runs still enter the origin session through the same sendUserMessage call with the same options; defaults (overlap=queue, missed=run_once_on_launch) reproduce the previous collapse-into-one behaviour; tests run against a throwaway user-data directory.",
+      "failureFallback": "LILY_SCHEDULER_SELF_HEAL=0 restores the previous scheduler byte-for-byte in behaviour (no pause, no retirement, no expiry, no pruning); every self-heal step is guarded by that flag and by try/catch around history pruning.",
+      "tests": [
+        "scripts/test-scheduled-task-self-heal.mjs",
+        "scripts/test-scheduled-task-isolation.mjs",
+        "scripts/test-scheduled-tasks.mjs",
+        "scripts/test-assistant-ipc-routing.mjs"
+      ]
     }
   ]
 }

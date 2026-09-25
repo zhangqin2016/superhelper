@@ -1329,6 +1329,16 @@ textarea:disabled { opacity: 0.5; }
   font-size: var(--text-sm);
 }
 
+.scheduled-task-item-detail {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.scheduled-task-item-detail.is-error {
+  color: var(--danger-text-soft);
+}
+
 .scheduled-task-item-actions {
   display: flex;
   flex-wrap: wrap;

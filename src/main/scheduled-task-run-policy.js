@@ -21,6 +21,21 @@ function executionLoad(runs, dispatchingRunIds, ownerPrincipal) {
   ).length;
 }
 
+// Stored on every task since the first schema. "queue" (default) lets an
+// overdue occurrence wait for the active run to finish; "skip" drops it.
+const OVERLAP_POLICIES = new Set(["queue", "skip"]);
+// "run_once_on_launch" (default) collapses everything missed into one run;
+// "skip" drops occurrences missed by more than `missedAfterMs`.
+const MISSED_RUN_POLICIES = new Set(["run_once_on_launch", "skip"]);
+
+function normalizeOverlapPolicy(value) {
+  return OVERLAP_POLICIES.has(value) ? value : "queue";
+}
+
+function normalizeMissedRunPolicy(value) {
+  return MISSED_RUN_POLICIES.has(value) ? value : "run_once_on_launch";
+}
+
 function nextRunAfterNow(task, scheduledFor, computeNextRunAt, now = Date.now()) {
   const scheduledAt = Date.parse(scheduledFor || "");
   const anchor = Math.max(now, Number.isFinite(scheduledAt) ? scheduledAt : 0);
@@ -32,5 +47,7 @@ module.exports = {
   executionLoad,
   hasActiveTaskRun,
   nextRunAfterNow,
+  normalizeMissedRunPolicy,
+  normalizeOverlapPolicy,
   runningRunCount,
 };

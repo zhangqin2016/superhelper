@@ -1,10 +1,5 @@
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const crypto = require("node:crypto");
-const { scheduledTasksPath } = require("./config");
-
 const TICK_MS = 60 * 1000;
 const MISSED_GRACE_MS = 5 * 1000;
 const DEFAULT_PERMISSION_MODE = "inherit";
@@ -455,7 +450,8 @@ function nextDailyWindowInterval(schedule, from = new Date()) {
 function computeNextRunAt(schedule, from = new Date()) {
   schedule = normalizeScheduleSpec(schedule);
   if (!schedule) return null;
-  if (schedule.type === "once") return new Date(schedule.at).toISOString();
+  // A one-shot past its time (beyond grace) has no next occurrence: finished, not overdue.
+  if (schedule.type === "once") return Date.parse(schedule.at) >= from.getTime() - MISSED_GRACE_MS ? new Date(schedule.at).toISOString() : null;
   if (schedule.type === "daily") return nextDaily(schedule, from).toISOString();
   if (schedule.type === "daily_times") return nextDailyTimes(schedule, from)?.toISOString() || null;
   if (schedule.type === "weekly") return nextWeekly(schedule, from).toISOString();
