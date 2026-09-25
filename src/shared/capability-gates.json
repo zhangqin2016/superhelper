@@ -2344,6 +2344,27 @@
       ]
     },
     {
+      "id": "mobile-conversation-order",
+      "protects": "The phone shows a conversation in the desktop's display order — one shared definition (src/shared/committed-message-order.mjs: turns by earliest time, question before answer within a turn) applied by the desktop's conversation view AND by the phone page (a byte-identical copy, held equal by test) so a desktop that sends the stored order still reads right.",
+      "baseline": "The desktop's own ordering is unchanged; it moved to src/shared and is re-exported where it was.",
+      "failureFallback": "A message without a timestamp or turn keeps its stored position relative to its neighbours, as on the desktop.",
+      "tests": [
+        "scripts/test-mobile-conversation-view.mjs",
+        "scripts/test-mobile-conversation-reducer.mjs",
+        "scripts/test-message-committed-render-model.mjs"
+      ]
+    },
+    {
+      "id": "mobile-dictation",
+      "protects": "Phone dictation shows the transcript live (typed text + confirmed speech + what is being said), keeps the relay's last words after stop (finishing state, bounded wait), says every error, sends audio in order in batches through one request at a time, resamples by averaging, and creates/resumes the AudioContext inside the tap so iOS delivers audio.",
+      "baseline": "Server ASR then browser dictation, as before; the composer's text is the base and stays editable.",
+      "failureFallback": "Any failure ends dictation with a notice and leaves what was heard in the composer; the relay that never says finished is given up on after 4 s with the text kept.",
+      "tests": [
+        "scripts/test-mobile-dictation.mjs",
+        "scripts/test-mobile-pair-web.mjs"
+      ]
+    },
+    {
       "id": "turn-record-owns-its-tools",
       "protects": "A turn's record holds only the tools that turn ran. The engine's end-of-turn context pruning republishes EARLIER turns' tool parts (marked state.time.compacted); the reducer treats one it never saw this turn as bookkeeping, not a new step — so evidence counts, side-effect and progress decisions, and the plan card all describe this turn.",
       "baseline": "A tool part seen running this turn reports started/done exactly as before, and its later pruning reports nothing new.",
