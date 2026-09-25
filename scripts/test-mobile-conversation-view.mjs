@@ -89,4 +89,28 @@ assert.deepEqual(mobileConversationView(null).items, []);
   }
 }
 
+// The phone shows the conversation in the DESKTOP's display order — one shared
+// definition (src/shared/committed-message-order.mjs). Field case: a question
+// asked while the previous turn ran is stored at admission, before that
+// turn's answer; the phone showed it there, the desktop after the answer.
+{
+  const t = (m) => new Date(Date.UTC(2026, 8, 25, 10, 0, m)).toISOString();
+  const stored = [
+    { id: "u1", role: "user", content: "问题 1", turnId: "t1", timestamp: t(0) },
+    { id: "u2", role: "user", content: "问题 2（上一轮还在跑时问的）", turnId: "t2", timestamp: t(1) },
+    { id: "a1", role: "assistant", content: "回答 1", turnId: "t1", timestamp: t(2) },
+    { id: "a2", role: "assistant", content: "回答 2", turnId: "t2", timestamp: t(3) },
+  ];
+  const view = mobileConversationView(stored);
+  assert.deepEqual(view.items.map((i) => i.text), ["问题 1", "回答 1", "问题 2（上一轮还在跑时问的）", "回答 2"], "question before its answer, turns in order");
+  const src = fs.readFileSync(path.join(ROOT, "src/main/mobile/conversation-view.js"), "utf8");
+  assert.match(src, /require\("\.\.\/\.\.\/shared\/committed-message-order\.mjs"\)/, "the desktop's own ordering, not a copy");
+  const renderer = fs.readFileSync(path.join(ROOT, "src/renderer/modules/message-committed-render-model.js"), "utf8");
+  assert.match(renderer, /from "\.\.\/\.\.\/shared\/committed-message-order\.mjs"/, "and the desktop uses that same definition");
+  // The phone page carries a copy (web/ cannot import src/): byte-identical after its header.
+  const shared = fs.readFileSync(path.join(ROOT, "src/shared/committed-message-order.mjs"), "utf8");
+  const copy = fs.readFileSync(path.join(ROOT, "web/lib/mobile/committed-message-order.mjs"), "utf8");
+  assert.equal(copy.slice(copy.indexOf("// The order a conversation")), shared, "the phone's copy is the shared definition, verbatim");
+}
+
 console.log("mobile-conversation-view: ok");

@@ -18,6 +18,7 @@
  */
 
 const { messageText } = require("../conversation-message-text");
+const { orderCommittedMessages } = require("../../shared/committed-message-order.mjs");
 
 const DEFAULT_LIMIT = 30;
 const MAX_ARTIFACTS = 8;
@@ -62,7 +63,8 @@ function timestampOf(message) {
  */
 function mobileConversationView(conversation, { limit = DEFAULT_LIMIT, maxTextChars = MAX_TEXT_CHARS, maxTotalBytes = MAX_TOTAL_BYTES, runningTurnId = "" } = {}) {
   const visible = [];
-  for (const message of Array.isArray(conversation) ? conversation : []) {
+  // In the order the desktop shows it (turns by time, question before answer).
+  for (const message of orderCommittedMessages(Array.isArray(conversation) ? conversation : [])) {
     const role = message?.role;
     if (role !== "user" && role !== "assistant") continue; // tool/system rows are not conversation
     if (role === "assistant" && message?.meta?.superseded === true) continue;

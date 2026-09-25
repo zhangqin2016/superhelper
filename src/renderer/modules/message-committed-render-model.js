@@ -1,4 +1,7 @@
 import { messageKey } from "./message-render-keys.js";
+// The display order is shared with the phone (src/shared): one definition.
+import { orderCommittedMessages } from "../../shared/committed-message-order.mjs";
+export { orderCommittedMessages };
 
 export const COMMITTED_RENDER_CHUNK = 5;
 export const COMMITTED_INITIAL_WINDOW = 80;
@@ -6,40 +9,6 @@ export const COMMITTED_WINDOW_THRESHOLD = 160;
 // Upper bound for the remembered per-session window: the DOM stays bounded even
 // when the user keeps loading older history (the top/unloaded end is evicted).
 export const COMMITTED_MAX_WINDOW = 240;
-
-function messageTimestampMs(message = {}) {
-  const parsed = Date.parse(message.timestamp || message.createdAt || message.record?.startedAt || "");
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export function orderCommittedMessages(messages = []) {
-  const turnInfo = new Map();
-  messages.forEach((message, index) => {
-    const key = message.turnId || `__i${index}`;
-    const ts = messageTimestampMs(message);
-    const existing = turnInfo.get(key);
-    if (!existing) {
-      turnInfo.set(key, { firstSeen: index, ts });
-      return;
-    }
-    if (ts != null && (existing.ts == null || ts < existing.ts)) existing.ts = ts;
-  });
-  const roleRank = (role) => (role === "user" ? 0 : role === "assistant" ? 1 : 2);
-  return messages
-    .map((message, index) => ({ message, index, key: message.turnId || `__i${index}` }))
-    .sort((a, b) => {
-      const left = turnInfo.get(a.key) || { firstSeen: a.index, ts: null };
-      const right = turnInfo.get(b.key) || { firstSeen: b.index, ts: null };
-      if (left.ts != null && right.ts != null && left.ts !== right.ts) return left.ts - right.ts;
-      if (left.ts != null && right.ts == null) return -1;
-      if (left.ts == null && right.ts != null) return 1;
-      if (left.firstSeen !== right.firstSeen) return left.firstSeen - right.firstSeen;
-      const roleDelta = roleRank(a.message.role) - roleRank(b.message.role);
-      if (roleDelta !== 0) return roleDelta;
-      return a.index - b.index;
-    })
-    .map((entry) => entry.message);
-}
 
 // Per-session count of trailing committed messages currently rendered. Remembered
 // so a rebuild (official-history reconcile on session switch) restores the range

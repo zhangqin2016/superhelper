@@ -11,6 +11,11 @@
 // first-in-first-out, which is how its queue runs; see `legacyFifo`.)
 
 import { FROM_RELAY, TO_PHONE } from "./protocol.mjs";
+import { orderCommittedMessages } from "./committed-message-order.mjs";
+
+// The desktop's display order, applied here too: a desktop from before it
+// ordered the phone's history (0.1.184) still gets the right order.
+const orderHistory = (items) => orderCommittedMessages(items, { timestampOf: (m) => (Number.isFinite(m?.ts) ? m.ts : null) });
 
 export function initialConversation() {
   return {
@@ -112,7 +117,7 @@ function onFrame(state, frame) {
       return { ...state, live: { ...state.live, status: frame.status || "completed", tool: "", ...(frame.text ? { text: String(frame.text) } : {}) } };
 
     case TO_PHONE.SESSION_CONTEXT: {
-      const history = Array.isArray(frame.recent) ? frame.recent : [];
+      const history = orderHistory(Array.isArray(frame.recent) ? frame.recent : []);
       const switched = state.session && state.session.id !== frame.sessionId;
       let live = switched ? null : state.live;
       let pending = switched ? [] : state.pending;

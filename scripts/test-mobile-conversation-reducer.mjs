@@ -170,4 +170,17 @@ const history = [
   assert.equal(reduce(initialConversation(), frame({ type: "todos.updated", turnId: "t7", todos: [] })).live, null, "no live turn: nothing to attach to");
 }
 
+// --- a desktop that sends history unordered (0.1.184): the phone orders it ---
+{
+  const ms = (m) => Date.UTC(2026, 8, 25, 10, 0, m);
+  const unordered = [
+    { id: "u1", role: "user", text: "问题 1", turnId: "t1", ts: ms(0) },
+    { id: "u2", role: "user", text: "问题 2", turnId: "t2", ts: ms(1) },
+    { id: "a1", role: "assistant", text: "回答 1", turnId: "t1", ts: ms(2), status: "completed" },
+    { id: "a2", role: "assistant", text: "回答 2", turnId: "t2", ts: ms(3), status: "completed" },
+  ];
+  const s = reduce(initialConversation(), context(unordered, { phase: "idle" }));
+  assert.deepEqual(messages(s).map((m) => m.text), ["问题 1", "回答 1", "问题 2", "回答 2"], "question before its answer, as the desktop shows it");
+}
+
 console.log("mobile-conversation-reducer: ok");

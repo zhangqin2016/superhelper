@@ -3,7 +3,7 @@
 // The conversation and the composer. Pure view over `messages(state)`; the
 // actions come from the page.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fileToDownscaledAttachment } from "../../lib/mobile/attachments.mjs";
 import { renderMarkdown } from "./markdown";
 import { PromptCard } from "./prompt-card";
@@ -129,8 +129,10 @@ function Icon({ d, children }) {
 function Composer({ client, offline, onSend, onNotice }) {
   const [text, setText] = useState("");
   const [attachment, setAttachment] = useState(null);
-  const appendText = useCallback((spoken) => setText((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${String(spoken).trim()}`), []);
-  const voice = useVoiceInput({ client, onText: appendText, onNotice });
+  const textRef = useRef(text);
+  textRef.current = text;
+  // Dictation renders the transcript live: what was typed + what is heard so far.
+  const voice = useVoiceInput({ client, getText: () => textRef.current, onValue: setText, onNotice });
 
   const submit = () => {
     if (offline || (!text.trim() && !attachment)) return;
@@ -163,11 +165,14 @@ function Composer({ client, offline, onSend, onNotice }) {
           <input type="file" accept="image/*" className="hidden" onChange={pick} />
         </label>
         <textarea rows={1} value={text} onChange={(e) => setText(e.target.value)}
-          placeholder={offline ? "电脑离线，暂时无法发送" : "给电脑上的 Lily 派任务…"}
+          placeholder={offline ? "电脑离线，暂时无法发送" : voice.phase === "listening" ? "正在听，说完点麦克风…" : voice.phase === "connecting" ? "正在连接语音…" : voice.phase === "finishing" ? "正在整理刚才说的…" : "给电脑上的 Lily 派任务…"}
           className="max-h-32 min-h-[2.25rem] min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-base leading-6 placeholder:text-[#b9b4aa] focus:outline-none"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
-        <button type="button" onClick={voice.toggle} title="语音输入"
-          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition ${voice.listening ? "animate-pulse bg-[#c8453b] text-white ring-4 ring-[#f6d9d5]" : "text-[#6b665c] active:bg-[#f1efe9]"}`}>
+        <button type="button" onClick={voice.toggle} title={voice.listening ? "停止语音输入" : "语音输入"} aria-pressed={voice.listening}
+          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition ${
+            voice.phase === "listening" ? `bg-[#c8453b] text-white ${voice.speaking ? "ring-4 ring-[#f6d9d5]" : "animate-pulse ring-2 ring-[#f6d9d5]"}`
+              : voice.phase === "connecting" || voice.phase === "finishing" ? "bg-[#f1efe9] text-[#8a8479] animate-pulse"
+                : "text-[#6b665c] active:bg-[#f1efe9]"}`}>
           <Icon><rect x="9" y="3" width="6" height="11.5" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></Icon>
         </button>
         <button type="button" onClick={submit} disabled={offline || (!text.trim() && !attachment)} title="发送"
