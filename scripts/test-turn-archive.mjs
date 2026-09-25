@@ -31,6 +31,26 @@ const modelRecord = archive.buildRecord({
 assert.equal(modelRecord.meta.engine.estimatedPromptTokens,
   estimateTokensForText(engineText, { provider: "anthropic", model: "claude-example" }).tokens,
   "per-turn model references must retain provider-aware token estimates");
+// The skill audit's candidates are the router's recommendation for this turn,
+// carried on the engine trace (2026-09-25).
+{
+  const auditModule = require("../src/main/skill-usage-audit.js");
+  const original = auditModule.buildSkillUsageAudit;
+  const seen = [];
+  auditModule.buildSkillUsageAudit = (input) => { seen.push(input.recommendedSkillIds); return { candidateSource: Array.isArray(input.recommendedSkillIds) ? "router" : "token_overlap" }; };
+  try {
+    const routed = archive.buildRecord({
+      sessionId: "s1", turnId: "turn_routed", assistantText: "done",
+      enginePayload: { text: "x", trace: { capabilityContext: { injected: true, recommendedSkillIds: ["lily-coding-core"] } } },
+    }, "turn.completed");
+    assert.deepEqual(seen[0], ["lily-coding-core"], "the archive hands the audit the router's recommendation");
+    assert.equal(routed.meta.skillUsageAudit.candidateSource, "router");
+    archive.buildRecord({ sessionId: "s1", turnId: "turn_plain", assistantText: "done", enginePayload: { text: "x" } }, "turn.completed");
+    assert.equal(seen[1], null, "a turn without routing hands none, and the audit keeps its previous guess");
+  } finally {
+    auditModule.buildSkillUsageAudit = original;
+  }
+}
 archive.commit("s1", {
   turnId: "turn_opencode",
   sessionId: "s1",

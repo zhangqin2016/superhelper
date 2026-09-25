@@ -2396,6 +2396,39 @@
         "scripts/test-long-task-store.mjs",
         "scripts/test-durable-process-jobs.mjs"
       ]
+    },
+    {
+      "id": "skill-content-reaches-users",
+      "protects": "A changed skill reaches the machines that installed it. A published version names exactly one pack: the client reinstalls a service-managed skill whose registry pack digest differs from the one it installed, even at the same version; the publisher refuses to upload a different pack under a version the server already holds (--bump-changed raises the patch version, manifest and registry, and restamps); the server answers 409 SKILL_VERSION_IMMUTABLE to the same.",
+      "baseline": "A higher version still updates exactly as before; metadata-only republishes (same digest) stay allowed; user-installed and GitHub-sourced skills keep version rules.",
+      "failureFallback": "A pack without a recorded digest (bundled, GitHub) is judged by version alone; a failed reinstall retries on the next sync and never downgrades.",
+      "tests": [
+        "scripts/test-skill-registry-update.mjs",
+        "scripts/test-skill-catalog.mjs",
+        "scripts/test-publish-local-catalog-server.mjs",
+        "scripts/test-skill-package-versions.mjs"
+      ]
+    },
+    {
+      "id": "engine-skills-are-lilys",
+      "protects": "The engine offers the model Lily's skills only: the shared serve denies the engine's native skill tool (Lily skills reach the model through AGENT.md and the capability graph) and starts with the scan of ~/.claude/skills and ~/.agents/skills off.",
+      "baseline": "Lily's catalog and platform guides are delivered exactly as before; per-session permission modes already denied the tool.",
+      "failureFallback": "LILY_ENGINE_EXTERNAL_SKILLS=1 restores the scan.",
+      "tests": [
+        "scripts/test-opencode-config-builder.mjs",
+        "scripts/test-opencode-shared-server.mjs"
+      ]
+    },
+    {
+      "id": "skill-usage-measures-routing",
+      "protects": "The skill usage audit measures the capability router's actual recommendation for the turn (carried on the engine trace), records guides the model read without a recommendation, and the report counts both — so router precision and blind spots are measured, not guessed.",
+      "baseline": "A turn with no routing keeps the previous word-overlap candidates; older audits aggregate as before.",
+      "failureFallback": "Any audit failure leaves the record without an audit, as before; the audit is advisory and never gates a turn.",
+      "tests": [
+        "scripts/test-skill-usage-audit.mjs",
+        "scripts/test-turn-archive.mjs",
+        "scripts/test-skill-usage-metrics.mjs"
+      ]
     }
   ]
 }

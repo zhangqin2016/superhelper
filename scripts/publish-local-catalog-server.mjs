@@ -102,6 +102,9 @@ options:
   --qiniu-up-host ${DEFAULT_QINIU_UP_HOST}
   --force
   --dry-run
+  --bump-changed   when a skill's pack changed but its version is already
+                   published, raise its patch version (manifest + registry,
+                   restamped) instead of refusing to publish
 `);
   process.exit(1);
 }
@@ -113,6 +116,7 @@ function parseArgs(argv) {
     upload: false,
     dryRun: false,
     force: false,
+    bumpChanged: false,
     skills: true,
     apps: true,
     version: "",
@@ -129,6 +133,7 @@ function parseArgs(argv) {
     if (key === "upload") out.upload = true;
     else if (key === "dry-run") out.dryRun = true;
     else if (key === "force") out.force = true;
+    else if (key === "bump-changed") out.bumpChanged = true;
     else if (key === "skills-only") out.apps = false;
     else if (key === "apps-only") out.skills = false;
     else if (key === "skip-skills") out.skills = false;
@@ -173,6 +178,42 @@ function compareSemver(a, b) {
     if (diff !== 0) return diff;
   }
   return 0;
+}
+
+/**
+ * A published version names exactly one pack. A different pack under a version
+ * the server already has is refused: republishing in place is invisible to
+ * every client that installed that version (they compare versions), which on
+ * 2026-09-25 had left 24 of 26 installed skills on one machine months stale.
+ */
+function skillVersionConflict(pack, published) {
+  if (!published?.sha256 || !pack?.sha256) return false;
+  return String(published.sha256).toLowerCase() !== String(pack.sha256).toLowerCase();
+}
+
+function nextPatchVersion(version) {
+  const parts = String(version || "0.0.0").split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part) || part < 0)) {
+    throw new Error(`cannot bump non-semver version: ${version}`);
+  }
+  return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+}
+
+/** Raise a skill's version where it is declared: its manifest, and the registry. */
+function bumpSkillVersion(skillId, fromVersion, root = ROOT) {
+  const to = nextPatchVersion(fromVersion);
+  const manifestPath = path.join(root, "resources", "skills-catalog", skillId, "skill.manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    manifest.version = to;
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+  const registryPath = path.join(root, "resources", "skills-registry", "registry.json");
+  const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+  const entry = (registry.skills || []).find((skill) => skill.id === skillId);
+  if (entry) entry.latestVersion = to;
+  fs.writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+  return to;
 }
 
 function skillManifestVersion(skillId) {
@@ -685,18 +726,43 @@ async function publishSkills(options, auth) {
   const results = [];
   const localSkillIds = new Set();
   const only = options.only instanceof Set && options.only.size ? options.only : null;
+  const buildPack = (skillDir) => buildJson(process.execPath, [
+    "scripts/build-skill-pack.mjs",
+    "--skill",
+    path.relative(ROOT, skillDir),
+    "--out",
+    DEFAULT_SKILL_OUT,
+  ]);
+  // Pass 1: build every pack and find versions the server already holds with
+  // a different pack. Nothing is uploaded unless every version is honest.
+  const built = [];
+  const conflicts = [];
   for (const skillDir of localSkillDirs()) {
     // --only <skillId>: publish just the named skill(s), skipping the rest (and
     // the metadata sync below). Lets us ship one small skill reliably without
     // re-uploading every large pack over a flaky link.
     if (only && !only.has(path.basename(skillDir))) continue;
-    const pack = buildJson(process.execPath, [
-      "scripts/build-skill-pack.mjs",
-      "--skill",
-      path.relative(ROOT, skillDir),
-      "--out",
-      DEFAULT_SKILL_OUT,
-    ]);
+    const pack = buildPack(skillDir);
+    if (skillVersionConflict(pack, existing.get(`${pack.skillId}@${pack.version}`))) conflicts.push({ skillDir, pack });
+    built.push({ skillDir, pack });
+  }
+  if (conflicts.length && !options.bumpChanged) {
+    throw new Error(`[publish-local-catalog] refusing to republish changed packs under published versions: ${conflicts.map(({ pack }) => `${pack.skillId}@${pack.version}`).join(", ")}. Clients that installed these versions would never see the change. Re-run with --bump-changed to raise their patch versions.`);
+  }
+  if (conflicts.length) {
+    for (const conflict of conflicts) {
+      let version = conflict.pack.version;
+      do version = bumpSkillVersion(conflict.pack.skillId, version);
+      while (existing.has(`${conflict.pack.skillId}@${version}`));
+      console.log(`[publish-local-catalog] ${conflict.pack.skillId}: ${conflict.pack.version} -> ${version} (pack changed)`);
+    }
+    console.log(runCapture(process.execPath, ["scripts/stamp-skill-registry.mjs"]).trim());
+    for (const item of built) {
+      if (conflicts.some((conflict) => conflict.skillDir === item.skillDir)) item.pack = buildPack(item.skillDir);
+    }
+  }
+  // Pass 2: publish.
+  for (const { skillDir, pack } of built) {
     localSkillIds.add(pack.skillId);
     const current = existing.get(`${pack.skillId}@${pack.version}`);
     if (!options.force && current?.sha256?.toLowerCase() === pack.sha256.toLowerCase()) {
@@ -845,6 +911,9 @@ async function publishApps(options, auth) {
 }
 
 export {
+  bumpSkillVersion,
+  nextPatchVersion,
+  skillVersionConflict,
   WORKSPACE_APP_BUILDERS,
   appUploadFields,
   extendedDescription,

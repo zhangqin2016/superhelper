@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { uploadBufferToQiniu } from "../../services/qiniu-upload.js";
+import { publishedPackConflict } from "../../services/skill-package-versions.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
 import {
@@ -119,6 +120,18 @@ function normalizeCreateInput(raw) {
     enabled: formBool(raw.enabled, true),
     notes: raw.notes || null,
   });
+}
+
+/** The pack already published under this skill/version/channel, if it differs. */
+async function versionConflict({ skillId, version, channel }, sha256) {
+  const existing = await db
+    .selectFrom("skill_packages")
+    .select(["sha256"])
+    .where("skill_id", "=", String(skillId || ""))
+    .where("version", "=", String(version || ""))
+    .where("channel", "=", String(channel || "stable"))
+    .executeTakeFirst();
+  return publishedPackConflict(existing, sha256);
 }
 
 async function upsertSkillPackage(input, preferredId = publicId("skillpkg")) {
@@ -254,6 +267,8 @@ export function registerAdminSkillPackageRoutes(app, { audit }) {
     }
     const qualityFailure = enforceSkillPackageQuality(input, reply);
     if (qualityFailure) return qualityFailure;
+    const conflict = await versionConflict(input, input.sha256);
+    if (conflict) return reply.code(409).send({ ok: false, ...conflict });
 
     const id = await upsertSkillPackage(input);
     await audit(request, "skill_package.upsert", "skill_package", input.skillId, {
@@ -292,6 +307,9 @@ export function registerAdminSkillPackageRoutes(app, { audit }) {
 
     const id = publicId("skillpkg");
     const sha256 = crypto.createHash("sha256").update(artifact.buffer).digest("hex");
+    // Refused before the artifact is stored, so a rejected upload leaves nothing behind.
+    const conflict = await versionConflict({ skillId: fields.skillId, version: fields.version, channel: fields.channel || "stable" }, sha256);
+    if (conflict) return reply.code(409).send({ ok: false, ...conflict });
     const objectKey = skillPackageObjectKey({
       skillId: fields.skillId,
       version: fields.version,

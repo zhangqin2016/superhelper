@@ -777,6 +777,42 @@ if (installedCurated.name !== curatedSkill.name) {
   throw new Error(`remote installed skill should prefer registry display name, got ${installedCurated.name}`);
 }
 
+// 2026-09-25: the service republished a changed pack under the version this
+// machine already had. Comparing versions alone never saw it — 24 of 26
+// service-managed skills on the developer's machine still ran June/July guides.
+{
+  const installedSha = curatedSkill.sha256;
+  curatedSkill.sha256 = "c".repeat(64);
+  const listed = skillManagerCurated.listSkillsPublic().find((skill) => skill.id === curatedSkill.id);
+  if (!listed) throw new Error("installed curated skill should be listed");
+  const refreshed = await skillManagerCurated.checkRegistryUpdates({ fetch: true });
+  const offered = refreshed.installed?.find?.((skill) => skill.id === curatedSkill.id) || (refreshed.skills || []).find?.((skill) => skill.id === curatedSkill.id);
+  if (offered && !offered.updateAvailable) throw new Error("a republished pack under the same version must show as an update");
+  const contentSync = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+  if (!contentSync.ok || !contentSync.updated.includes(curatedSkill.id)) {
+    throw new Error(`a changed pack under the same version must be reinstalled: ${JSON.stringify(contentSync)}`);
+  }
+  const state = skillManagerCurated.loadSkillsState().skills[curatedSkill.id];
+  if (state.sha256 !== curatedSkill.sha256) throw new Error("the reinstalled pack's digest is recorded");
+  const again = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+  if (again.updated.includes(curatedSkill.id) || !again.skipped.includes(curatedSkill.id)) {
+    throw new Error(`the same pack is never reinstalled twice: ${JSON.stringify(again)}`);
+  }
+  // A pack whose digest was never recorded (bundled / GitHub) is judged by
+  // version alone, exactly as before.
+  const unknown = skillManagerCurated.loadSkillsState();
+  delete unknown.skills[curatedSkill.id].sha256;
+  skillManagerCurated.saveSkillsState();
+  curatedSkill.sha256 = "d".repeat(64);
+  const noDigest = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+  if (noDigest.updated.includes(curatedSkill.id)) throw new Error("no recorded digest: no content-based reinstall");
+  const restore = skillManagerCurated.loadSkillsState();
+  restore.skills[curatedSkill.id].sha256 = installedSha;
+  skillManagerCurated.saveSkillsState();
+  curatedSkill.sha256 = installedSha;
+  console.log("skill-catalog: same-version republish reinstalls once, digest-less packs keep version rules");
+}
+
 curatedSkill.latestVersion = "1.0.1";
 const curatedDir = skillManagerCurated.installedSkillDir(curatedSkill.id);
 const curatedManifestPath = path.join(curatedDir, "skill.manifest.json");

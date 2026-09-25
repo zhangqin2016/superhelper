@@ -2,8 +2,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assert, assertEqual, finish } from "./lib/test-assert.mjs";
+import fs from "node:fs";
+import os from "node:os";
 import {
   WORKSPACE_APP_BUILDERS,
+  bumpSkillVersion,
+  nextPatchVersion,
+  skillVersionConflict,
   appUploadFields,
   extendedDescription,
   localSkillDirs,
@@ -171,4 +176,26 @@ assertEqual(JSON.parse(metadataFields.nameI18n).en, "Spreadsheets", "metadata sy
 assertEqual(JSON.parse(metadataFields.categoryLabelI18n).en, "Office Documents", "metadata sync should include localized category label");
 assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep registry entries catalog-visible by default");
 
-finish("publish-local-catalog-server", 30);
+// A published version names exactly one pack (2026-09-25: packs republished
+// in place left 24 of 26 installed skills on one machine months stale).
+assert(skillVersionConflict({ sha256: "a".repeat(64) }, { sha256: "B".repeat(64) }), "a different pack under a published version is a conflict");
+assert(!skillVersionConflict({ sha256: "a".repeat(64) }, { sha256: "A".repeat(64) }), "the same pack is not");
+assert(!skillVersionConflict({ sha256: "a".repeat(64) }, undefined), "an unpublished version is not");
+assertEqual(nextPatchVersion("1.0.9"), "1.0.10", "patch bump");
+let threw = false; try { nextPatchVersion("1.0"); } catch { threw = true; }
+assert(threw, "a non-semver version is never guessed");
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-bump-"));
+  fs.mkdirSync(path.join(tmp, "resources", "skills-catalog", "with-manifest"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "resources", "skills-registry"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "resources", "skills-catalog", "with-manifest", "skill.manifest.json"), JSON.stringify({ id: "with-manifest", version: "1.0.1" }));
+  fs.writeFileSync(path.join(tmp, "resources", "skills-registry", "registry.json"), JSON.stringify({ schemaVersion: 1, skills: [{ id: "with-manifest", latestVersion: "1.0.1" }, { id: "no-manifest", latestVersion: "2.3.4" }] }));
+  assertEqual(bumpSkillVersion("with-manifest", "1.0.1", tmp), "1.0.2");
+  assertEqual(JSON.parse(fs.readFileSync(path.join(tmp, "resources", "skills-catalog", "with-manifest", "skill.manifest.json"), "utf8")).version, "1.0.2", "the manifest carries the new version");
+  assertEqual(bumpSkillVersion("no-manifest", "2.3.4", tmp), "2.3.5");
+  const registry = JSON.parse(fs.readFileSync(path.join(tmp, "resources", "skills-registry", "registry.json"), "utf8"));
+  assertEqual(registry.skills.map((s) => s.latestVersion).join(","), "1.0.2,2.3.5", "and so does the registry, manifest or not");
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+finish("publish-local-catalog-server", 39);

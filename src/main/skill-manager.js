@@ -7,7 +7,7 @@ const jsonFile = require("./json-file");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath, sessionGuideDir } = require("./config");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
-const { compareSemver, isAppVersionCompatible } = require("./skill-version");
+const { compareSemver, isAppVersionCompatible, registryUpdate } = require("./skill-version");
 const skillRegistry = require("./skill-registry");
 const skillInstaller = require("./skill-installer");
 const skillPresets = require("./skill-presets");
@@ -1230,8 +1230,7 @@ async function fetchServiceRegistry() {
 function skillToPublic(skillId, entry, manifest, registryEntry) {
   const installedVersion = entry?.installedVersion || manifest?.version || "0.0.0";
   const latestVersion = registryEntry?.latestVersion || null;
-  const updateAvailable =
-    latestVersion && compareSemver(latestVersion, installedVersion) > 0;
+  const updateAvailable = registryUpdate(registryEntry, installedVersion, entry?.sha256).available;
   const platformMandatory = MANDATORY_PLATFORM_SKILL_IDS.includes(skillId);
   const manifestName = resolveLocalized(manifest, "name", registryEntry?.name || skillId);
   const manifestDescription = resolveLocalized(manifest, "description", registryEntry?.description || "");
@@ -1504,8 +1503,8 @@ async function syncServiceSkillPackages({ fetch = true } = {}) {
     const manifest = readInstalledManifest(entry.id);
     const stateEntry = loadSkillsState().skills[entry.id];
     const isInstalled = Boolean(manifest);
-    const updateAvailable =
-      isInstalled && compareSemver(entry.latestVersion, manifest.version || "0.0.0") > 0;
+    const update = isInstalled ? registryUpdate(entry, manifest.version || "0.0.0", stateEntry?.sha256) : { available: false, reason: null };
+    const updateAvailable = update.available;
     const shouldInstall = !isInstalled && Boolean(entry.defaultEligible);
     // "bundled-vendor" = upstream (anthropics/*) skills we bundle and manage —
     // provenance reads honestly while auto-update behavior stays identical to
@@ -1534,7 +1533,7 @@ async function syncServiceSkillPackages({ fetch = true } = {}) {
       reportSkillEvent("install", entry.id, result.version, { reason: "auto-sync" });
     } else {
       updated.push(entry.id);
-      reportSkillEvent("update", entry.id, result.version, { reason: "auto-sync" });
+      reportSkillEvent("update", entry.id, result.version, { reason: update.reason === "content" ? "auto-sync-content" : "auto-sync" });
     }
   }
 

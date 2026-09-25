@@ -283,11 +283,13 @@ class TurnArchive {
       const session = typeof this.sessionManager?.findById === "function"
         ? this.sessionManager.findById(state.sessionId)
         : null;
+      const routedSkills = enginePayload?.trace?.capabilityContext?.recommendedSkillIds;
       record.meta.skillUsageAudit = require("./skill-usage-audit").buildSkillUsageAudit({
         userText: rawUserText,
         session,
         tools,
         workspacePath,
+        recommendedSkillIds: Array.isArray(routedSkills) ? routedSkills : null,
       });
     } catch {
       record.meta.skillUsageAudit = null;

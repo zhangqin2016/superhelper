@@ -134,10 +134,53 @@ function buildSkillCandidates({ userText = "", session = null, skillManager = nu
   return candidates.slice(0, MAX_MATCHED_SKILLS);
 }
 
-function buildSkillUsageAudit({ userText = "", session = null, tools = [], skillManager = null, workspacePath = "", workspaceSkills = null } = {}) {
+/**
+ * The skills the capability router actually recommended to the model this
+ * turn, as candidates with their installed guide paths.
+ *
+ * The audit used to guess candidates by word overlap between the user's text
+ * and skill descriptions — a different selection from the router's intent
+ * graph, so it measured the wrong thing: over 30 days it recorded zero skills
+ * "used" while the model read skill guides in 40 turns, 1 of which overlapped
+ * the guess (2026-09-25).
+ */
+function routedSkillCandidates(recommendedSkillIds, mgr) {
+  const candidates = [];
+  for (const id of [...new Set(recommendedSkillIds.map(String).filter(Boolean))]) {
+    let skillDir = "";
+    try { skillDir = mgr.installedSkillDir(id); } catch { skillDir = ""; }
+    if (!skillDir) continue;
+    const guidePath = skillGuidePath(skillDir);
+    if (!fs.existsSync(guidePath)) continue;
+    candidates.push({ id, guidePath, matched: "routed", score: 100 - candidates.length });
+  }
+  return candidates;
+}
+
+/** Installed skills whose guide this turn read, whether recommended or not. */
+function skillsWithGuideRead(guideReads, mgr, local = []) {
+  if (!guideReads.length) return [];
+  const ids = [...new Set([...(mgr.getAllInstalledSkillIds?.() || []), ...local.map((entry) => entry.id)])];
+  const read = [];
+  for (const id of ids) {
+    let skillDir = "";
+    try { skillDir = local.find((entry) => entry.id === id)?.skillDir || mgr.installedSkillDir(id); } catch { skillDir = ""; }
+    if (!skillDir) continue;
+    const guidePath = skillGuidePath(skillDir);
+    if (guideReads.some((file) => pathMatches(file, guidePath))) read.push(id);
+  }
+  return read;
+}
+
+function buildSkillUsageAudit({ userText = "", session = null, tools = [], skillManager = null, workspacePath = "", workspaceSkills = null, recommendedSkillIds = null } = {}) {
   const mgr = skillManager || require("./skill-manager");
   const local = workspaceSkills || require("./workspace-local-skills").workspaceSkillsForSession(workspacePath, session, mgr.getAllInstalledSkillIds?.() || mgr.resolveSessionSkillIds(session)).skills;
-  const candidates = buildSkillCandidates({ userText, session, skillManager: mgr, workspaceSkills: local });
+  // The router's recommendation when it ran this turn; the word-overlap guess
+  // only for a turn that had none (the previous behaviour).
+  const routed = Array.isArray(recommendedSkillIds);
+  const candidates = routed
+    ? routedSkillCandidates(recommendedSkillIds, mgr)
+    : buildSkillCandidates({ userText, session, skillManager: mgr, workspaceSkills: local });
   const guideReadEvidence = require("./skill-read-evidence").collectSkillGuideReadEvidence(tools, workspacePath);
   const guideReads = collectSkillGuideReads(tools);
   const usedSkillIds = [];
@@ -147,9 +190,17 @@ function buildSkillUsageAudit({ userText = "", session = null, tools = [], skill
     if (read) usedSkillIds.push(candidate.id);
     else missingGuideReads.push(candidate.id);
   }
+  // What the model chose on its own: read, but not recommended. The router's
+  // blind spots, measured instead of guessed.
+  const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+  const unroutedGuideReads = skillsWithGuideRead(guideReads, mgr, local).filter((id) => !candidateIds.has(id));
   return {
-    schemaVersion: 2,
-    measurement: "candidate matches and current-turn read observations; not model selection or task success",
+    schemaVersion: 3,
+    measurement: routed
+      ? "router recommendations and current-turn guide reads; not task success"
+      : "candidate matches and current-turn read observations; not model selection or task success",
+    candidateSource: routed ? "router" : "token_overlap",
+    unroutedGuideReads,
     guideReadEvidence,
     mode: "advisory",
     candidateCount: candidates.length,

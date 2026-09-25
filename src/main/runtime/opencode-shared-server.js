@@ -149,6 +149,7 @@ class OpencodeSharedServer extends EventEmitter {
       }
       const serveEnv = { ...process.env, ...this.env, OPENCODE_DB: this.dataDir };
       delete serveEnv.CLAUDE_CONFIG_DIR;
+      Object.assign(serveEnv, require("./engine-skill-isolation").externalSkillScanEnv());
       if (this.configContent) {
         try {
           const identity = serveIdentity(this);

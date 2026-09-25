@@ -231,3 +231,31 @@ try {
 } finally {
   resetSharedServer();
 }
+
+// The engine's scan of ~/.claude/skills and ~/.agents/skills is off: a user's
+// machine is not Lily's skill catalog (2026-09-25).
+const { externalSkillScanEnv } = require("../src/main/runtime/engine-skill-isolation.js");
+assert.deepEqual(externalSkillScanEnv({}), { OPENCODE_DISABLE_EXTERNAL_SKILLS: "1", OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1" });
+assert.deepEqual(externalSkillScanEnv({ LILY_ENGINE_EXTERNAL_SKILLS: "1" }), {}, "LILY_ENGINE_EXTERNAL_SKILLS=1 restores the scan");
+console.log("opencode-shared-server: external skill scan off");
+
+// And the serve Lily actually spawns carries it: a stand-in engine records
+// the environment it was started with.
+{
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-serve-env-"));
+  const seen = path.join(dir, "env.json");
+  const fake = path.join(dir, "fake-serve.cjs");
+  fs.writeFileSync(fake, `require("fs").writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ a: process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS || "", b: process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS || "" })); console.log("listening on http://127.0.0.1:9"); setTimeout(() => {}, 5000);`);
+  const launcher = path.join(dir, "fake-serve.sh");
+  fs.writeFileSync(launcher, `#!/bin/sh\nexec "${process.execPath}" "${fake}"\n`, { mode: 0o755 });
+  resetSharedServer();
+  const server = getSharedServer({ serverCommand: launcher, cwd: dir, dataDir: path.join(dir, "db.sqlite"), configContent: "{}" });
+  await server.ensureStarted({ timeoutMs: 3000 }).catch(() => {});
+  for (let i = 0; i < 50 && !fs.existsSync(seen); i += 1) await new Promise((r) => setTimeout(r, 50));
+  const env = JSON.parse(fs.readFileSync(seen, "utf8"));
+  assert.deepEqual(env, { a: "1", b: "1" }, "the spawned serve starts with the external skill scan off");
+  resetSharedServer();
+  fs.rmSync(dir, { recursive: true, force: true });
+  console.log("opencode-shared-server: spawned serve has the scan off");
+}

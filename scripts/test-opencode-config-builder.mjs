@@ -32,6 +32,12 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
     lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
   }).configContent);
   assert(!("task" in (shared.permission || {})), "built shared config must not pin task");
+  // Production runs the shared block. Lily skills reach the model through
+  // AGENT.md, so the engine's native skill tool — which only ever offered the
+  // user's own ~/.claude and ~/.agents skills — is denied there too (2026-09-25).
+  assert(baseSharedPermission().skill === "deny", "the shared serve denies the native skill tool");
+  assert(shared.permission.skill === "deny", "and so does the built shared config");
+  for (const mode of ["ask", "full", "plan"]) assert(translatePermission(mode).skill === "deny", `${mode} mode denies it as before`);
 }
 
 // --- MCP translation (Lily {command,args,env} -> OpenCode local server) ------

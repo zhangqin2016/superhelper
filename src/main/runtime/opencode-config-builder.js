@@ -278,6 +278,12 @@ function baseSharedPermission() {
     // subagents (the depth-2+ "俄罗斯套娃" + runaway 10-min turns reported in the
     // field). Top-level agents still get `task` via OpenCode's own "*":"allow".
     edit: "ask", write: "ask", bash: "ask", external_directory: "ask",
+    // Lily skills reach the model through AGENT.md and the capability graph,
+    // not the engine's native `skill` tool (see translatePermission). This
+    // shared block is what production runs, and it lacked the rule: the tool
+    // then offered whatever the user's machine held under ~/.claude/skills and
+    // ~/.agents/skills — 91 loads in 30 days on one machine, none of them Lily's.
+    skill: "deny",
   };
 }
 
