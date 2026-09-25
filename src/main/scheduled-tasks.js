@@ -14,7 +14,7 @@ const {
   normalizeOverlapPolicy,
 } = require("./scheduled-task-run-policy");
 const { getLogger } = require("./logger");
-const { auditScopes, expireUnknownRuns, pauseTask, recordScopeFailure, retireTask } = require("./scheduled-task-self-heal");
+const { auditScopes, expireUnknownRuns, pauseTask, recordScopeFailure, resumeRecoveredScopes, retireTask } = require("./scheduled-task-self-heal");
 const { dispatchRecoveredQueuedRuns, dispatchRun, finishRun, markRunStarted, newRun } = require("./scheduled-task-run-lifecycle");
 const {
   hasScheduledTaskNegation,
@@ -38,6 +38,11 @@ const RUN_HISTORY_KEEP_DAYS = 90;
 const MISSED_AFTER_MS = 2 * TICK_MS;
 const defaultPrincipal = () => resolveCurrentPrincipal();
 const log = getLogger("scheduler");
+
+// A one-shot that already ran is "completed"; one that cannot run is "exhausted".
+function exhaustedReason(task) {
+  return task.schedule?.type === "once" && task.lastRunAt ? "once_completed" : "schedule_exhausted";
+}
 
 function localTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
@@ -259,8 +264,13 @@ class ScheduledTaskManager {
     return this._runTask(task, { manual: true });
   }
 
+  computeNextRunAt(schedule, from) { return computeNextRunAt(schedule, from); }
+
   async tick() {
-    if (this.selfHeal) this._expireUnknownRuns();
+    if (this.selfHeal) {
+      this._expireUnknownRuns();
+      resumeRecoveredScopes(this);
+    }
     this._dispatchRecoveredQueuedRuns();
     const owner = this._principal();
     let available = this.maxConcurrentRuns - executionLoad(this.runs, this._dispatchingRunIds, owner);
@@ -280,7 +290,7 @@ class ScheduledTaskManager {
       }
       if (!task.nextRunAt) {
         task.nextRunAt = computeNextRunAt(task.schedule);
-        if (!task.nextRunAt && this.selfHeal) { this._retireTask(task, "schedule_exhausted"); continue; }
+        if (!task.nextRunAt && this.selfHeal) { this._retireTask(task, exhaustedReason(task)); continue; }
         this.store?.saveTask(task);
         continue;
       }
@@ -290,7 +300,7 @@ class ScheduledTaskManager {
         const next = nextRunAfterNow(task, task.nextRunAt, computeNextRunAt, now);
         log.info("task %s missed %s; policy skip → next %s", task.id, task.nextRunAt, next || "-");
         task.nextRunAt = next;
-        if (!next) { this._retireTask(task, "schedule_exhausted"); continue; }
+        if (!next) { this._retireTask(task, exhaustedReason(task)); continue; }
         this.store?.saveTask(task);
         continue;
       }
@@ -451,7 +461,10 @@ class ScheduledTaskManager {
       if (abandoned && Date.parse(task.nextRunAt || "") <= Date.parse(abandoned.scheduledFor)) {
         task.nextRunAt = nextRunAfterNow(task, abandoned.scheduledFor, computeNextRunAt);
       }
-      task.status = task.enabled ? (hasActiveTaskRun(this.runs, task.id) ? task.status : "scheduled") : "paused";
+      // A retired one-shot stays "completed"; only enabled tasks are re-derived.
+      task.status = task.enabled
+        ? (hasActiveTaskRun(this.runs, task.id) ? task.status : "scheduled")
+        : (task.status === "completed" ? "completed" : "paused");
       this.store?.saveTask(task);
     }
   }

@@ -239,6 +239,7 @@ function renderTaskItem(task) {
   toggle.dataset.action = "toggle";
   toggle.dataset.enabled = task.enabled ? "1" : "0";
   toggle.disabled = active;
+  toggle.hidden = completed;
   toggle.textContent = task.enabled ? t("scheduled.pause") : t("scheduled.resume");
   const remove = document.createElement("button");
   remove.type = "button";
@@ -263,7 +264,7 @@ function taskDetailLine(task) {
   const last = task.lastRun;
   if (last?.finishedAt) {
     const outcome = last.status === "succeeded" ? t("scheduled.lastRunOk") : t("scheduled.lastRunFailed");
-    const why = last.status !== "succeeded" && last.error ? `（${reasonText(last.error) || last.error}）` : "";
+    const why = last.status !== "succeeded" && last.error ? ` · ${reasonText(last.error) || last.error}` : "";
     parts.push(`${t("scheduled.lastRun")} ${formatDateTime(last.finishedAt)} · ${outcome}${why}`);
   }
   const reason = reasonText(task.pausedReason);

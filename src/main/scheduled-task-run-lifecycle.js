@@ -78,10 +78,13 @@ function finishRun(manager, run, terminalType, payload = {}) {
     task.lastError = run.status === "succeeded" ? null : run.error;
     task.updatedAt = nowIso();
     manager.store?.saveTask(task);
-    const oneShotDone = task.schedule?.type === "once";
+    const oneShot = task.schedule?.type === "once";
     const exhausted = !task.nextRunAt && !computeNextRunAt(task.schedule);
-    if (manager.selfHeal && task.enabled && !run.manual && (oneShotDone || exhausted)) {
-      manager._retireTask(task, oneShotDone ? "once_completed" : "schedule_exhausted");
+    if (manager.selfHeal && task.enabled && !run.manual && (oneShot || exhausted)) {
+      // Success closes the schedule; a failed one-shot stays visibly failed and
+      // reachable through "run now" instead of being filed as completed.
+      if (run.status === "succeeded") manager._retireTask(task, oneShot ? "once_completed" : "schedule_exhausted");
+      else manager._pauseTask(task, run.error || run.status);
     }
     const assistant = safeText(payload?.assistant, 12000);
     if (assistant && task.originSessionId !== task.executionSessionId) {

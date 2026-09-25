@@ -145,6 +145,25 @@ const daily = { type: "daily", hour: 9, minute: 0 };
   manager.close();
 }
 
+// 4b. A completed one-shot keeps its status across a restart that recovers an
+//     abandoned run of some other task (state reconciliation must not flatten it).
+{
+  const { manager, dbPath } = fresh();
+  const once = manager.create({ title: "done", prompt: "x", schedule: { type: "once", at: new Date(Date.now() + 60_000).toISOString() }, sessionId: "origin-a", projectId: "project-a" });
+  manager._retireTask(once.task, "once_completed");
+  const other = manager.create({ title: "other", prompt: "x", schedule: daily, sessionId: "origin-b", projectId: "project-a" });
+  const abandoned = manager._newRun(other.task, "2026-02-01T00:00:00.000Z", false);
+  abandoned.status = "running"; abandoned.startedAt = new Date().toISOString();
+  manager.store.insertRun(abandoned);
+  manager.close();
+  const again = new ScheduledTaskManager({ dbPath, resolvePrincipal: () => principal, powerMonitor: null });
+  again.load();
+  const reloaded = again.tasks.find((task) => task.id === once.task.id);
+  assert.equal(reloaded.status, "completed", "restart recovery keeps a completed one-shot completed");
+  assert.equal(reloaded.pausedReason, "once_completed");
+  again.close();
+}
+
 // 5. dispatch_unknown past its lease closes as failed and unblocks the task;
 //    a durable turn that did finish wins over the expiry.
 {
@@ -172,6 +191,80 @@ const daily = { type: "daily", hour: 9, minute: 0 };
   durableTurns.set(run2.id, { status: "completed", turnId: "t-done", terminalAt: Date.now(), terminalType: "turn.completed" });
   await manager.tick();
   assert.equal(run2.status, "succeeded", "the durable turn's real outcome is used, not the expiry");
+  manager.close();
+}
+
+// 5b. The common crash: the engine had accepted the run when the app died.
+//     After restart the durable turn still says "accepted", the run becomes
+//     `promoted`, and without expiry the task would be blocked forever.
+{
+  const { manager, dbPath } = fresh({ leaseMs: 1000 });
+  const created = manager.create({ title: "crashed-mid-run", prompt: "x", schedule: daily, sessionId: "origin-a", projectId: "project-a" });
+  const run = manager._newRun(created.task, "2026-01-05T00:00:00.000Z", false);
+  run.status = "running"; run.startedAt = new Date(Date.now() - 5000).toISOString(); run.turnId = "t-crash";
+  manager.store.insertRun(run);
+  manager.close();
+  durableTurns.set(run.id, { status: "accepted", turnId: "t-crash", acceptedAt: Date.now() - 5000 });
+  const again = new ScheduledTaskManager({ dbPath, resolvePrincipal: () => principal, leaseMs: 1000, powerMonitor: null });
+  again.load();
+  again.start(context());
+  again.stop();
+  const reloaded = again.runs.find((item) => item.id === run.id);
+  assert.equal(reloaded.status, "promoted", "restart reconciliation leaves an engine-accepted run promoted");
+  assert.notEqual(reloaded.leaseOwner, again._leaseOwner, "the run belongs to the previous process");
+  await again.tick();
+  assert.equal(reloaded.status, "failed", "a promotion orphaned by a crash is closed once its lease is over");
+  assert.equal(again.remove(created.task.id).ok, true);
+  // A promoted run owned by THIS process is a live turn: never expired.
+  const live = again.create({ title: "live-long-turn", prompt: "x", schedule: daily, sessionId: "origin-b", projectId: "project-a" });
+  const liveRun = again._newRun(live.task, "2026-01-06T00:00:00.000Z", false);
+  liveRun.status = "promoted"; liveRun.startedAt = new Date(Date.now() - 5000).toISOString();
+  again.store.insertRun(liveRun); again.runs.push(liveRun);
+  await again.tick();
+  assert.equal(liveRun.status, "promoted", "a long-running turn of this process is left alone");
+  durableTurns.clear();
+  again.close();
+}
+
+// 5c. A one-shot whose run failed is not "completed": it pauses with the error
+//     and can still be run by hand.
+{
+  const { manager } = fresh();
+  const created = manager.create({ title: "once-failed", prompt: "x", schedule: { type: "once", at: new Date(Date.now() + 60_000).toISOString() }, sessionId: "origin-a", projectId: "project-a" });
+  const task = created.task;
+  task.nextRunAt = new Date(Date.now() - 1000).toISOString();
+  await manager.tick();
+  await settle();
+  const run = manager.runs.find((item) => item.taskId === task.id);
+  manager.completeRunById(run.id, "turn.failed", { errorCode: "ENGINE_CRASH" });
+  assert.equal(task.status, "paused");
+  assert.equal(task.enabled, false);
+  assert.equal(task.pausedReason, "ENGINE_CRASH");
+  assert.equal(task.lastError, "ENGINE_CRASH");
+  const manual = manager.runNow(task.id);
+  assert.equal(manual.ok, true, "a failed one-shot can still be run by hand");
+  manager.close();
+}
+
+// 5d. Self-heal both ways: a task paused for a missing session resumes on its
+//     own once the session is back (e.g. a session index recovered after boot).
+{
+  const { manager } = fresh();
+  const created = manager.create({ title: "comes-back", prompt: "x", schedule: daily, sessionId: "origin-a", projectId: "project-a" });
+  created.task.nextRunAt = "2020-01-01T00:00:00.000Z";
+  sessions.delete("origin-a");
+  await manager.tick();
+  assert.equal(created.task.pausedReason, "SCOPE_MISSING");
+  sessions.set("origin-a", { id: "origin-a", projectId: "project-a" });
+  await manager.tick();
+  assert.equal(created.task.enabled, true, "scope returned → task resumed");
+  assert.equal(created.task.pausedReason, null);
+  assert.ok(Date.parse(created.task.nextRunAt) > Date.now(), "resumed with a future next run, not the stale one");
+  // A task the user paused is never auto-resumed.
+  const mine = manager.create({ title: "user-paused", prompt: "x", schedule: daily, sessionId: "origin-b", projectId: "project-a" });
+  manager.setEnabled(mine.task.id, false);
+  await manager.tick();
+  assert.equal(mine.task.enabled, false);
   manager.close();
 }
 
@@ -280,4 +373,4 @@ const daily = { type: "daily", hour: 9, minute: 0 };
   assert.match(describeNow("2026-09-25T01:00:00.000Z"), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}( \(.+\))?$/, "Now carries the local offset");
 }
 
-console.log("scheduled-task-self-heal: ok (10 cases)");
+console.log("scheduled-task-self-heal: ok (14 cases)");
