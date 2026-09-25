@@ -94,6 +94,7 @@ export function useVoiceInput({ client, getText, onValue, onNotice }) {
     const grant = client?.grant?.();
     if (!grant || !navigator.mediaDevices?.getUserMedia) return false;
     const tokenRes = await client.authorizedPost("/api/mobile/asr/token");
+    if (tokenRes.json?.code === "DESKTOP_LOGIN_REQUIRED") { onNotice("电脑上的 Lily 需要登录账号，语音才能用"); return true; }
     if (!tokenRes.ok || !tokenRes.json?.asrToken) return false;
     const token = tokenRes.json.asrToken;
     const base = grant.url;

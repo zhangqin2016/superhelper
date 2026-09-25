@@ -281,6 +281,20 @@ try {
   const asrOk = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: directToken } });
   assert.equal(asrOk.statusCode, 200, `asr token ok: ${asrOk.body}`);
   assert.ok(asrOk.json().asrToken, "returns a vision-scoped ASR token");
+  {
+    // The token must pass the gateway's LIVE check (a logout closes it): it
+    // carries the desktop's login session. Without it every phone got 401
+    // USER_LOGIN_REQUIRED at /llm/asr/sessions — server dictation never worked.
+    const { verifyLiveModelGatewayToken } = await import("../src/services/model-gateway/auth.js");
+    const live = await verifyLiveModelGatewayToken(asrOk.json().asrToken, "vision");
+    assert.equal(live.ok, true, `the ASR token is accepted by the gateway's live check: ${JSON.stringify(live)}`);
+    assert.equal(live.sessionId, desktopSessionId, "it is the desktop's session");
+    await pool.query("update user_sessions set revoked_at = now() where id = $1", [desktopSessionId]);
+    const loggedOut = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: mobileDeviceId, grantId: directGrant, token: directToken } });
+    assert.equal(loggedOut.statusCode, 409, "desktop logged out: no voice token");
+    assert.equal(loggedOut.json().code, "DESKTOP_LOGIN_REQUIRED");
+    await pool.query("update user_sessions set revoked_at = null where id = $1", [desktopSessionId]);
+  }
   const asrBadDevice = await app.inject({ method: "POST", url: "/api/mobile/asr/token", payload: { deviceId: "dev_other_xxxx", grantId: directGrant, token: directToken } });
   assert.equal(asrBadDevice.statusCode, 403, "a mismatched device is refused an ASR token");
 

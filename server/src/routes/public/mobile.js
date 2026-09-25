@@ -392,11 +392,23 @@ export function registerPublicMobileRoutes(app) {
       const input = asrTokenSchema.parse(request.body);
       const grant = await activeGrantFor(request, reply, input);
       if (!grant) return;
+      // The gateway accepts a user's token only with that user's LIVE login
+      // session (verifyLiveModelGatewayToken: a logout or password change must
+      // close it). The phone has no login of its own — it speaks as the
+      // desktop's user, so it carries the desktop's live session: the user's
+      // current session on the desktop device this pairing belongs to. Without
+      // one (the desktop logged out) there is no voice, and the phone is told.
+      const desktopSession = await db.selectFrom("user_sessions").select(["id"])
+        .where("user_id", "=", grant.user_id).where("device_id", "=", grant.desktop_device_id)
+        .where("revoked_at", "is", null).where("expires_at", ">", new Date())
+        .orderBy("last_seen_at", "desc").executeTakeFirst();
+      if (!desktopSession) return reply.code(409).send({ ok: false, code: "DESKTOP_LOGIN_REQUIRED" });
       const asrToken = signModelGatewayToken({
         deviceId: input.deviceId,
         licenseId: grant.license_id,
         providerId: "vision",
         userId: grant.user_id,
+        sessionId: desktopSession.id,
       });
       return reply.send({ ok: true, asrToken });
     },
