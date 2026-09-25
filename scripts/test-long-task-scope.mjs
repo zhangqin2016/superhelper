@@ -23,6 +23,11 @@ const token = issueScopeToken({
   now: () => now,
 });
 const guidance = buildProcessJobTurnGuidance({ secret, scope, now: () => now });
+assert.match(guidance, /scopeToken: `/, "prompt delivery carries the token");
+const hosted = buildProcessJobTurnGuidance({ secret, scope, now: () => now, tokenDelivery: "host" });
+assert.doesNotMatch(hosted, /scopeToken: `/, "host delivery keeps the token out of the prompt");
+assert.match(hosted, /omit scopeToken/);
+assert.match(hosted, /worker owns the full authorized queue/, "the rules themselves are unchanged");
 assert.match(guidance, /worker owns the full authorized queue/);
 assert.match(guidance, /replayPolicy=inspect/);
 assert.match(guidance, /Unknown writes must be reconciled/);

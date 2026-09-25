@@ -121,4 +121,28 @@ try {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+
+{
+  const store = new LongTaskStore({ filePath: file, now: clock });
+  const scope = { ownerScope: "owner-o", sessionId: "session-o", projectId: "project-o", turnId: "turn-o" };
+  store.createJob({ id: "job-o", scope, command: process.execPath, cwd: dir, replayPolicy: "inspect", idempotencyKey: "job-o" });
+  assert.equal(store.recordOutcomeObserved(scope, "job-o").error, "JOB_NOT_TERMINAL", "a running job has no outcome to observe");
+  const lease = store.claimLease(scope, "job-o", { holder: "t", ttlMs: 10_000 });
+  now += 10; store.markTerminal(scope, "job-o", { holder: "t", fencingEpoch: lease.job.fencingEpoch, status: "succeeded", exitCode: 0 });
+  now += 10; const first = store.recordOutcomeObserved(scope, "job-o");
+  assert.equal(first.job.outcomeObservedAt, now);
+  now += 10; assert.equal(store.recordOutcomeObserved(scope, "job-o").job.outcomeObservedAt, first.job.outcomeObservedAt, "the first read is the one that counts");
+  assert.equal(store.recordOutcomeObserved({ ...scope, sessionId: "other" }, "job-o").error, "JOB_NOT_FOUND", "another session's read is not this conversation's");
+  const { outcomeObserved } = require("../src/main/long-task/store.js");
+  assert.equal(outcomeObserved(store.getJob(scope, "job-o")), true);
+  store.close();
+  // A database written before the column existed gains it on open.
+  const legacy = new LongTaskStore({ filePath: file, now: clock });
+  legacy.db.exec("ALTER TABLE long_task_jobs DROP COLUMN outcome_observed_at"); legacy.close();
+  const reopened = new LongTaskStore({ filePath: file, now: clock });
+  assert.equal(reopened.getJob(scope, "job-o").outcomeObservedAt, null);
+  assert.equal(reopened.recordOutcomeObserved(scope, "job-o").ok, true, "an older database is migrated on open");
+  reopened.close();
+}
+
 console.log("long-task-store: ok");

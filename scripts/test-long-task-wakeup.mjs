@@ -69,6 +69,29 @@ try {
   await supervisor.deliverWakesOnce();
   assert.equal(calls, 2, "delivered wake is never dispatched twice");
 
+  // Wakes of the same turn are handed over together and settled together.
+  {
+    const a = succeededJob(store, "job-group-a"); const b = succeededJob(store, "job-group-b"); const c = succeededJob(store, "job-group-c");
+    for (const j of [a, b, c]) store.enqueueWakeForJob(j.id);
+    const seen = [];
+    const grouped = new LongTaskSupervisor({ dbPath, jobsDir: path.join(dir, "jobs"), holder: "grouped", now: () => now,
+      onWake: async (wake, job, extras) => { seen.push({ wake: wake.id, siblings: extras.siblings.map((s) => s.wake.id) }); return { ok: true, carried: ["wake:job-group-b"], retired: ["wake:job-group-c"] }; } });
+    const out = await grouped.deliverWakesOnce();
+    assert.equal(seen.length, 1, "one handler call for the turn's three wakes");
+    assert.deepEqual(seen[0], { wake: "wake:job-group-a", siblings: ["wake:job-group-b", "wake:job-group-c"] });
+    assert.equal(out.delivered, 2); assert.equal(out.abandoned, 1);
+    assert.equal(store.getWake("wake:job-group-c").lastError, "JOB_OUTCOME_OBSERVED");
+    // A deferred wake (session busy) is never abandoned for waiting too long.
+    const d = succeededJob(store, "job-deferred"); store.enqueueWakeForJob(d.id);
+    store.db.run("UPDATE long_task_wakes SET attempt_count=150 WHERE id=?", "wake:job-deferred");
+    const deferring = new LongTaskSupervisor({ dbPath, jobsDir: path.join(dir, "jobs"), holder: "deferring", now: () => now,
+      onWake: async () => ({ ok: false, permanent: false, defer: true, error: "SESSION_BUSY" }) });
+    now += 6 * 60_000;
+    const deferred = await deferring.deliverWakesOnce();
+    assert.equal(deferred.released, 1); assert.equal(store.getWake("wake:job-deferred").status, "pending", "waiting on a busy session keeps the wake");
+    store.db.run("UPDATE long_task_wakes SET status='delivered' WHERE id=?", "wake:job-deferred");
+  }
+
   const failure = failedJob(store, "job-failed");
   assert.equal(store.enqueueWakeForJob(failure.id).ok, true, "failure wakes the originating agent for recovery");
   assert.equal((await supervisor.deliverWakesOnce()).delivered, 1);

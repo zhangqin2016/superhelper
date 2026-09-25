@@ -106,6 +106,10 @@ class LongTaskSupervisor {
     try {
       const wakes = store.claimPendingWakes({ holder: this.holder, ttlMs: this.leaseMs });
       result.claimed = wakes.length;
+      // Wakes of the same turn are delivered as ONE wake: the handler gets the
+      // first with the rest as siblings and answers for all of them, so four
+      // jobs that finished while the session was busy make one turn, not four.
+      const groups = new Map();
       for (const wake of wakes) {
         const job = store.getJobTrusted(wake.jobId);
         if (job && !allowsAutomaticWake(job)) {
@@ -116,19 +120,41 @@ class LongTaskSupervisor {
           }).ok) result.abandoned += 1;
           continue;
         }
-        let delivered;
-        try { delivered = job ? await this.onWake(wake, job) : { ok: false, error: "JOB_NOT_FOUND" }; }
-        catch (error) { delivered = { ok: false, error: error?.message || String(error) }; }
+        const key = job ? [wake.ownerScope, wake.sessionId, wake.projectId, wake.turnId].join("\u0000") : `alone:${wake.id}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ wake, job });
+      }
+      const settle = (wake, delivered) => {
         if (delivered?.ok) {
           if (store.completeWake(wake.id, { holder: this.holder, fencingEpoch: wake.fencingEpoch }).ok) result.delivered += 1;
-        } else if (delivered?.permanent || wake.attemptCount >= 100) {
+        } else if (delivered?.permanent || (wake.attemptCount >= 100 && !delivered?.defer)) {
           if (store.abandonWake(wake.id, {
             holder: this.holder, fencingEpoch: wake.fencingEpoch, error: delivered?.error,
           }).ok) result.abandoned += 1;
-        } else {
-          if (store.releaseWake(wake.id, {
-            holder: this.holder, fencingEpoch: wake.fencingEpoch, error: delivered?.error,
-          }).ok) result.released += 1;
+        } else if (store.releaseWake(wake.id, {
+          holder: this.holder, fencingEpoch: wake.fencingEpoch, error: delivered?.error,
+        }).ok) result.released += 1;
+      };
+      for (const [{ wake, job }, ...siblings] of groups.values()) {
+        let delivered;
+        try { delivered = job ? await this.onWake(wake, job, { siblings }) : { ok: false, error: "JOB_NOT_FOUND" }; }
+        catch (error) { delivered = { ok: false, error: error?.message || String(error) }; }
+        settle(wake, delivered);
+        // A sibling the handler retired (its outcome was already read) is
+        // abandoned silently; one it carried shares the delivery. A handler
+        // that answered without saying which it carried did not look at them:
+        // each is then delivered on its own, as before grouping existed.
+        const retired = new Set(delivered?.retired || []);
+        const carried = new Set(delivered?.carried || []);
+        for (const sibling of siblings) {
+          if (retired.has(sibling.wake.id)) settle(sibling.wake, { ok: false, permanent: true, error: "JOB_OUTCOME_OBSERVED" });
+          else if (delivered?.ok && carried.has(sibling.wake.id)) settle(sibling.wake, delivered);
+          else if (delivered?.ok && !Array.isArray(delivered.carried)) {
+            let own;
+            try { own = await this.onWake(sibling.wake, sibling.job, { siblings: [] }); }
+            catch (error) { own = { ok: false, error: error?.message || String(error) }; }
+            settle(sibling.wake, own);
+          } else settle(sibling.wake, { ok: false, error: delivered?.ok ? "WAKE_NOT_CARRIED" : delivered?.error, defer: delivered?.defer });
         }
       }
       await deliverWakeNotifications(store, this.onWakeAbandoned);

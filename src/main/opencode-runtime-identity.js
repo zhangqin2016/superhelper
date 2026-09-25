@@ -62,8 +62,32 @@ function grantOpencodeRuntimeIdentity(runner, server, payload = {}) {
     sessionId: identity.sessionId,
     nonce: identity.nonce,
     expiresAt: identity.expiresAt,
+    processJobScopeToken: processJobScopeTokenForTurn(runner, identity.turnId, now),
   });
   return token;
+}
+
+/**
+ * The process-job scope of THIS turn, issued where the turn's identity is —
+ * on dispatch, with the real turn id — so the engine can attach it to every
+ * lily_process_jobs call (runtime-identity plugin) and the model never copies
+ * it. Empty when the session has no owner scope or injection is off, and the
+ * prompt-carried token (ipc-utils) remains the route. Never fails the grant.
+ */
+function processJobScopeTokenForTurn(runner, turnId, now) {
+  const scope = runner?.spawnOptions?.processJobScope;
+  const turnScope = require("./long-task/turn-scope");
+  if (!scope || !turnScope.processJobScopeInjected()) return "";
+  try {
+    return turnScope.issueProcessJobScopeToken({
+      secret: require("./long-task/secret").ensureLongTaskSecret(),
+      scope: { ...scope, turnId: String(turnId || "") },
+      now: () => now,
+    });
+  } catch (err) {
+    log.warn("process-job scope not attached to this turn's identity: %s", err?.message || err);
+    return "";
+  }
 }
 
 /**

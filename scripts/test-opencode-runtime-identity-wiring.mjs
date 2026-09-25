@@ -50,9 +50,11 @@ try {
 
   const server = new FakeServer();
   const runner = new OpencodeAgentSession("lily-session-1", { createServer: () => server });
+  process.env.LILY_PROCESS_JOBS_SCOPE_SECRET = Buffer.alloc(32, 9).toString("base64url");
   runner.ensureProcess(dir, {
     agentCommand: "/fake/opencode",
     opencodeConfig: "{}",
+    processJobScope: { ownerScope: "owner:user-1", sessionId: "lily-session-1", projectId: "project-1" },
     runtimeIdentity: {
       secret,
       registryPath,
@@ -88,6 +90,15 @@ try {
   assert.equal(identity.taskRunId, "task-1");
   assert.equal(identity.attemptId, "attempt-1");
   assert.deepEqual(identity.activeSkillIds, ["lily-runtime-packs"]);
+  // The same grant carries the process-job scope of THIS turn, issued on
+  // dispatch with the real turn id, so the engine attaches it to every
+  // lily_process_jobs call and the model never copies it.
+  const jobScope = registry.resolveProcessJobScope("engine-session-1");
+  assert.ok(jobScope, "dispatch grants the turn's process-job scope alongside its identity");
+  const { verifyProcessJobScope } = require("../src/main/long-task/turn-scope.js");
+  const verified = verifyProcessJobScope({ scopeToken: jobScope }, { secret: process.env.LILY_PROCESS_JOBS_SCOPE_SECRET, operation: "status" });
+  assert.equal(verified.ok, true, "and it verifies against the process-jobs secret");
+  assert.deepEqual(verified.scope, { ownerScope: "owner:user-1", sessionId: "lily-session-1", projectId: "project-1", turnId: "turn-1" });
 
   runner.terminate();
   assert.equal(registry.resolve("engine-session-1"), "", "terminating a runner revokes its engine grant");

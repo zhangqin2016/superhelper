@@ -324,6 +324,13 @@ function reduceToolPart(part, state) {
   const hasInput = Object.keys(input).length > 0;
   const prev = state.tools.get(callID);
   const drafts = [];
+  // A part the engine marks `time.compacted` is context pruning of a step from
+  // an EARLIER turn: the stored output is rewritten and the part republished.
+  // Met for the first time here it is bookkeeping, not a step this turn ran
+  // (2026-09-25: 117 of a turn's 289 recorded tools were the previous turn's
+  // pruned steps — edits it never made, counted as its evidence and its side
+  // effects). A step of this turn is always seen running before it can be pruned.
+  if (!prev && st.time?.compacted) return { drafts: [], progress: false, pruned: true };
 
   const started = () => {
     state.tools.set(callID, "started");

@@ -113,6 +113,14 @@ class DurableProcessJobRuntime {
     return store.claimLease(scope, job.id, { holder: HOLDER, ttlMs: LEASE_MS, ...options });
   }
 
+  // A terminal outcome returned to its own conversation has been seen; the
+  // store remembers it so no wake re-reports it (store.recordOutcomeObserved).
+  _observed(store, scope, job) {
+    if (!TERMINAL.has(job.status)) return job;
+    const recorded = store.recordOutcomeObserved(scope, job.id);
+    return recorded.job || job;
+  }
+
   _reconcile(store, scope, job) {
     if (TERMINAL.has(job.status)) return job;
     const claimed = this._claim(store, scope, job);
@@ -233,7 +241,7 @@ class DurableProcessJobRuntime {
     try {
       let job = this._scopeJob(store, auth, input.jobId);
       if (!job) return fail("JOB_NOT_FOUND");
-      job = this._reconcile(store, auth.scope, job);
+      job = this._observed(store, auth.scope, this._reconcile(store, auth.scope, job));
       const alive = !TERMINAL.has(job.status) && this._alive(job);
       return { ok: true, ...this._compact(job), alive, stdoutBytes: fileSize(job.stdoutPath), stderrBytes: fileSize(job.stderrPath) };
     } finally { store.close(); }
@@ -246,7 +254,7 @@ class DurableProcessJobRuntime {
     try {
       let job = this._scopeJob(store, auth, input.jobId);
       if (!job) return fail("JOB_NOT_FOUND");
-      job = this._reconcile(store, auth.scope, job);
+      job = this._observed(store, auth.scope, this._reconcile(store, auth.scope, job));
       const tail = Math.max(1, Math.min(Number(input.tailBytes) || 64 * 1024, 1_000_000));
       return { ok: true, ...this._compact(job), stdout: readTail(job.stdoutPath, tail, input.stdoutOffset), stderr: readTail(job.stderrPath, tail, input.stderrOffset) };
     } finally { store.close(); }

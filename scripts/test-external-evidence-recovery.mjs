@@ -196,3 +196,24 @@ const recoveryContextProduction = fs.readFileSync("src/main/turn-recovery-contex
 assert.doesNotMatch(recoveryContextProduction, /China Construction|metallurgical|vice-ministerial/i);
 
 console.log("external-evidence-recovery: ok");
+
+// --- 2026-09-25: citations in backticks, and a code template mistaken for a source
+{
+  const { extractHttpUrls, normalizeHttpUrl } = require("../src/main/external-source-authority.js");
+  const { repairAnswerCitations } = require("../src/main/external-evidence-recovery.js");
+  assert.deepEqual(extractHttpUrls("登录端点：`https://anjaz.matrx.io/api/auth/login` 和 **https://anjaz.matrx.io/api/auth/me**。"),
+    ["https://anjaz.matrx.io/api/auth/login", "https://anjaz.matrx.io/api/auth/me"], "a closing backtick or asterisk is not part of the URL");
+  assert.deepEqual(extractHttpUrls("`https://a.example/x`,`https://a.example/y`"), ["https://a.example/x", "https://a.example/y"],
+    "two backticked links with no space between stay two links");
+  assert.equal(normalizeHttpUrl("http://{args.host}/api/x"), "", "a template placeholder is not a host");
+  assert.deepEqual(extractHttpUrls('base = f"http://{args.host}/api"; probe http://127.0.0.1:8777/n12 ok'), ["http://127.0.0.1:8777/n12"]);
+  assert.equal(normalizeHttpUrl("https://[::1]:8080/x"), "https://[::1]:8080/x", "an IPv6 literal is a host");
+  // The field answer: correct links in backticks, tool evidence holding the same
+  // links and a python template. Before: both links stripped as fabricated and
+  // "http://{args.host/" appended as a source.
+  const assistant = "Anjaz 登录端点（实测 HTTP 200）：`https://anjaz.matrx.io/api/auth/login`\n鉴权端点：`https://anjaz.matrx.io/api/auth/me`";
+  const evidenceText = 'POST https://anjaz.matrx.io/api/auth/login -> 200\nGET https://anjaz.matrx.io/api/auth/me -> 200\nbase = f"http://{args.host}/api"';
+  const repaired = repairAnswerCitations({ assistant, evidenceText, assessment: { reason: "source_link_not_in_evidence" }, userText: "测试" });
+  assert.equal(repaired, null, "links the evidence contains are neither stripped nor replaced");
+  console.log("ok - backticked citations survive; a code template is never a source");
+}

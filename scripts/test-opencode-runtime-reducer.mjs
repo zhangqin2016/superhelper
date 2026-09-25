@@ -644,3 +644,29 @@ assert(OPENCODE_RUNTIME_CAPABILITIES.manualSummarize === true, "OpenCode runtime
 }
 
 console.log("opencode-runtime-reducer: ok");
+
+// --- context pruning republishes EARLIER turns' tool parts ------------------
+// Real part from opencode.db (2026-09-25): a todowrite of the previous turn,
+// republished 2h later with time.compacted when the engine pruned its output.
+{
+  const pruned = (callID, tool = "todowrite") => ({ id: `prt_${callID}`, messageID: "msg_old", type: "tool", tool, callID,
+    state: { status: "completed", input: { todos: [{ content: "Verify identity APIs", status: "completed" }] }, output: "[compacted]",
+      metadata: { todos: [] }, title: "3 todos", time: { start: 1790278931501, end: 1790278931515, compacted: 1790285837176 } } });
+  const state = createOpencodeRuntimeState();
+  resetOpencodeRuntimeState(state);
+  const foreign = reduce("message.part.updated", { part: pruned("call_prev_turn") }, state);
+  assert(foreign.drafts.length === 0 && foreign.progress === false, "a pruned part of an earlier turn adds no tool to this turn");
+  assert(!state.tools.has("call_prev_turn"), "and is not remembered as a tool of this turn");
+  const edit = reduce("message.part.updated", { part: pruned("call_prev_edit", "edit") }, state);
+  assert(edit.drafts.length === 0, "an earlier turn's pruned edit is not this turn's side effect");
+
+  // The same step, seen live this turn, still reports once — and its later
+  // pruning does not report it again.
+  const live = { id: "prt_live", messageID: "msg_now", type: "tool", tool: "bash", callID: "call_live",
+    state: { status: "completed", input: { command: "ls" }, output: "a", time: { start: 1, end: 2 } } };
+  const first = reduce("message.part.updated", { part: live }, state);
+  assert(first.drafts.some((d) => d.type === "tool.started") && first.drafts.some((d) => d.type === "tool.done"), "a live completed step still reports started+done");
+  const later = reduce("message.part.updated", { part: { ...live, state: { ...live.state, output: "[compacted]", time: { ...live.state.time, compacted: 3 } } } }, state);
+  assert(later.drafts.length === 0, "pruning a step this turn ran reports nothing new");
+  console.log("ok - context pruning of earlier turns never becomes this turn's tools");
+}

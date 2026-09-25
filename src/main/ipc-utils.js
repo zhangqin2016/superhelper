@@ -311,14 +311,16 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
     try {
       const owner = sessionManager.resolveTurnOwnerScope?.(sessionId);
       if (owner?.ok && owner.ownerScope) {
-        extra.processJobGuidance = require("./long-task/turn-scope").buildProcessJobTurnGuidance({
+        const turnScope = require("./long-task/turn-scope");
+        const scope = { ownerScope: owner.ownerScope, sessionId, projectId: session.projectId };
+        // Kept on the runner so each dispatch can issue the scope for its own
+        // turn id (opencode-runtime-identity.js) — a rescue or queued turn that
+        // skips this preflight still gets a token for the turn it actually is.
+        extra.processJobScope = scope;
+        extra.processJobGuidance = turnScope.buildProcessJobTurnGuidance({
           secret: require("./long-task/secret").ensureLongTaskSecret(),
-          scope: {
-            ownerScope: owner.ownerScope,
-            sessionId,
-            projectId: session.projectId,
-            turnId: opts.turnId,
-          },
+          scope: { ...scope, turnId: opts.turnId },
+          tokenDelivery: turnScope.processJobScopeInjected() ? "host" : "prompt",
         });
       }
     } catch (err) {

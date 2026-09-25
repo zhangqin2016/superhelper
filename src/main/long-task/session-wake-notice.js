@@ -16,7 +16,9 @@ const DETAILS = {
   TASK_CONTINUATION_SOURCE_UNAVAILABLE: "暂时无法确认原任务的完整要求，未自动继续执行。",
 };
 const SILENT = new Set(["AUTO_WAKE_DISABLED", "TASK_CONTINUATION_CANCELLED", "SESSION_NOT_FOUND",
-  "OWNER_SCOPE_CHANGED", "PROJECT_SCOPE_CHANGED", "JOB_SCOPE_CHANGED", "JOB_REPLAY_FORBIDDEN"]);
+  "OWNER_SCOPE_CHANGED", "PROJECT_SCOPE_CHANGED", "JOB_SCOPE_CHANGED", "JOB_REPLAY_FORBIDDEN",
+  // The conversation already read the outcome; there is nothing to announce.
+  "JOB_OUTCOME_OBSERVED"]);
 
 function createLongTaskPauseHandler(ctx) {
   return async (wake, job) => {

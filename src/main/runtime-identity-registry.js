@@ -58,6 +58,9 @@ function createRuntimeIdentityRegistry({ filePath, now = () => Date.now() } = {}
     const token = safeId(input.token, "token", 8_192);
     const sessionId = safeId(input.sessionId, "sessionId");
     const nonce = safeId(input.nonce, "nonce");
+    // The turn's process-job scope rides the same grant: one record per engine
+    // session says who this session acts as AND which turn's jobs it may touch.
+    const processJobScopeToken = input.processJobScopeToken ? safeId(input.processJobScopeToken, "processJobScopeToken", 8_192) : "";
     const expiresAt = Math.floor(Number(input.expiresAt));
     if (!Number.isFinite(expiresAt) || expiresAt <= now()) {
       throw Object.assign(new Error("RUNTIME_IDENTITY_REGISTRY_INVALID: expiresAt"), {
@@ -72,6 +75,7 @@ function createRuntimeIdentityRegistry({ filePath, now = () => Date.now() } = {}
         expiresAt,
         grantedAt: now(),
         revokedAt: null,
+        ...(processJobScopeToken ? { processJobScopeToken } : {}),
       };
       delete state.revokedNonces[nonce];
       return token;
@@ -104,6 +108,14 @@ function createRuntimeIdentityRegistry({ filePath, now = () => Date.now() } = {}
     return String(record.token || "");
   }
 
+  function resolveProcessJobScope(engineSessionId) {
+    const id = String(engineSessionId || "").trim();
+    if (!id) return "";
+    const record = readState(registryPath).sessions[id];
+    if (!record || Number(record.expiresAt || 0) <= now()) return "";
+    return String(record.processJobScopeToken || "");
+  }
+
   function isRevoked(nonce) {
     return Boolean(readState(registryPath).revokedNonces[String(nonce || "")]);
   }
@@ -120,7 +132,7 @@ function createRuntimeIdentityRegistry({ filePath, now = () => Date.now() } = {}
     });
   }
 
-  return Object.freeze({ filePath: registryPath, grant, revoke, resolve, isRevoked, prune });
+  return Object.freeze({ filePath: registryPath, grant, revoke, resolve, resolveProcessJobScope, isRevoked, prune });
 }
 
 module.exports = { createRuntimeIdentityRegistry };

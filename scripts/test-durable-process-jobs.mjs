@@ -43,6 +43,13 @@ try {
   assert.equal(status.exitCode, 0);
   assert.equal(status.progress?.phase, "work");
 
+  {
+    const { LongTaskStore } = require("../src/main/long-task/store.js");
+    const store = new LongTaskStore({ filePath: options.durable.dbPath });
+    const row = store.db.get("SELECT outcome_observed_at FROM long_task_jobs WHERE id=?", started.jobId);
+    store.close();
+    assert.ok(row?.outcome_observed_at, "job_status returning the terminal outcome records that the conversation read it");
+  }
   const logs = logsJob({ scopeToken: token, jobId: started.jobId, tailBytes: 4096 }, options);
   assert.equal(logs.ok, true);
   assert.match(logs.stdout.text, /DURABLE_DONE/);

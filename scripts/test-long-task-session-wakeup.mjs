@@ -99,4 +99,51 @@ for (const status of ["failed", "outcome_unknown", "cancelled", "running"]) {
 await handler(secondWake, { ...job, id: "job-b", exitCode: null });
 assert.deepEqual(reservations.at(-1).progressKeys, [], "success without a terminal exit receipt is not progress");
 
+
+// --- 2026-09-25: a wake brings the outcome to the conversation; one it already
+// read, or one it can read itself because it is still running, is not sent.
+{
+  const before = calls.length;
+  const seen = { ...job, terminalAt: 1_000, outcomeObservedAt: 1_500 };
+  assert.deepEqual(await handler(wake, seen), { ok: false, permanent: true, error: "JOB_OUTCOME_OBSERVED" });
+  const unseen = { ...job, terminalAt: 1_000, outcomeObservedAt: 900 };
+  assert.equal((await handler(wake, unseen)).ok, true, "an observation before the outcome is not the outcome");
+  assert.equal(calls.length, before + 1);
+  const reserved = reservations.length;
+  const busy = createLongTaskWakeHandler({ ...ctx, turnOrchestrator: { ...ctx.turnOrchestrator, snapshot: () => ({ phase: "streaming", queueLength: 0 }) } });
+  assert.deepEqual(await busy(wake, job), { ok: false, permanent: false, defer: true, error: "SESSION_BUSY" });
+  const queued = createLongTaskWakeHandler({ ...ctx, turnOrchestrator: { ...ctx.turnOrchestrator, snapshot: () => ({ phase: "idle", queueLength: 2 }) } });
+  assert.equal((await queued(wake, job)).error, "SESSION_BUSY", "a queued user message goes first");
+  assert.equal(reservations.length, reserved, "waiting spends no continuation budget");
+  const idle = createLongTaskWakeHandler({ ...ctx, turnOrchestrator: { ...ctx.turnOrchestrator, snapshot: () => ({ phase: "idle", queueLength: 0 }) } });
+  assert.equal((await idle(wake, job)).ok, true);
+}
+
+// Wakes of one turn make one turn: siblings ride along, read ones retire.
+{
+  const before = calls.length;
+  const sib = (id, extra = {}) => ({ wake: { ...wake, id: `wake:${id}`, jobId: id }, job: { ...job, id, ...extra } });
+  const result = await handler(wake, job, { siblings: [sib("job-b"), sib("job-c", { terminalAt: 10, outcomeObservedAt: 20 }), sib("job-d", { turnId: "other-turn" })] });
+  assert.deepEqual(result, { ok: true, duplicate: false, retired: ["wake:job-c"], carried: ["wake:job-b"] });
+  assert.equal(calls.length, before + 1, "one turn for the whole group");
+  const text = calls.at(-1)[3].engineText;
+  assert.match(text, /2 durable background processes/);
+  assert.match(text, /Job id: job-a/); assert.match(text, /Job id: job-b/);
+  assert.doesNotMatch(text, /job-c|job-d/, "a read outcome and a foreign turn's job are not in the text");
+  assert.equal(reservations.at(-1).progressKeys.length, 1, "identical receipts collapse into one progress key");
+}
+
+// The text follows where the task stands.
+{
+  const answered = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager, getTurnInputByTurnId: () => ({ ...source, terminalType: "turn.completed" }) } });
+  await answered(wake, job);
+  const text = calls.at(-1)[3].engineText;
+  assert.match(text, /already delivered its final answer/);
+  assert.match(text, /Do not redo or re-verify/);
+  assert.doesNotMatch(text, /continue the original task/, "a finished task is reported on, not resumed");
+  const open = createLongTaskWakeHandler({ ...ctx, sessionManager: { ...ctx.sessionManager, getTurnInputByTurnId: () => ({ ...source, status: "running", terminalType: null }) } });
+  await open(wake, job);
+  assert.match(calls.at(-1)[3].engineText, /continue the original task/, "an unfinished task is still continued");
+}
+
 console.log("long-task-session-wakeup: ok");
