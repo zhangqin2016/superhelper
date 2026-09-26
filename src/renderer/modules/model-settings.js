@@ -162,6 +162,16 @@ let catalogProviders = [];
 let diagnoseRestoreRunning = false;
 let editingCustomPresetId = null;
 
+/** "256k", "1m", "100万", "262144" → tokens; empty → 0 (unset). Thousand-based on
+ *  purpose: a budget a little under the real window compacts slightly early,
+ *  one over it overflows. */
+function parseContextWindowInput(value) {
+  const match = /^(\d+(?:\.\d+)?)\s*(k|m|万|千)?$/i.exec(String(value || "").trim().replace(/[,，_\s]/g, ""));
+  if (!match) return 0;
+  const unit = { k: 1e3, m: 1e6, 万: 1e4, 千: 1e3 }[String(match[2] || "").toLowerCase()] || 1;
+  return Math.floor(Number(match[1]) * unit);
+}
+
 function customFormPayload() {
   return {
     label: $("modelCustomLabel")?.value?.trim() || "",
@@ -170,7 +180,11 @@ function customFormPayload() {
     protocol: normalizeProtocolValue($("modelCustomProtocol")?.value),
     apiKey: $("modelCustomApiKey")?.value?.trim() || "",
     tlsSkipVerify: Boolean($("modelCustomTlsSkipVerify")?.checked),
-    capabilities: { vision: Boolean($("modelCustomVision")?.checked), imageGen: Boolean($("modelCustomImageGen")?.checked) },
+    capabilities: {
+      vision: Boolean($("modelCustomVision")?.checked),
+      imageGen: Boolean($("modelCustomImageGen")?.checked),
+      contextWindowTokens: parseContextWindowInput($("modelCustomContextWindow")?.value),
+    },
   };
 }
 
@@ -184,6 +198,7 @@ function resetCustomForm() {
     "modelCustomTlsSkipVerify",
     "modelCustomVision",
     "modelCustomImageGen",
+    "modelCustomContextWindow",
   ]) {
     const el = $(id);
     if (el?.type === "checkbox") el.checked = false;
@@ -213,6 +228,7 @@ function setCustomEditMode(preset = null) {
   if ($("modelCustomTlsSkipVerify")) $("modelCustomTlsSkipVerify").checked = Boolean(preset.tlsSkipVerify);
   if ($("modelCustomVision")) $("modelCustomVision").checked = Boolean(preset.capabilities?.vision);
   if ($("modelCustomImageGen")) $("modelCustomImageGen").checked = Boolean(preset.capabilities?.imageGen);
+  if ($("modelCustomContextWindow")) $("modelCustomContextWindow").value = preset.capabilities?.contextWindowTokens ? String(preset.capabilities.contextWindowTokens) : "";
   if ($("modelCustomApiKey")) {
     $("modelCustomApiKey").value = "";
     $("modelCustomApiKey").setAttribute(

@@ -2473,5 +2473,8 @@
   "update.error.DEFER_NOT_SAVED": "无法记录推迟，请稍后再试。",
   "update.mandate.reasonBlocked": "你当前的版本已被管理员停用，需要更新到新版本。",
   "update.mandate.deadline": "须在 {when} 前完成更新。",
-  "update.mandate.deadlinePassed": "更新截止时间（{when}）已过，不能再推迟。"
+  "update.mandate.deadlinePassed": "更新截止时间（{when}）已过，不能再推迟。",
+  "settings.modelContextWindow": "上下文窗口（token）",
+  "settings.modelContextWindowPlaceholder": "例如 256k、1m、100万",
+  "settings.modelContextWindowDesc": "留空则从服务商读取或在溢出时自动学习；填写后按此值安排压缩，避免过早丢上下文或超长失败。"
 }

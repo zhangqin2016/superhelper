@@ -2473,5 +2473,8 @@
   "update.error.DEFER_NOT_SAVED": "Could not record the postponement. Try again shortly.",
   "update.mandate.reasonBlocked": "Your administrator has pulled the version you are on; a newer one is required.",
   "update.mandate.deadline": "Update by {when}.",
-  "update.mandate.deadlinePassed": "The update deadline ({when}) has passed; it can no longer be postponed."
+  "update.mandate.deadlinePassed": "The update deadline ({when}) has passed; it can no longer be postponed.",
+  "settings.modelContextWindow": "Context window (tokens)",
+  "settings.modelContextWindowPlaceholder": "e.g. 256k, 1m",
+  "settings.modelContextWindowDesc": "Leave empty to read it from the provider or learn it from an overflow; when set, compaction is planned against it — no early context loss, no overflow."
 }

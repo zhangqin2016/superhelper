@@ -209,7 +209,7 @@ class SessionRunnerPool {
     // window when unknown; fail-open leaves the plugin's own conservative default.
     try {
       const { resolveContextBudget } = require("./context-budget-manager");
-      const windowTokens = Number(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS) || undefined;
+      const windowTokens = Number(cfg.model?.contextWindowTokens) || Number(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS) || undefined;
       const budget = resolveContextBudget({ contextWindowTokens: windowTokens });
       // The guard only trims TRUNCATABLE content (tool io + text); the system
       // prompt and tool schemas also consume the window but can't be trimmed

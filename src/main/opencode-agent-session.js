@@ -1671,6 +1671,8 @@ class OpencodeAgentSession extends EventEmitter {
 
   _invalidateEngineSessionAfterVisibleFailure(message, cause) {
     const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
+    // An overflow that names the model's limit teaches its real window, so the next budget compacts in time.
+    require("./model-context-window").learnFromOverflowFailure({ classified, raw, baseUrl: this.spawnOptions?.modelRouteAudit?.baseUrl || this.spawnOptions?.env?.LILY_API_BASE_URL || "", modelId: this.spawnOptions?.model?.modelID || "" });
     const recoverable = isVisibleFailureRecoverable(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,

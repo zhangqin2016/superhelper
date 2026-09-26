@@ -2473,5 +2473,8 @@
   "update.error.DEFER_NOT_SAVED": "تعذّر تسجيل التأجيل. حاول مجددًا بعد قليل.",
   "update.mandate.reasonBlocked": "أوقف المسؤول الإصدار الذي تستخدمه؛ يلزم إصدار أحدث.",
   "update.mandate.deadline": "حدّث قبل {when}.",
-  "update.mandate.deadlinePassed": "انقضى موعد التحديث ({when})؛ لم يعد التأجيل ممكنًا."
+  "update.mandate.deadlinePassed": "انقضى موعد التحديث ({when})؛ لم يعد التأجيل ممكنًا.",
+  "settings.modelContextWindow": "نافذة السياق (رموز)",
+  "settings.modelContextWindowPlaceholder": "مثال: 256k أو 1m",
+  "settings.modelContextWindowDesc": "اتركه فارغًا ليُقرأ من المزوّد أو يُتعلَّم عند التجاوز؛ عند تعيينه يُخطَّط الضغط وفقه دون فقدان مبكر للسياق أو تجاوز."
 }

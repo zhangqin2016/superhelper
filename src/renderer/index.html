@@ -987,6 +987,11 @@
                       <small data-i18n="settings.modelImageGenCapableDesc">用于 Codex 中转等内置生图的端点；勾选后生图直接用此模型的连接，无需单独配置图片服务商。</small>
                     </span>
                   </label>
+                  <label class="settings-field model-context-window-row" for="modelCustomContextWindow">
+                    <span data-i18n="settings.modelContextWindow">上下文窗口（token）</span>
+                    <input id="modelCustomContextWindow" class="settings-text-input" type="text" inputmode="numeric" autocomplete="off" data-i18n-placeholder="settings.modelContextWindowPlaceholder" placeholder="例如 256k、1m、100万" />
+                    <small data-i18n="settings.modelContextWindowDesc">留空则从服务商读取或在溢出时自动学习；填写后按此值安排压缩，避免过早丢上下文或超长失败。</small>
+                  </label>
                 </div>
               </details>
             </section>

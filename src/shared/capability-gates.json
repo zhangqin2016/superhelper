@@ -2443,6 +2443,16 @@
         "scripts/test-agent-guide-headroom.mjs",
         "scripts/test-capability-broker.mjs"
       ]
+    },
+    {
+      "id": "model-context-window-known",
+      "protects": "A custom model's context window is known: a preset carries it (settings field, accepts 256k/1m/100万) into LILY_CONTEXT_WINDOW_TOKENS; a window read from the endpoint's listing or from an overflow error naming the limit is learned, kept on disk per endpoint+model, and found under any spelling of the endpoint; the compaction budget, the engine model limit and the context-window guard all read the same window.",
+      "baseline": "An operator-delivered window still wins; with nothing configured or learned the budget falls back to the same default as before; a listing without the field or an error without a limit teaches nothing.",
+      "failureFallback": "Without a writable user-data directory learned windows stay in memory, as before; a failing store read or write is logged and changes nothing else.",
+      "tests": [
+        "scripts/test-model-context-window-learning.mjs",
+        "scripts/test-model-context-window.mjs"
+      ]
     }
   ]
 }
