@@ -36,9 +36,13 @@ const SHA256_RE = /^[a-f0-9]{64}$/i;
  * alone can never see that: on 2026-09-25, 24 of 26 service-managed skills on
  * the developer's machine had been republished since install and still ran
  * their June/July guides. The pack digest is what was actually installed
- * (skill-installer records it), so a differing digest is new content. A pack
- * without a recorded digest (bundled, GitHub-sourced) is judged by version
- * alone, exactly as before.
+ * (skill-installer records it), so a differing digest is new content. Only a
+ * copy that came FROM the registry has a comparable digest: a bundled copy is
+ * the app's own (a mandatory platform skill ships a different file than the
+ * catalog mirror — 2026-09-26, it would have shown an update that cannot be
+ * installed), and a GitHub source has none. Those are judged by version alone,
+ * exactly as before. Pass the installed state entry's digest only for
+ * `source: "remote"` — see installedRegistryDigest.
  *
  * @returns {{ available: boolean, reason: "version" | "content" | null }}
  */
@@ -56,6 +60,11 @@ function registryUpdate(registryEntry, installedVersion, installedSha256) {
     : { available: true, reason: "content" };
 }
 
+/** The digest of an installed copy that came from the registry, else "". */
+function installedRegistryDigest(stateEntry) {
+  return stateEntry?.source === "remote" ? String(stateEntry.sha256 || "") : "";
+}
+
 function isAppVersionCompatible(minAppVersion) {
   if (!minAppVersion) return true;
   return compareSemver(APP_VERSION, minAppVersion) >= 0;
@@ -65,5 +74,6 @@ module.exports = {
   APP_VERSION,
   compareSemver,
   isAppVersionCompatible,
+  installedRegistryDigest,
   registryUpdate,
 };

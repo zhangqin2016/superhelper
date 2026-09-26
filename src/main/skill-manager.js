@@ -7,7 +7,7 @@ const jsonFile = require("./json-file");
 const path = require("node:path");
 const { PROJECT_ROOT, userDataPath, agentConfigDir, agentGuidePath, sessionGuideDir } = require("./config");
 const { ensureRuntimeNodeShim, resolveRuntimeNodePath } = require("./runtime-node");
-const { compareSemver, isAppVersionCompatible, registryUpdate } = require("./skill-version");
+const { compareSemver, installedRegistryDigest, isAppVersionCompatible, registryUpdate } = require("./skill-version");
 const skillRegistry = require("./skill-registry");
 const skillInstaller = require("./skill-installer");
 const skillPresets = require("./skill-presets");
@@ -1230,7 +1230,7 @@ async function fetchServiceRegistry() {
 function skillToPublic(skillId, entry, manifest, registryEntry) {
   const installedVersion = entry?.installedVersion || manifest?.version || "0.0.0";
   const latestVersion = registryEntry?.latestVersion || null;
-  const updateAvailable = registryUpdate(registryEntry, installedVersion, entry?.sha256).available;
+  const updateAvailable = registryUpdate(registryEntry, installedVersion, installedRegistryDigest(entry)).available;
   const platformMandatory = MANDATORY_PLATFORM_SKILL_IDS.includes(skillId);
   const manifestName = resolveLocalized(manifest, "name", registryEntry?.name || skillId);
   const manifestDescription = resolveLocalized(manifest, "description", registryEntry?.description || "");
@@ -1503,7 +1503,7 @@ async function syncServiceSkillPackages({ fetch = true } = {}) {
     const manifest = readInstalledManifest(entry.id);
     const stateEntry = loadSkillsState().skills[entry.id];
     const isInstalled = Boolean(manifest);
-    const update = isInstalled ? registryUpdate(entry, manifest.version || "0.0.0", stateEntry?.sha256) : { available: false, reason: null };
+    const update = isInstalled ? registryUpdate(entry, manifest.version || "0.0.0", installedRegistryDigest(stateEntry)) : { available: false, reason: null };
     const updateAvailable = update.available;
     const shouldInstall = !isInstalled && Boolean(entry.defaultEligible);
     // "bundled-vendor" = upstream (anthropics/*) skills we bundle and manage —

@@ -798,6 +798,20 @@ if (installedCurated.name !== curatedSkill.name) {
   if (again.updated.includes(curatedSkill.id) || !again.skipped.includes(curatedSkill.id)) {
     throw new Error(`the same pack is never reinstalled twice: ${JSON.stringify(again)}`);
   }
+  // A copy that did not come from the registry (bundled) is never offered an
+  // update by digest — it would be one that cannot be installed.
+  {
+    const bundledState = skillManagerCurated.loadSkillsState();
+    bundledState.skills[curatedSkill.id].source = "bundled";
+    skillManagerCurated.saveSkillsState();
+    curatedSkill.sha256 = "e".repeat(64);
+    const bundledSync = await skillManagerCurated.syncServiceSkillPackages({ fetch: true });
+    if (bundledSync.updated.includes(curatedSkill.id)) throw new Error("a bundled copy is not replaced because the registry pack differs");
+    const back = skillManagerCurated.loadSkillsState();
+    back.skills[curatedSkill.id].source = "remote";
+    skillManagerCurated.saveSkillsState();
+    curatedSkill.sha256 = back.skills[curatedSkill.id].sha256;
+  }
   // A pack whose digest was never recorded (bundled / GitHub) is judged by
   // version alone, exactly as before.
   const unknown = skillManagerCurated.loadSkillsState();
