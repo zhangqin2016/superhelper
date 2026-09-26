@@ -2421,13 +2421,16 @@
     },
     {
       "id": "skill-usage-measures-routing",
-      "protects": "The skill usage audit measures the capability router's actual recommendation for the turn (carried on the engine trace), records guides the model read without a recommendation, and the report counts both — so router precision and blind spots are measured, not guessed.",
+      "protects": "The skill usage audit measures the capability router's actual recommendation for the turn (carried on the engine trace), records guides the model read without a recommendation, and the report counts both — so router precision and blind spots are measured, not guessed. The recommendation itself is actionable: each guide is the installed copy the AGENT.md catalog lists, as an absolute path, and a recovery turn is routed on the user's request it carries rather than on the platform's correction.",
       "baseline": "A turn with no routing keeps the previous word-overlap candidates; older audits aggregate as before.",
       "failureFallback": "Any audit failure leaves the record without an audit, as before; the audit is advisory and never gates a turn.",
       "tests": [
         "scripts/test-skill-usage-audit.mjs",
         "scripts/test-turn-archive.mjs",
-        "scripts/test-skill-usage-metrics.mjs"
+        "scripts/test-skill-usage-metrics.mjs",
+        "scripts/test-capability-broker.mjs",
+        "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-chat-native-dependency-flow.mjs"
       ]
     }
   ]

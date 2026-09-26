@@ -859,3 +859,39 @@ function recommendedIds(text, files = []) {
 }
 
 console.log("capability-broker: ok");
+
+// 2026-09-26: the recommendation points at the guide the model can open — the
+// installed copy the AGENT.md catalog also lists — by absolute path. It used to
+// print the bundled path relative to Lily's source tree, which does not exist
+// from a user's workspace: in 45 days not one read went to it.
+{
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "lily-broker-guides-"));
+  const previous = process.env.LILY_USER_DATA_DIR;
+  process.env.LILY_USER_DATA_DIR = userData;
+  try {
+    const installed = path.join(userData, "lily-config", "skills", "anthropics-docx", "SKILL.md");
+    fs.mkdirSync(path.dirname(installed), { recursive: true });
+    fs.writeFileSync(installed, "---\nname: docx\n---\n");
+    const broker = await import(`../src/main/capability-broker.js?guides=${Date.now()}`);
+    const graph = (broker.default || broker).listSkillCapabilityGraph();
+    const docx = graph.find((item) => item.id === "anthropics-docx");
+    assert.equal(docx.guidePath, installed, "an installed skill's guide is the installed copy");
+    const bundled = graph.find((item) => item.id === "anthropics-xlsx");
+    assert.ok(path.isAbsolute(bundled.guidePath) && fs.existsSync(bundled.guidePath), "a skill not installed falls back to the bundled guide, absolute and present");
+    const text = (broker.default || broker).compactCapabilityContext({ text: "帮我写一份 word 文档报告", files: [{ name: "a.docx", path: "/tmp/a.docx" }], maxChars: 4000 });
+    const lines = text.split("\n").filter((line) => / guide=/.test(line));
+    assert.ok(lines.length > 0, "the recommendation lists guides");
+    for (const line of lines) {
+      const guide = line.slice(line.indexOf(" guide=") + 7);
+      assert.ok(path.isAbsolute(guide), `every guide is an absolute path: ${guide}`);
+    }
+    assert.ok(lines.some((line) => line.endsWith(installed)), "and the installed one is what the model is told to read");
+  } finally {
+    if (previous === undefined) delete process.env.LILY_USER_DATA_DIR; else process.env.LILY_USER_DATA_DIR = previous;
+    fs.rmSync(userData, { recursive: true, force: true });
+  }
+  console.log("capability-broker: recommended guides are the ones the model can open");
+}

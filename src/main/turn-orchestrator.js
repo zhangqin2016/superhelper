@@ -1222,16 +1222,17 @@ class TurnOrchestrator {
           : `Capability readiness: optional task tooling could not be prepared (${[...unavailable, ...failed].slice(0, 5).join(", ")}). Continue once with the listed fallback capabilities and state any verification limitation.`);
       }
       try {
-        if (shouldInjectCapabilityContext({ text: rawUserText, files, dependencyAdvisory, turnPolicy })) {
+        // Route on the request this turn serves: a recovery turn's own text is the platform's correction.
+        if (shouldInjectCapabilityContext({ text: state.recoveryObjective || rawUserText, files, dependencyAdvisory, turnPolicy })) {
           const recommendedCapabilities = recommendSkillCapabilityGraph({
-            text: rawUserText,
+            text: state.recoveryObjective || rawUserText,
             files,
             dependencyAdvisory,
             turnPolicy,
             maxSkills: 8,
           });
           const capabilityContext = compactCapabilityContext({
-            text: rawUserText,
+            text: state.recoveryObjective || rawUserText,
             files,
             dependencyAdvisory,
             turnPolicy,

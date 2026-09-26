@@ -30,7 +30,8 @@ assert.ok(orchestratorSource.includes("compactCapabilityContext"));
 assert.match(orchestratorSource, /platformContextParts\.push\(capabilityContext\)/);
 assert.match(
   orchestratorSource,
-  /compactCapabilityContext\(\{\s*text:\s*rawUserText,\s*files,/s,
+  // A recovery turn routes on the user's request it carries (2026-09-26).
+  /compactCapabilityContext\(\{\s*text:\s*(?:state\.recoveryObjective \|\| )?rawUserText,\s*files,/s,
   "turn orchestrator must pass the current task text/files so capability context is focused, not generic",
 );
 

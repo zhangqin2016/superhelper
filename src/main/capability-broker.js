@@ -2,6 +2,7 @@
 
 const script = require("../shared/script.mjs");
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT } = require("./config");
 const { fileFacts } = require("./attachment-facts");
@@ -139,8 +140,17 @@ function hasCapabilityHintMatch(text, opts = {}) {
   return listSkillCapabilityGraph(opts).some((skill) => capabilityHintRelevance(skill, text) > 0);
 }
 
+/** The guide the model can open: the installed copy the AGENT.md catalog lists,
+ *  else the bundled one — absolute. A path relative to Lily's source tree does not
+ *  exist from a user's workspace: in 45 days no read went to it (2026-09-26). */
 function skillGuidePath(skillId) {
-  return path.join(PROJECT_ROOT, "resources", "skills-catalog", skillId, "SKILL.md");
+  try {
+    const installed = path.join(require("./config").agentConfigDir(), "skills", String(skillId), "SKILL.md");
+    if (fs.existsSync(installed)) return installed;
+  } catch {
+    // No resolvable user-data directory: the bundled guide below.
+  }
+  return path.join(PROJECT_ROOT, "resources", "skills-catalog", String(skillId), "SKILL.md");
 }
 
 function listSkillCapabilityGraph(opts = {}) {
@@ -430,8 +440,7 @@ function compactSkillCapabilityGraph(opts = {}) {
       const intents = item.intents.length ? ` intents=${item.intents.join(",")}` : "";
       const packs = item.requiredRuntimePacks.length ? ` packs=${item.requiredRuntimePacks.join(",")}` : "";
       const verify = item.verification?.required ? ` verify=${compactArray(item.verification.methods, 3).join(",")}` : "";
-      const guide = path.relative(PROJECT_ROOT, item.guidePath);
-      return `- ${item.id} [${item.kind}]${intents}${packs}${verify} guide=${guide}`;
+      return `- ${item.id} [${item.kind}]${intents}${packs}${verify} guide=${item.guidePath}`;
     }),
   ];
 }

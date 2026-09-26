@@ -828,6 +828,30 @@ await new Promise((resolve) => setTimeout(resolve, 5));
 ctx.eventBus.flush();
 sent.length = 0;
 messages.length = 0;
+
+// 2026-09-26: a recovery turn is routed on the request it serves, not on the
+// platform's correction — 27 recovery turns in 30 days got 65 recommendations
+// matched against "[system correction] ..." text, none of them read.
+runner.sentPayloads.length = 0;
+const recoveryCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "[system correction] Your previous reply wrote a tool call as plain text. This is a CONTINUATION of the same task.", [], {
+  spawnEngine: false,
+  skipPreflight: true,
+  skipVision: true,
+  skipDocument: true,
+  recordUser: false,
+  rescueAttempt: true,
+  recovery: { kind: "tool_call_rescue", mode: "continuation", guidance: "", objective: "给我写一封邮件回复客户，语气专业" },
+});
+if (!recoveryCapabilityTurn.ok) throw new Error(`recovery capability turn should start: ${JSON.stringify(recoveryCapabilityTurn)}`);
+const recoveryRecommended = runner.sentPayloads.at(-1)?.trace?.capabilityContext?.recommendedSkillIds || [];
+if (!recoveryRecommended.includes("lily-mail-assistant")) {
+  throw new Error(`a recovery turn must be routed on the user's request: ${JSON.stringify(runner.sentPayloads.at(-1)?.trace?.capabilityContext)}`);
+}
+runner.finish("Recovery routed on the user's request.");
+await new Promise((resolve) => setTimeout(resolve, 5));
+ctx.eventBus.flush();
+sent.length = 0;
+messages.length = 0;
 runner.sentPayloads.length = 0;
 
 const agentQualityCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "继续按顶级设计 系统更聪明", [], {
