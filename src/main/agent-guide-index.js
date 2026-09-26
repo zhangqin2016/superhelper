@@ -29,21 +29,21 @@ const SKILL_INDEX_I18N = {
   "zh-CN": {
     title: "Lily 平台能力目录（使用前先读取对应指南）",
     intro:
-      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止对这些平台能力执行原生 `skill <id>`，包括 `lily-*` 和内置 `anthropics-*`。",
+      "以下是本会话可用的 Lily 平台能力指南，不是 OpenCode 原生 skill。对每个用户请求：先按“适用场景”匹配能力（可多选并组合成能力链），在动手前用 Read 工具读取对应指南文件以获得完整步骤，再通过 Lily MCP 工具、脚本或普通工具执行。禁止对这些平台能力执行原生 `skill <id>`，包括 `lily-*` 和内置 `anthropics-*`。动手时一句话说明所用指南；明显匹配却不用须说明原因（不写进最终答案）。",
     guideLabel: "指南",
     truncated: "技能目录已截断以保护提示词预算；如需更多能力，请通过设置里的技能目录或按任务关键词搜索/启用对应技能。",
   },
   en: {
     title: "Lily Platform Capability Catalog (read the guide before using a capability)",
     intro:
-      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run native `skill <id>` for these platform capabilities, including `lily-*` and built-in `anthropics-*` entries.",
+      "These are Lily platform capability guides available in this session, not OpenCode native skills. For each user request: match capabilities by their \"use when\" description (you may pick several and compose a capability chain), then READ the guide file with the Read tool before acting, and execute through Lily MCP tools, scripts, or ordinary tools. Do not run native `skill <id>` for these platform capabilities, including `lily-*` and built-in `anthropics-*` entries. When acting, name the guide you follow in one line; if you skip a clearly matching one, say why (not in the final answer).",
     guideLabel: "Guide",
     truncated: "Skill index was truncated to protect the prompt budget; search or enable additional skills by task keyword when needed.",
   },
   ar: {
     title: "فهرس قدرات منصة Lily (اقرأ الدليل قبل استخدام القدرة)",
     intro:
-      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill <id>` الأصلي لهذه القدرات، بما في ذلك `lily-*` و`anthropics-*` المدمجة.",
+      "هذه أدلة قدرات منصة Lily المتاحة في هذه الجلسة، وليست مهارات OpenCode أصلية. لكل طلب: طابِق القدرات حسب وصف \"استخدمها عند\" (يمكنك اختيار عدة قدرات وتركيبها)، ثم اقرأ ملف الدليل بأداة Read قبل التنفيذ، ونفّذ عبر أدوات Lily MCP أو السكربتات أو الأدوات العادية. لا تشغّل `skill <id>` الأصلي لهذه القدرات، بما في ذلك `lily-*` و`anthropics-*` المدمجة. اذكر في سطر الدليل الذي تتبعه، وإن تجاوزت دليلًا مطابقًا فاذكر السبب (لا في الإجابة النهائية).",
     guideLabel: "الدليل",
     truncated: "تم اختصار فهرس المهارات لحماية ميزانية التعليمات؛ ابحث عن مهارات إضافية أو فعّلها حسب كلمات المهمة عند الحاجة.",
   },

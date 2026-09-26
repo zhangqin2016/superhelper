@@ -366,28 +366,27 @@ function skillRelevance(skill, facts) {
   return score;
 }
 
-function recommendSkillCapabilityGraph(opts = {}) {
+/** Recommended skills with their relevance scores, best first. */
+function rankSkillCapabilityGraph(opts = {}) {
   const maxSkills = Number.isFinite(opts.maxSkills) ? Math.max(1, opts.maxSkills) : 8;
-  const graph = listSkillCapabilityGraph(opts);
   const active = new Set((Array.isArray(opts.activeSkillIds) ? opts.activeSkillIds : []).map(String));
   const facts = queryFacts(opts);
-  const ranked = graph
+  return listSkillCapabilityGraph(opts)
     .map((skill) => {
-      let score = skillRelevance(skill, facts);
-      if (score > 0 && active.has(skill.id)) score += 10;
-      return { skill, score };
+      const base = skillRelevance(skill, facts);
+      return { skill, score: base > 0 && active.has(skill.id) ? base + 10 : base };
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
-    .slice(0, maxSkills)
-    .map((item) => item.skill);
-  return ranked;
+    .slice(0, maxSkills);
+}
+
+function recommendSkillCapabilityGraph(opts = {}) {
+  return rankSkillCapabilityGraph(opts).map((item) => item.skill);
 }
 
 function hasScoredCapabilityRecommendation(opts = {}) {
-  const graph = listSkillCapabilityGraph(opts);
-  const facts = queryFacts(opts);
-  return graph.some((skill) => skillRelevance(skill, facts) > 0);
+  return rankSkillCapabilityGraph({ ...opts, activeSkillIds: [], maxSkills: 1 }).length > 0;
 }
 
 function compactSkillCapabilityGraph(opts = {}) {
@@ -436,6 +435,7 @@ function compactSkillCapabilityGraph(opts = {}) {
   if (!focused.length) return [];
   return [
     "Skill capability graph (catalog guides, not native skills):",
+    ...(hasFocus ? require("./skill-guide-directive").bestMatchDirective(opts, focused) : []),
     ...focused.map((item) => {
       const intents = item.intents.length ? ` intents=${item.intents.join(",")}` : "";
       const packs = item.requiredRuntimePacks.length ? ` packs=${item.requiredRuntimePacks.join(",")}` : "";
@@ -477,8 +477,9 @@ function compactCapabilityContext(opts = {}) {
         ...graphLines,
       ];
   const text = lines.join("\n");
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(0, maxChars - 25))}\n[capabilities truncated]`;
+  const budget = maxChars + require("./skill-guide-directive").directiveChars(graphLines);
+  if (text.length <= budget) return text;
+  return `${text.slice(0, Math.max(0, budget - 25))}\n[capabilities truncated]`;
 }
 
 function shouldInjectCapabilityContext(opts = {}) {
@@ -494,6 +495,7 @@ function shouldInjectCapabilityContext(opts = {}) {
 module.exports = {
   listCapabilities,
   listSkillCapabilityGraph,
+  rankSkillCapabilityGraph,
   recommendSkillCapabilityGraph,
   compactCapabilityContext,
   shouldInjectCapabilityContext,

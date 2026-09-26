@@ -2,33 +2,33 @@
   "note": "Regenerate on purpose with: node scripts/test-agent-guide-headroom.mjs --write-baseline",
   "configs": {
     "zh-CN|installed": {
-      "totalBytes": 25760,
+      "totalBytes": 25865,
       "prefixBytes": 22152,
       "indexed": 12
     },
     "zh-CN|all": {
-      "totalBytes": 37145,
-      "prefixBytes": 23592,
+      "totalBytes": 37658,
+      "prefixBytes": 24000,
       "indexed": 42
     },
     "en|installed": {
-      "totalBytes": 29591,
+      "totalBytes": 29714,
       "prefixBytes": 25738,
       "indexed": 12
     },
     "en|all": {
-      "totalBytes": 40194,
-      "prefixBytes": 27266,
+      "totalBytes": 40680,
+      "prefixBytes": 27629,
       "indexed": 42
     },
     "ar|installed": {
-      "totalBytes": 29857,
+      "totalBytes": 30028,
       "prefixBytes": 25124,
       "indexed": 12
     },
     "ar|all": {
-      "totalBytes": 41976,
-      "prefixBytes": 26652,
+      "totalBytes": 42510,
+      "prefixBytes": 27015,
       "indexed": 42
     }
   }

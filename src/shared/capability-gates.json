@@ -2432,6 +2432,17 @@
         "scripts/test-turn-orchestrator.mjs",
         "scripts/test-chat-native-dependency-flow.mjs"
       ]
+    },
+    {
+      "id": "skill-best-match-directive",
+      "protects": "When the capability router has a rule-level best match (score >= 120), the turn says so as an instruction: read that guide completely before acting, or say in one line why it does not fit — Codex's trigger rule applied to Lily's router. Every prompt's capability catalog also asks the model to name the guide it follows and explain skipping a clear match (zh-CN/en/ar).",
+      "baseline": "The recommendation listing is unchanged; the directive's characters are granted on top of the capability-context budget, so no skill or route line kept before is displaced; keyword-hint matches (below 120) and chat get no directive.",
+      "failureFallback": "The guide body is never injected (the router misfires even at high scores), so a wrong best match costs one declinable line; any failure returns no directive; LILY_SKILL_BEST_MATCH_DIRECTIVE=0 restores the listing alone.",
+      "tests": [
+        "scripts/test-skill-guide-directive.mjs",
+        "scripts/test-agent-guide-headroom.mjs",
+        "scripts/test-capability-broker.mjs"
+      ]
     }
   ]
 }
