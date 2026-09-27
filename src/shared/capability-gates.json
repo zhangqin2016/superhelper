@@ -2458,7 +2458,7 @@
     {
       "id": "model-context-window-known",
       "protects": "A custom model's context window is known: a preset carries it (settings field, accepts 256k/1m/100万) into LILY_CONTEXT_WINDOW_TOKENS; a window read from the endpoint's listing or from an overflow error naming the limit is learned, kept on disk per endpoint+model, and found under any spelling of the endpoint; the compaction budget, the engine model limit and the context-window guard all read the same window.",
-      "baseline": "An operator-delivered window still wins; with nothing configured or learned the budget falls back to the same default as before; a listing without the field or an error without a limit teaches nothing.",
+      "baseline": "An operator-delivered window still wins; with nothing configured, learned or catalogued the window is reported unknown (context-window-honest); a listing without the field or an error without a limit teaches nothing.",
       "failureFallback": "Without a writable user-data directory learned windows stay in memory, as before; a failing store read or write is logged and changes nothing else.",
       "tests": [
         "scripts/test-model-context-window-learning.mjs",
@@ -2494,6 +2494,19 @@
       "failureFallback": "Without an inherited variable Node commands run with an unchanged environment; if a temp directory cannot be made an Electron test gets a fixed temp path and the failure is printed. Mutation-verified: the old runner fails the test.",
       "tests": [
         "scripts/test-run-all-tests-electron.mjs"
+      ]
+    },
+    {
+      "id": "context-window-honest",
+      "protects": "A model's context window is configured, learned from its endpoint (listing, an overflow naming the limit, or the largest accepted request as a rising ceiling), catalogued by exact model id — or reported unknown, never guessed. With an unknown window no pressure compaction is invented and the context-window guard bounds single oversized parts only. With a known one the guard measures the real input limit against the engine's reported usage and trims just enough, never the current request. An overflow the engine compacts itself is not a turn failure; a failed compaction is reported as an overflow; a visible overflow teaches the window, is recorded so the next turn compacts first, keeps the conversation, and is retried once on a rebuilt runner. Settings show the effective window and its source and round-trip every capability.",
+      "baseline": "2026-09-27: 573 of 595 compaction decisions and every guard budget used a hardcoded 120,000; a 1M model's long session was trimmed on every call down to the user's question (answered with the previous task); engine-side overflow compaction was reported as a failure; visible overflows discarded the engine session; editing a preset cleared its window and imageGen.",
+      "failureFallback": "Kill switch LILY_CONTEXT_OVERFLOW_RECOVERY=0 restores the previous overflow handling; a second overflow nothing compacted falls back to a fresh engine session (the previous behaviour); every failure to learn, record or check is logged and fails open. Mutation-verified 2026-09-27: ten mutations (guard fallback budget, estimate over report, no engine-overflow absorb, dropped resume, no retry, no forced compaction, catalog by name, silent compaction failure, vision-only public capabilities, floor instead of bisection) each fail a named test.",
+      "tests": [
+        "scripts/test-context-overflow-recovery.mjs",
+        "scripts/test-context-window-guard.mjs",
+        "scripts/test-model-context-window.mjs",
+        "scripts/test-model-context-window-learning.mjs",
+        "scripts/test-opencode-model-config.mjs"
       ]
     }
   ]

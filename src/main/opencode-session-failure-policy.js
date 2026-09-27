@@ -169,9 +169,12 @@ function isLocalPermissionFailure(classified) {
   return classified?.code === "PERMISSION_DENIED";
 }
 
-function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false, sessionStateIndeterminate = true } = {}) {
+function shouldDropResumeAfterVisibleFailure({ classified, raw = "", payload = {}, wasResumed = false, sessionStateIndeterminate = true, keepConversationAfterOverflow = false } = {}) {
   if (classified?.code === "SESSION_INVALID") return true;
-  if (isOversizedContextFailure(classified, raw)) return true;
+  // An overflow is answered by compaction on the next turn, not by discarding
+  // the conversation — unless an earlier overflow was never compacted away
+  // (context-overflow-recovery decides and records that).
+  if (isOversizedContextFailure(classified, raw)) return !keepConversationAfterOverflow;
   if (!isRecoverableModelConnectionFailure(classified, raw) && !isManagedGatewayAuthFailure(classified, raw)) return false;
   // A resumed session whose turn died mid-flight may hold state nobody can
   // account for — a side-effecting tool that never reported back — and only a

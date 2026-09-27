@@ -50,4 +50,15 @@ function capabilitiesEntry(value, previous = null) {
   return caps ? { capabilities: caps } : {};
 }
 
-module.exports = { normalizePresetCapabilities, capabilitiesEntry };
+/**
+ * Every capability the edit form round-trips, for the renderer. Publishing
+ * vision alone made editing a preset show imageGen off and the window empty —
+ * and saving the form then cleared both.
+ */
+function publicCapabilities(capabilities) {
+  const src = capabilities && typeof capabilities === "object" ? capabilities : {};
+  const window = plausibleWindow(src.contextWindowTokens);
+  return { vision: Boolean(src.vision), imageGen: Boolean(src.imageGen), ...(window ? { contextWindowTokens: window } : {}) };
+}
+
+module.exports = { normalizePresetCapabilities, capabilitiesEntry, publicCapabilities };

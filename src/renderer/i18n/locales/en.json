@@ -2478,5 +2478,13 @@
   "update.mandate.deadlinePassed": "The update deadline ({when}) has passed; it can no longer be postponed.",
   "settings.modelContextWindow": "Context window (tokens)",
   "settings.modelContextWindowPlaceholder": "e.g. 256k, 1m",
-  "settings.modelContextWindowDesc": "Leave empty to read it from the provider or learn it from an overflow; when set, compaction is planned against it — no early context loss, no overflow."
+  "settings.modelContextWindowDesc": "Leave empty to read it from the provider or learn it from an overflow; when set, compaction is planned against it — no early context loss, no overflow.",
+  "settings.modelContextWindowEffective": "Empty uses {tokens} ({source})",
+  "settings.modelContextWindowUnknown": "Unknown: learned on the first overflow — set it, e.g. 256k, 1m",
+  "settings.modelContextWindowSource.configured": "configured",
+  "settings.modelContextWindowSource.listing": "from the provider",
+  "settings.modelContextWindowSource.learned_overflow": "learned from an overflow error",
+  "settings.modelContextWindowSource.learned_ceiling": "largest accepted request",
+  "settings.modelContextWindowSource.catalog": "model catalog",
+  "settings.modelContextWindowSource.unknown": "unknown"
 }

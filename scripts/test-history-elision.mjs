@@ -73,9 +73,9 @@ check("the context guard replaces a file body whole and still excerpts everythin
   assert.match(src, /slot\.reproducible \? elision\.elideFileBody\(/, "pass 1 points at a file body");
   assert.match(src, /s\.reproducible \? elision\.elideFileBody\(/, "and so does the tightening pass");
   assert.match(src, /: trim\(value, PART_MAX_CHARS\)/, "referential content is still excerpted rather than dropped");
-  // The tightening pass halves the cap to a 2000-char floor; a file body cut to
-  // that is exactly the shape that misled the model in the field.
-  assert.match(src, /Math\.max\(2_000/, "the floor that made this matter is still here for referential slots");
+  // The tightening pass searches the cap down to a 2000-char floor; a file body
+  // cut to that is exactly the shape that misled the model in the field.
+  assert.match(src, /let lo = 2_000/, "the floor that made this matter is still here for referential slots");
 });
 
 check("every producer builds its marker from the contract — no fifth invented sentence", () => {

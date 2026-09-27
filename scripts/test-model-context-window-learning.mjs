@@ -101,12 +101,15 @@ try {
       try { return pool.ensure("s-guard", userData, {}, { lazy: true }).spawnOptions; } finally { console.info = info; }
     };
     const unknown = budgetFor();
+    assert.equal(unknown.model.contextWindowTokens, null, "an unknown window is not replaced by a guess");
+    assert.equal(unknown.env.LILY_CONTEXT_TOKEN_BUDGET, undefined, "so the guard gets no whole-request budget to trim toward");
     cw.rememberContextWindow("https://gw3.example.com/v1", "learned-model", 32_768);
     const learned = budgetFor();
     assert.equal(learned.model.contextWindowTokens, 32_768, "the engine config carries the learned window");
-    assert.ok(Number(learned.env.LILY_CONTEXT_TOKEN_BUDGET) < Number(unknown.env.LILY_CONTEXT_TOKEN_BUDGET), "and the guard's budget shrinks to fit it");
-    assert.ok(Number(learned.env.LILY_CONTEXT_TOKEN_BUDGET) < 32_768, "below the model's real window");
-    check("the context-window guard budgets against the learned window");
+    assert.equal(learned.model.contextWindowSource, "listing", "and says where it came from");
+    const limit = Number(learned.env.LILY_CONTEXT_TOKEN_BUDGET);
+    assert.ok(limit > 32_768 * 0.8 && limit < 32_768, `the guard's budget is the model's real input limit, window minus output reserve: ${limit}`);
+    check("the context-window guard budgets against the learned window, and against nothing when none is known");
   }
 } finally {
   if (previous === undefined) delete process.env.LILY_USER_DATA_DIR; else process.env.LILY_USER_DATA_DIR = previous;

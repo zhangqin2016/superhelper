@@ -954,7 +954,9 @@ class OpencodeAgentSession extends EventEmitter {
       }
 
       case "usage":
-        // Accounting belongs to the owned transport stream, including idle work.
+        // Accounting belongs to the owned transport stream, including idle work;
+        // an accepted request size bounds the model's window from below.
+        require("./context-overflow-recovery").noteAcceptedUsage(this, effect.usage);
         break;
 
       case "context_compacted":
@@ -962,6 +964,8 @@ class OpencodeAgentSession extends EventEmitter {
         break;
 
       case "error": {
+        // An overflow the engine is compacting away itself is not this turn's failure.
+        if (require("./context-overflow-recovery").absorbEngineOverflow(this, effect)) break;
         const rawMessage = typeof effect.message === "string" && effect.message ? effect.message : "Engine error";
         const displayMessage = this._sanitize(rawMessage) || "Engine error";
         this._failTurn(
@@ -1306,6 +1310,7 @@ class OpencodeAgentSession extends EventEmitter {
 
     const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(pending?.message, pending?.cause);
     if (!isSafeReplayableModelFailure(classified, raw, this.spawnOptions)) return false;
+    if (require("./context-overflow-recovery").preferCompactionOverReplay(this, classified, raw)) return false;
 
     this._transientReplayCount += 1;
     this._pendingTransientFailure = null;
@@ -1671,8 +1676,8 @@ class OpencodeAgentSession extends EventEmitter {
 
   _invalidateEngineSessionAfterVisibleFailure(message, cause) {
     const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
-    // An overflow that names the model's limit teaches its real window, so the next budget compacts in time.
-    require("./model-context-window").learnFromOverflowFailure({ classified, raw, baseUrl: this.spawnOptions?.modelRouteAudit?.baseUrl || this.spawnOptions?.env?.LILY_API_BASE_URL || "", modelId: this.spawnOptions?.model?.modelID || "" });
+    // An overflow teaches the real window and is recorded so the next turn compacts first.
+    const overflow = require("./context-overflow-recovery").onVisibleFailure(this, classified, raw);
     const recoverable = isVisibleFailureRecoverable(classified, raw, this.spawnOptions);
     const dropResume = shouldDropResumeAfterVisibleFailure({
       classified,
@@ -1683,6 +1688,7 @@ class OpencodeAgentSession extends EventEmitter {
       // may have run without reporting back, so the session's state is no
       // longer accountable and the resume id cannot be trusted.
       sessionStateIndeterminate: Boolean(this._sawUnsafeToolActivity || this._pendingPermissions.size || this._pendingQuestions.size),
+      keepConversationAfterOverflow: overflow.keepConversation,
     });
     if (!recoverable && !dropResume) return false;
 
@@ -1716,6 +1722,7 @@ class OpencodeAgentSession extends EventEmitter {
     if (!this._sawEngineEvent || this.collectedOutput.trim()) return false;
     if (!cause) return false;
     const { raw, classified } = require("./runner-failure").normalizeRunnerFailure(message, cause);
+    if (require("./context-overflow-recovery").preferCompactionOverReplay(this, classified, raw)) return false;
     return isSafeReplayableModelFailure(classified, raw);
   }
 

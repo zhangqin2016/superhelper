@@ -151,6 +151,9 @@ function resolveBudget(modelBudget, model, userText) {
   const usable = Number.isFinite(Number(source.usableInputTokens)) && Number(source.usableInputTokens) > 0
     ? Math.floor(Number(source.usableInputTokens))
     : budget.usableInputTokens;
+  // An unknown window bounds the character context by its own cap alone; the
+  // shares of a window nobody knows would be shares of a guess.
+  if (!usable) return { ceiling: CHARACTER_CONTEXT_MAX_TOKENS, usable: null, remaining: null };
   let remaining;
   if (Number.isFinite(Number(source.remainingInputTokens))) {
     remaining = Math.max(0, Math.floor(Number(source.remainingInputTokens)));

@@ -101,16 +101,18 @@ const budgetFor = (contextWindowTokens) => decidePreTurnCompaction({
 
 {
   // The whole point: a small model must compact at a small number. Under the
-  // 120,000 default this same conversation reports no pressure at all, and
-  // keeps growing until the model rejects it.
+  // old 120,000 default this same conversation reported no pressure at all.
+  // An unknown window is now reported as unknown — no pressure is invented
+  // either way (2026-09-27): the engine compacts on the provider's overflow.
   const real = budgetFor(32_768);
-  const guessed = budgetFor(undefined);
+  const unknown = budgetFor(undefined);
   assert.equal(real.contextWindowTokens, 32_768, "the model's own window is used");
-  assert.ok(real.compactionTriggerTokens < guessed.compactionTriggerTokens, "a smaller window triggers sooner");
   assert.equal(real.action, "compact", "26k into a 32k model is real pressure");
-  assert.equal(guessed.action, "skip", "and the hardcoded guess calls the same conversation comfortable");
   assert.equal(real.budgetSource, "model_capability");
-  assert.equal(guessed.budgetSource, "default_capability", "a guess admits that it is one");
+  assert.equal(unknown.contextWindowTokens, null, "an unknown window is not a number");
+  assert.equal(unknown.compactionTriggerTokens, null, "and has no trigger to compare against");
+  assert.deepEqual([unknown.action, unknown.reason], ["skip", "window_unknown"], "so no pressure decision is made on a guess");
+  assert.equal(unknown.budgetSource, "unknown", "and the decision says why");
   check("a real window makes a small model compact where the default would have let it overflow");
 }
 

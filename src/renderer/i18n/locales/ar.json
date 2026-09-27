@@ -2478,5 +2478,13 @@
   "update.mandate.deadlinePassed": "انقضى موعد التحديث ({when})؛ لم يعد التأجيل ممكنًا.",
   "settings.modelContextWindow": "نافذة السياق (رموز)",
   "settings.modelContextWindowPlaceholder": "مثال: 256k أو 1m",
-  "settings.modelContextWindowDesc": "اتركه فارغًا ليُقرأ من المزوّد أو يُتعلَّم عند التجاوز؛ عند تعيينه يُخطَّط الضغط وفقه دون فقدان مبكر للسياق أو تجاوز."
+  "settings.modelContextWindowDesc": "اتركه فارغًا ليُقرأ من المزوّد أو يُتعلَّم عند التجاوز؛ عند تعيينه يُخطَّط الضغط وفقه دون فقدان مبكر للسياق أو تجاوز.",
+  "settings.modelContextWindowEffective": "عند تركه فارغًا يُستخدم {tokens} ({source})",
+  "settings.modelContextWindowUnknown": "غير معروف: يُتعلَّم عند أول تجاوز — يُستحسن تعيينه، مثل 256k أو 1m",
+  "settings.modelContextWindowSource.configured": "مُعيَّن",
+  "settings.modelContextWindowSource.listing": "من المزوّد",
+  "settings.modelContextWindowSource.learned_overflow": "مُتعلَّم من خطأ تجاوز",
+  "settings.modelContextWindowSource.learned_ceiling": "أكبر طلب مقبول",
+  "settings.modelContextWindowSource.catalog": "دليل النماذج",
+  "settings.modelContextWindowSource.unknown": "غير معروف"
 }

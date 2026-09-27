@@ -1504,6 +1504,9 @@ updateSessionSummaryFromRecord("s1", {
   meta: { engine: { promptChars: 400_000, estimatedPromptTokens: 100_000 } },
   fileChanges: [],
 });
+// Pressure is measured against a KNOWN window; an unknown one no longer
+// becomes a 120,000 guess (context-window-honest).
+runner.spawnOptions.model = { contextWindowTokens: 120_000 };
 ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
 await new Promise((resolve) => setTimeout(resolve, 20));
 ctx.eventBus.flush();
@@ -1517,6 +1520,7 @@ if (!sent.some((entry) => entry.payload?.events?.some((event) => (
 )))) {
   throw new Error(`token-pressure compaction should include retained assistant output in diagnostics: ${JSON.stringify(sent)}`);
 }
+delete runner.spawnOptions.model;
 
 sent.length = 0;
 runner.compactions.length = 0;

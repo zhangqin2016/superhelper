@@ -172,6 +172,15 @@ function parseContextWindowInput(value) {
   return Math.floor(Number(match[1]) * unit);
 }
 
+/** What the engine will use when the field is left empty — shown as the placeholder. */
+function contextWindowPlaceholder(preset) {
+  const window = preset?.contextWindow;
+  if (!window?.tokens) return t("settings.modelContextWindowUnknown");
+  const tokens = window.tokens >= 1e6 && window.tokens % 1e4 === 0 ? `${window.tokens / 1e6}m`
+    : window.tokens >= 1e3 && window.tokens % 1e3 === 0 ? `${window.tokens / 1e3}k` : String(window.tokens);
+  return t("settings.modelContextWindowEffective", { tokens, source: t(`settings.modelContextWindowSource.${window.source}`) });
+}
+
 function customFormPayload() {
   return {
     label: $("modelCustomLabel")?.value?.trim() || "",
@@ -206,6 +215,7 @@ function resetCustomForm() {
     else if (el) el.value = "";
   }
   $("modelCustomApiKey")?.setAttribute("placeholder", t("settings.modelCustomApiKeyPlaceholder"));
+  $("modelCustomContextWindow")?.setAttribute("placeholder", t("settings.modelContextWindowPlaceholder"));
 }
 
 function setCustomEditMode(preset = null) {
@@ -228,7 +238,10 @@ function setCustomEditMode(preset = null) {
   if ($("modelCustomTlsSkipVerify")) $("modelCustomTlsSkipVerify").checked = Boolean(preset.tlsSkipVerify);
   if ($("modelCustomVision")) $("modelCustomVision").checked = Boolean(preset.capabilities?.vision);
   if ($("modelCustomImageGen")) $("modelCustomImageGen").checked = Boolean(preset.capabilities?.imageGen);
-  if ($("modelCustomContextWindow")) $("modelCustomContextWindow").value = preset.capabilities?.contextWindowTokens ? String(preset.capabilities.contextWindowTokens) : "";
+  if ($("modelCustomContextWindow")) {
+    $("modelCustomContextWindow").value = preset.capabilities?.contextWindowTokens ? String(preset.capabilities.contextWindowTokens) : "";
+    $("modelCustomContextWindow").setAttribute("placeholder", contextWindowPlaceholder(preset));
+  }
   if ($("modelCustomApiKey")) {
     $("modelCustomApiKey").value = "";
     $("modelCustomApiKey").setAttribute(

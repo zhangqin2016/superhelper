@@ -37,7 +37,7 @@
 //
 // FAIL OPEN: never throws. Kill switch: LILY_CONTEXT_GUARD=0.
 // Budgets: LILY_CONTEXT_PART_MAX_CHARS (per part, default 48000),
-//          LILY_CONTEXT_TOKEN_BUDGET (whole request estimate, default 700000).
+//          LILY_CONTEXT_TOKEN_BUDGET (the model's input limit; absent = unknown).
 //
 // NOTE: only the plugin factory is exported (named + default) — the OpenCode
 // loader instantiates every export as a plugin factory, so a helper export would
@@ -46,13 +46,18 @@
 import elision from "./lib/history-elision.cjs";
 
 const PART_MAX_CHARS = Math.max(4_000, Number(process.env.LILY_CONTEXT_PART_MAX_CHARS) || 48_000);
-// Lily sets LILY_CONTEXT_TOKEN_BUDGET per-run from the ACTIVE model's real
-// context window (server-delivered LILY_CONTEXT_WINDOW_TOKENS → resolveContextBudget
-// → usableInputTokens), so the budget tracks the model instead of guessing. The
-// fallback below is only for headless/tests or if that wiring is absent — kept
-// CONSERVATIVE (safe for a ~128k model) so an unknown window never overflows;
-// it is never a large guess that could break a small model.
-const TOKEN_BUDGET = Math.max(1_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) || 110_000);
+// Lily sets LILY_CONTEXT_TOKEN_BUDGET per-run to the ACTIVE model's real input
+// limit (its window minus the output reserve) — and only when that window is
+// known. There is no fallback guess: an unknown window used to become ~110,000
+// here, and a 1M model then had every request trimmed, down to the question
+// in the user's own message (2026-09-27). Without a budget only the per-part
+// cap applies, and the engine compacts when the provider reports an overflow.
+const TOKEN_BUDGET = Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) > 0
+  ? Math.max(1_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET))
+  : 0;
+// Used only before the engine has reported any usage: the estimate covers the
+// trimmable parts, not the system prompt and tool schemas beside them.
+const UNMEASURED_HEADROOM = 0.85;
 const MARKER = elision.elide({ what: "content", action: "Re-read the source if you need the rest." });
 
 // Rough, CJK-aware token estimate (no tokenizer in a plugin). CJK ~1 token/char,
@@ -143,10 +148,65 @@ function collectSlots(messages) {
     const parts = message && Array.isArray(message.parts) ? message.parts : null;
     if (!parts) return;
     for (const part of parts) {
-      for (const slot of stringSlots(part)) slots.push(index === request ? { ...slot, request: true } : slot);
+      for (const slot of stringSlots(part)) slots.push({ ...slot, index, request: index === request });
     }
   });
   return slots;
+}
+
+// The request size the engine last reported: an assistant message's tokens are
+// its latest step's, input + cache + output — the same count the engine's own
+// overflow check uses.
+function reportedTokens(info) {
+  const t = info && info.tokens;
+  if (!t || typeof t !== "object") return 0;
+  const cache = t.cache || {};
+  return Number(t.total) || (Number(t.input) || 0) + (Number(t.output) || 0) + (Number(cache.read) || 0) + (Number(cache.write) || 0);
+}
+
+// What the next request will cost. Measured where the engine has reported: the
+// last reported request, minus what trimming saves from it, plus what was
+// added since. The report is the provider's own count, so it wins over the
+// character estimate (which over-counts Chinese by design) — except right after
+// this guard trimmed that session: the report then counted a trimmed history,
+// so the untrimmed estimate plus the overhead the report revealed is the floor.
+// Estimated with headroom when nothing has been reported yet.
+const sessions = new Map(); // sessionID -> { overhead, trimmed }
+function sessionNote(sessionID, patch) {
+  if (!sessionID) return;
+  const next = { ...(sessions.get(sessionID) || {}), ...patch };
+  sessions.delete(sessionID);
+  sessions.set(sessionID, next);
+  if (sessions.size > 256) sessions.delete(sessions.keys().next().value);
+}
+
+function projector(messages, slots) {
+  let anchor = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.info?.role === "assistant" && reportedTokens(messages[i].info) > 0) { anchor = i; break; }
+  }
+  const original = slots.map((slot) => estimateTokens(slot.get()));
+  if (anchor < 0) return { sessionID: "", project: () => slots.reduce((sum, slot) => sum + estimateTokens(slot.get()), 0) / UNMEASURED_HEADROOM };
+  const reported = reportedTokens(messages[anchor].info);
+  const sessionID = String(messages[anchor].info.sessionID || "");
+  const prior = sessions.get(sessionID) || {};
+  const upToAnchor = slots.reduce((sum, slot, i) => sum + (slot.index <= anchor ? original[i] : 0), 0);
+  const measured = reported - upToAnchor;
+  if (measured > 0 && !prior.trimmed) sessionNote(sessionID, { overhead: measured });
+  const overhead = measured > 0 && !prior.trimmed ? measured : prior.overhead || 0;
+  return {
+    sessionID,
+    project: () => {
+      let all = 0, saved = 0, after = 0;
+      slots.forEach((slot, i) => {
+        const now = estimateTokens(slot.get());
+        all += now;
+        if (slot.index <= anchor) saved += original[i] - now; else after += now;
+      });
+      const fromReport = reported - saved + after;
+      return prior.trimmed ? Math.max(fromReport, all + overhead) : fromReport;
+    },
+  };
 }
 
 export const ContextWindowGuardPlugin = async () => ({
@@ -166,28 +226,39 @@ export const ContextWindowGuardPlugin = async () => ({
         slot.set(slot.reproducible ? elision.elideFileBody({ path: slot.path, bytes: value.length }) : trim(value, PART_MAX_CHARS));
       }
 
-      // Pass 2: if the whole request still exceeds the token budget (many medium
-      // parts), tighten the cap largest-first until under budget or a floor.
+      // Pass 2: only with a known limit, and only when the request would not
+      // fit it — compaction (Lily's before the turn, the engine's after each
+      // step) acts below this line, so the guard is the last resort, not the
+      // everyday trimmer. Tighten the cap largest-first until it fits or a floor.
       // The current request is history's reader, not history: it is never
       // excerpted to make room. Field case 2026-09-27: a new question arrived
       // in a long session over budget; its 10,870-char message was cut to head
       // + tail, which kept the platform context and the attachment note and
       // dropped the question in the middle, and the model — reasoning "there
       // is no user request" — resumed the previous task instead.
-      let total = slots.reduce((sum, s) => sum + estimateTokens(s.get()), 0);
-      let cap = PART_MAX_CHARS;
-      for (let i = 0; i < 6 && total > TOKEN_BUDGET; i += 1) {
-        cap = Math.max(2_000, Math.floor(cap / 2));
-        const ranked = slots
-          .filter((s) => !s.request)
-          .map((s) => ({ s, len: s.get().length }))
-          .sort((a, b) => b.len - a.len);
-        for (const { s, len } of ranked) {
-          if (len <= cap) continue;
-          s.set(s.reproducible ? elision.elideFileBody({ path: s.path, bytes: len }) : trim(s.get(), cap));
+      if (!TOKEN_BUDGET) return;
+      const { sessionID, project: projected } = projector(messages, slots);
+      if (projected() <= TOKEN_BUDGET) { sessionNote(sessionID, { trimmed: false }); return; }
+      sessionNote(sessionID, { trimmed: true });
+      // The largest per-part cap that fits: trimmed only as far as needed, so
+      // the request lands just under the limit — where the engine's usage
+      // report makes compaction fire next — instead of far below it, where
+      // nothing would ever compact and every later call would be trimmed too.
+      const trimmable = slots.filter((s) => !s.request).map((s) => ({ s, value: s.get() }));
+      const apply = (cap) => {
+        for (const { s, value } of trimmable) {
+          s.set(value.length <= cap ? value : s.reproducible ? elision.elideFileBody({ path: s.path, bytes: value.length }) : trim(value, cap));
         }
-        total = slots.reduce((sum, sl) => sum + estimateTokens(sl.get()), 0);
+      };
+      let lo = 2_000, hi = PART_MAX_CHARS;
+      apply(lo);
+      if (projected() > TOKEN_BUDGET) return; // the floor is all that can be done
+      while (hi - lo > 500) {
+        const mid = Math.floor((lo + hi) / 2);
+        apply(mid);
+        if (projected() <= TOKEN_BUDGET) lo = mid; else hi = mid;
       }
+      apply(lo);
     } catch {
       /* fail open — this guard must never break a turn or compaction */
     }

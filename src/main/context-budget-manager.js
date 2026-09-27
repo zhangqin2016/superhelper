@@ -6,7 +6,6 @@ const DEFAULT_MIN_TURNS_BEFORE_COMPACT = 24;
 const DEFAULT_MIN_COMPACTION_INTERVAL_MS = 20 * 60 * 1000;
 const DEFAULT_TOKEN_PRESSURE_THRESHOLD = 0.72;
 const DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD = 0.88;
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 120_000;
 const DEFAULT_OUTPUT_RESERVE_TOKENS = 4_096;
 const MAX_DYNAMIC_OUTPUT_RESERVE_TOKENS = 32_768;
 
@@ -118,6 +117,10 @@ function resolveContextBudget({
   tokenSource = "",
 } = {}) {
   const sourceModel = model && typeof model === "object" ? model : {};
+  // An unknown window is reported as unknown. It used to become 120,000, and
+  // every consumer then acted on that guess: compaction fired at 8% of a 1M
+  // model, and the context-window guard trimmed a new question out of its own
+  // message (2026-09-27). Consumers now decide what "unknown" means for them.
   const windowTokens = positiveInt(
     contextWindowTokens ??
       sourceModel.contextWindowTokens ??
@@ -127,7 +130,18 @@ function resolveContextBudget({
       sourceModel.max_context_tokens ??
       sourceModel.maxModelLen ??
       sourceModel.max_model_len,
-  ) || DEFAULT_CONTEXT_WINDOW_TOKENS;
+  );
+  if (!windowTokens) {
+    return {
+      contextWindowTokens: null,
+      outputReserveTokens: null,
+      usableInputTokens: null,
+      tokenPressureThreshold: null,
+      compactionTriggerTokens: null,
+      tokenSource,
+      budgetSource: "unknown",
+    };
+  }
   const configuredOutputReserve = positiveInt(
     maxOutputTokens ??
       sourceModel.maxOutputTokens ??
@@ -160,18 +174,7 @@ function resolveContextBudget({
     tokenPressureThreshold: pressureThreshold,
     compactionTriggerTokens: Math.max(1, Math.floor(usableInputTokens * pressureThreshold)),
     tokenSource,
-    budgetSource: (
-      contextWindowTokens ||
-      sourceModel.contextWindowTokens ||
-      sourceModel.limits?.contextTokens ||
-      sourceModel.context_window_tokens ||
-      sourceModel.maxContextTokens ||
-      sourceModel.max_context_tokens ||
-      sourceModel.maxModelLen ||
-      sourceModel.max_model_len
-    )
-      ? "model_capability"
-      : "default_capability",
+    budgetSource: "model_capability",
   };
 }
 
@@ -196,6 +199,17 @@ function compactionBlockedDecision({ capabilities = {}, model = {}, runner = {} 
   // the same work, and its outcome is recorded when it settles.
   if (runner.compacting) return { action: "skip", reason: "compaction_in_progress" };
   return null;
+}
+
+/**
+ * The provider refused this session's last request for size and nothing has
+ * compacted it since. That is a measurement, not an estimate: the context is
+ * too big for this model whatever its window is believed to be, so the next
+ * turn compacts first — known window or not, recent compaction or not.
+ */
+function unresolvedContextOverflow(sessionSummary = {}) {
+  const overflowAt = parseTime(sessionSummary.lastContextOverflowAt);
+  return overflowAt > 0 && overflowAt > parseTime(sessionSummary.lastCompactedAt);
 }
 
 function recentCompactionDecision({ sessionSummary = {}, now = Date.now(), minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS } = {}) {
@@ -266,6 +280,10 @@ function decidePreTurnCompaction({
 } = {}) {
   const blocked = compactionBlockedDecision({ capabilities, model, runner });
   if (blocked) return blocked;
+  if (unresolvedContextOverflow(sessionSummary)) {
+    return withBudget({ action: "compact", reason: "context_overflow", mode: "native" },
+      resolveContextBudget({ model, contextWindowTokens, tokenPressureThreshold }));
+  }
   const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
   if (recent) return recent;
 
@@ -282,6 +300,17 @@ function decidePreTurnCompaction({
     tokenSource,
   });
   const estimatedPromptTokens = previousPromptTokens + normalizedCurrentPromptTokens;
+  // No window, no pressure to measure against: the engine compacts when the
+  // provider reports an overflow, and the overflow is recorded for next turn.
+  if (!budget.compactionTriggerTokens) {
+    return withBudget({
+      action: "skip",
+      reason: "window_unknown",
+      estimatedPromptTokens,
+      currentPromptTokens: normalizedCurrentPromptTokens,
+      previousPromptTokens,
+    }, budget, tokenSource);
+  }
   if (estimatedPromptTokens > 0 && estimatedPromptTokens >= budget.compactionTriggerTokens) {
     return withBudget({
       action: "compact",
@@ -320,6 +349,10 @@ function decideBackgroundCompaction({
 } = {}) {
   const blocked = compactionBlockedDecision({ capabilities, model, runner });
   if (blocked) return blocked;
+  if (unresolvedContextOverflow(sessionSummary)) {
+    return withBudget({ action: "compact", reason: "context_overflow", mode: "native" },
+      resolveContextBudget({ model, contextWindowTokens, tokenPressureThreshold }));
+  }
   const recent = recentCompactionDecision({ sessionSummary, now, minIntervalMs });
   if (recent) return recent;
 
@@ -332,6 +365,7 @@ function decideBackgroundCompaction({
     tokenSource: retainedPressure.source,
   });
   if (
+    budget.compactionTriggerTokens &&
     Number.isFinite(estimatedPromptTokens) &&
     estimatedPromptTokens > 0 &&
     estimatedPromptTokens >= budget.compactionTriggerTokens
@@ -355,7 +389,6 @@ function decideBackgroundCompaction({
 }
 
 module.exports = {
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
   DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD,
   DEFAULT_MIN_TURNS_BEFORE_COMPACT,
   DEFAULT_MIN_COMPACTION_INTERVAL_MS,
@@ -368,4 +401,5 @@ module.exports = {
   nativeCompactionUnsupportedReason,
   resolveContextBudget,
   runtimeSupportsNativeCompaction,
+  unresolvedContextOverflow,
 };

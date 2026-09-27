@@ -20,6 +20,15 @@ function reduceMessageUpdate(ev, state, { emptyResult, withProcessEvent, runtime
     // (2026-09-15 field case: it killed turn and compaction together at 90s).
     if (info.time?.completed || info.error) state.activeCompactions?.delete(info.id);
     else if (!state.activeCompactions?.has(info.id)) state.activeCompactions?.set(info.id, Date.now());
+    // The summary itself did not fit: the engine stops, and the turn it was
+    // compacting for cannot go on. Without this the turn settled as an empty
+    // answer instead of the overflow it is.
+    if (info.error?.name === "ContextOverflowError") {
+      return withProcessEvent(ev, {
+        drafts: [], effects: [{ kind: "error", message: `context length exceeded: ${errorMessage(info.error)}`, cause: info.error, compactionFailed: true }],
+        progress: false, terminal: true,
+      });
+    }
     return emptyResult(ev);
   }
   if (info.id && info.role && state.pendingTextSnapshots?.size && !state.summaryMessages?.has(info.id)) {

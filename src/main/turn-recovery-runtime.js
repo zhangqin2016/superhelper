@@ -154,6 +154,11 @@ function createTurnRecoveryRuntime(options = {}) {
   }
 
   async function maybeSelfHealAndRetry(sessionId, failure) {
+    // An overflow is not retryable as such, but once the session has kept its
+    // conversation and recorded it, a retry is exactly what compacts it away.
+    if (failure?.code === "CONTEXT_LIMIT" && require("./context-overflow-recovery").retryReady(sessionId)) {
+      failure = { ...failure, retryable: true };
+    }
     if (failure?.retryable === false) return;
     try {
       if (await maybeFailoverToHealthyPoolModel(sessionId, failure)) return;
@@ -377,6 +382,9 @@ function createTurnRecoveryRuntime(options = {}) {
     if (!wasRescueAttempt) return "";
     const rescue = require("./tool-call-rescue");
     const attempts = Math.max(1, rescue.rescueAttemptCount(sessionId));
+    if (rescue.rescueStrategyFor(code)?.contextOverflow) {
+      return "\n\n（对话已超过该模型的上下文窗口，平台压缩后重试仍未成功。可以新开对话继续，或在设置里确认该模型的上下文窗口。）";
+    }
     if (rescue.rescueStrategyFor(code)?.modelOutputSlip) {
       return `\n\n（平台已自动修复重试 ${attempts} 次仍未恢复。已完成的步骤都已保留，发送“继续”即可接着做。）`;
     }

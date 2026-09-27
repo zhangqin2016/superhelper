@@ -117,7 +117,7 @@ function continuationHintFor(recipes = {}) {
 // replay-safe, so a coverage round dispatched as a replay could never fire at
 // all. Continuing is also the better shape for it — the model keeps what it
 // already read and is asked only for the missing next action.
-const CONTINUE_INSTEAD_CODES = new Set(["MALFORMED_TOOL_CALL_TEXT", "SOURCE_COVERAGE_INCOMPLETE"]);
+const CONTINUE_INSTEAD_CODES = new Set(["MALFORMED_TOOL_CALL_TEXT", "SOURCE_COVERAGE_INCOMPLETE", "CONTEXT_LIMIT"]);
 
 function shouldContinueInsteadOfReplay(code, tools = []) {
   if (process.env.LILY_TOOL_CALL_CONTINUATION === "0") return false;
@@ -185,6 +185,18 @@ const RESCUE_STRATEGIES = Object.freeze({
     hint: "",
     preflight: false,
     enabled: () => process.env.LILY_SOURCE_COVERAGE_RETRY !== "0",
+  }),
+  // The conversation outgrew the model's window. The session kept its
+  // conversation and recorded the overflow, so the retry's pre-turn compaction
+  // runs first, on a runner rebuilt (preflight) with the window the overflow
+  // taught — replayed when nothing irreversible ran, continued otherwise.
+  // Offered only once per overflow (context-overflow-recovery.retryReady).
+  CONTEXT_LIMIT: Object.freeze({
+    kind: "context_overflow_retry",
+    hint: "",
+    preflight: true,
+    contextOverflow: true,
+    enabled: () => process.env.LILY_CONTEXT_OVERFLOW_RECOVERY !== "0",
   }),
   EMPTY_ASSISTANT_COMPLETION: Object.freeze({
     kind: "empty_completion_retry",

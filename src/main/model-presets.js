@@ -4,7 +4,8 @@ const net = require("../shared/network-errors.mjs");
 
 const script = require("../shared/script.mjs");
 
-const { capabilitiesEntry } = require("./model-preset-capabilities");
+const { capabilitiesEntry, publicCapabilities } = require("./model-preset-capabilities");
+const { presetContextWindow } = require("./model-context-window");
 const requestShapeModule = require("./openai-request-shape");
 const { getSafeStorage, secretStorageAvailable, protectSecret, unprotectSecret, hydrateSecret } = require("./model-preset-secrets");
 const { reportUnhandledProbeRejection } = require("./model-probe-telemetry");
@@ -795,7 +796,8 @@ function listPresetsPublic() {
       protocol: p.protocol || "",
       apiKeySet: Boolean(p.apiKeySet),
       tlsSkipVerify: Boolean(p.tlsSkipVerify),
-      capabilities: { vision: Boolean(p.capabilities?.vision) },
+      capabilities: publicCapabilities(p.capabilities),
+      contextWindow: presetContextWindow(p, normalizeToLilyEnv(p.env || {})),
       custom: Boolean(p.custom),
     })),
   };

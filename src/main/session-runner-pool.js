@@ -200,29 +200,21 @@ class SessionRunnerPool {
       /* non-fatal: plugin then finds no dir and leaves compaction untouched */
     }
 
-    // Model-aware budget for the context-window-guard plugin: derive it from the
-    // ACTIVE model's real context window (server-delivered LILY_CONTEXT_WINDOW_TOKENS)
-    // minus the output reserve, so the guard caps history to what THIS model can
-    // actually hold — deepseek's ~1M and a 128k custom model each get the right
-    // ceiling instead of one hardcoded guess (never over-trims a big model, never
-    // overflows a small one). resolveContextBudget falls back to a safe default
-    // window when unknown; fail-open leaves the plugin's own conservative default.
+    // The context-window guard's budget is the model's real input limit (window
+    // minus output reserve), and only when the window is known — configured,
+    // learned from the endpoint, or catalogued (model-context-window). The guard
+    // measures it against the engine's reported usage, so it acts only on a
+    // request that would not fit, after compaction had its chance. Unknown: no
+    // budget — single oversized parts are still bounded, and the engine
+    // compacts when the provider reports an overflow.
     try {
       const { resolveContextBudget } = require("./context-budget-manager");
-      const windowTokens = Number(cfg.model?.contextWindowTokens) || Number(lilyEnv.LILY_CONTEXT_WINDOW_TOKENS) || undefined;
-      const budget = resolveContextBudget({ contextWindowTokens: windowTokens });
-      // The guard only trims TRUNCATABLE content (tool io + text); the system
-      // prompt and tool schemas also consume the window but can't be trimmed
-      // there. Reserve a proportional 15% headroom for that non-trimmable
-      // overhead so bounding the trimmable slots to this budget keeps the TOTAL
-      // request under the window. Proportional (not a fixed subtraction) so it
-      // scales safely from a 32k model to a 1M one.
-      const guardBudget = Math.floor(budget.usableInputTokens * 0.85);
-      if (guardBudget > 0) {
-        env.LILY_CONTEXT_TOKEN_BUDGET = String(Math.min(Number(env.LILY_CONTEXT_TOKEN_BUDGET) || guardBudget, guardBudget));
-      }
-    } catch {
-      /* guard keeps its own conservative default */
+      const budget = resolveContextBudget({ contextWindowTokens: Number(cfg.model?.contextWindowTokens) || undefined });
+      const limit = budget.usableInputTokens;
+      if (limit) env.LILY_CONTEXT_TOKEN_BUDGET = String(Math.min(Number(env.LILY_CONTEXT_TOKEN_BUDGET) || limit, limit));
+      log.info(`context window: model=${cfg.model?.modelID || "-"} window=${budget.contextWindowTokens || "unknown"} source=${cfg.model?.contextWindowSource || "-"} guardBudget=${env.LILY_CONTEXT_TOKEN_BUDGET || "none"}`);
+    } catch (err) {
+      log.warn(`context window budget failed open (guard bounds single parts only): ${err?.message || err}`);
     }
 
     profile.mark("guidance+budget");

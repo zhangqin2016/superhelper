@@ -2478,5 +2478,13 @@
   "update.mandate.deadlinePassed": "更新截止时间（{when}）已过，不能再推迟。",
   "settings.modelContextWindow": "上下文窗口（token）",
   "settings.modelContextWindowPlaceholder": "例如 256k、1m、100万",
-  "settings.modelContextWindowDesc": "留空则从服务商读取或在溢出时自动学习；填写后按此值安排压缩，避免过早丢上下文或超长失败。"
+  "settings.modelContextWindowDesc": "留空则从服务商读取或在溢出时自动学习；填写后按此值安排压缩，避免过早丢上下文或超长失败。",
+  "settings.modelContextWindowEffective": "留空时使用 {tokens}（{source}）",
+  "settings.modelContextWindowUnknown": "当前未知：超出时自动学习，建议填写，例如 256k、1m",
+  "settings.modelContextWindowSource.configured": "已配置",
+  "settings.modelContextWindowSource.listing": "服务商提供",
+  "settings.modelContextWindowSource.learned_overflow": "从超限报错学到",
+  "settings.modelContextWindowSource.learned_ceiling": "按已成功的最大请求推断",
+  "settings.modelContextWindowSource.catalog": "模型目录",
+  "settings.modelContextWindowSource.unknown": "未知"
 }
