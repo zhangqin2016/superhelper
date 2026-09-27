@@ -3,7 +3,7 @@
   "id": "lily-excel-data-analysis",
   "name": "Lily Excel Data Analysis",
   "description": "分析表格数据、找异常、清洗、识别字段、做图、总结结论、比较工作表或生成可复查 Excel/CSV 分析时使用。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.1.0",
   "runtime": "none",
   "category": "office",
@@ -28,5 +28,8 @@
     "en": "Office Documents",
     "ar": "مستندات المكتب"
   },
-  "requiredRuntimePacks": ["libreoffice", "large-document"]
+  "requiredRuntimePacks": [
+    "libreoffice",
+    "large-document"
+  ]
 }

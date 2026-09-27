@@ -3,7 +3,7 @@
   "id": "lily-mail-assistant",
   "name": "Lily Mail Assistant",
   "description": "连接 Gmail、Outlook/Microsoft 365 或 IMAP/SMTP，支持邮件搜索、总结、附件查找、回复草稿和确认后发送。",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "0.1.48",
   "runtime": "node",
   "category": "office",

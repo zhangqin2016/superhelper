@@ -1467,13 +1467,13 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "ec5ae42dcd83aa1dbb696ec59229d29d0ed0c014d7ffa03a77d2f1af1bdb6578"
+      "contentRevision": "bc4a0a79f7f3a2e04f96a79717855dd118486e78a914226121adac2e3a27f05e"
     },
     {
       "id": "lily-app-builder",
       "name": "应用构建",
       "description": "把一句话需求落成可运行网页、落地页、小工具、脚本、自动化或本地应用，保留现有技术栈，通过受监督进程和真实验证交付。",
-      "latestVersion": "1.0.2",
+      "latestVersion": "1.0.4",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1504,7 +1504,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "c05d3f6dd5dc6e3aa54f1d8dc95546de8147e1e8e5ab876342a5da3fed864e5b"
+      "contentRevision": "8b93ca89174a346209d6b5cca438b41b09cadedad8727179840696b00ba32285"
     },
     {
       "id": "lily-code-repair",
@@ -1541,7 +1541,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "a9b698bbc2f81bd2923f1fa9eb1f24a03cf0ab08d40d8aaf4698307b6b6a5ac3"
+      "contentRevision": "5e231b7d68b5b1ecf48a49086c595c886111c092fc055f52be5bd9ad0f62491b"
     },
     {
       "id": "lily-office-intent",
@@ -1578,7 +1578,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "8a7e8490754b0c83b720cac1438b1d01b5100292c776b0ad3077d23280687fc3",
+      "contentRevision": "fe5c4cdf26545e3a5a3627d2397a8ea383a28c6fb6455e1d7e9c56dce0e70a92",
       "requiredRuntimePacks": [
         "libreoffice",
         "large-document",
@@ -1622,13 +1622,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "e8df33025a9694d20b7189c958d23c006d48c661fa9a64f95d1ce704c4bf1e5c"
+      "contentRevision": "2b6531692228446860cc1c17aa873ca809b4279dd21fe7f48e88a73a20cebb86"
     },
     {
       "id": "lily-excel-data-analysis",
       "name": "Excel 数据分析",
       "description": "分析表格数据、找异常、清洗、识别字段、做图、总结结论、比较工作表并生成可复查 Excel/CSV 结果。",
-      "latestVersion": "1.0.0",
+      "latestVersion": "1.0.1",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1659,7 +1659,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "6d672a5bad0cdb8c75e03a1d76a691a6d80f727378c8005c092fe784218b2b23"
+      "contentRevision": "e9b0a1807df7113d3585e0dc5802c9b6b7497c9bb3de8498aafc689398f22abc"
     },
     {
       "id": "lily-ppt-design-qa",
@@ -1696,7 +1696,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "60a3c7c08d70c2a1c2a3c5d0357c2643260b5ce2fe36dc85d23d3b70af8128ce"
+      "contentRevision": "f04cd97deaa1256bcdb9c9e8c3adf449159ad7a8a15906e05c3c7a5ff989d0cc"
     },
     {
       "id": "lily-ui-quality",
@@ -1770,7 +1770,7 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "46a5d39a9094cb9ebe5f765faa669ade8b103efde5a996dac1af14a150c9c080"
+      "contentRevision": "8b6e526ba8ff465856afc29f3f0350fac75bd50f00d5d8d0d701df7e43e7ac21"
     },
     {
       "id": "lily-creative-director",
@@ -1961,7 +1961,7 @@
       "id": "lily-web-system-learning",
       "name": "网页系统学习",
       "description": "学习 OA、ERP、CRM、后台等 Web 系统，生成系统画像、页面地图、业务对象模型、动作 Playbook、风险策略并保存为当前工作区技能。",
-      "latestVersion": "1.0.24",
+      "latestVersion": "1.0.25",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -1992,13 +1992,13 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "23a57f388484cedc1e8fbceef60b181728dcd84dae78cf68e7fc2c8afed9ede4"
+      "contentRevision": "26167169162eea867196e6e96549815c664b32abd35cf8304eff392dc93342b9"
     },
     {
       "id": "lily-mail-assistant",
       "name": "邮件助手",
       "description": "连接 Gmail、Outlook/Microsoft 365 或 IMAP/SMTP，支持邮件搜索、总结、附件查找、回复草稿和确认后发送。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2029,7 +2029,7 @@
         "en": "Automation",
         "ar": "الأتمتة"
       },
-      "contentRevision": "0f56d2354a153e4ef5db5ef9645b2d67945097c68e41a3dc5c594f60ddbc6fca"
+      "contentRevision": "a39e08dbea9188c5cfccae4d721cde2691b179fef2d495006e01a81e4565e698"
     },
     {
       "id": "lily-skill-quality-gate",
@@ -2072,7 +2072,7 @@
       "id": "lily-intent-eval",
       "name": "意图路由评测",
       "description": "维护 Lily 意图识别和任务分流的黄金样例与回归测试，覆盖 Office、编程、设计、媒体、研究、运行时和混合任务。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2103,13 +2103,13 @@
         "en": "Quality Review",
         "ar": "مراجعة الجودة"
       },
-      "contentRevision": "a98c8bc3babf3f153e57a53708af91f94849dc508d2c42fb2484e4118dfc2beb"
+      "contentRevision": "724c0d93b6a310cde7cce30b462afb78dec17a1063e0b232dbdb1fa53a09d000"
     },
     {
       "id": "lily-template-fill",
       "name": "模板填充",
       "description": "根据用户数据填充 Word、PPT、Excel 或 Markdown 模板，保持结构、占位符和交付文件可复查。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2140,13 +2140,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "07814ada39e5f0cdb0482a5d9b000785d07a23a07db2c7a5f6489831d8bea3cd"
+      "contentRevision": "6d79585acbe9dda9691ec7489cdddb3785ab95153ac9dcbf86693dec21f4ea23"
     },
     {
       "id": "lily-document-verify",
       "name": "文档验证",
       "description": "文档交付前检查格式、目录、分页、表格、图片、链接、导出渲染和读者可用性，避免只生成不验收。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2177,7 +2177,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "e3630c1785341444b612dacc24017c90d683c3793c94350a747e169e87ceefba"
+      "contentRevision": "e74c066da7aac2f5a8918afd9c9bf677503883c4559c963f6e23ab775f7e4990"
     },
     {
       "id": "lily-doc-style-reference",
@@ -2220,7 +2220,7 @@
       "id": "lily-document-query",
       "name": "文档追问",
       "description": "对已上传并抽取过的文档建立轻量查询入口，按 chunk 搜索和引用证据，支持用户继续追问条款、数字、风险和章节内容。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2251,13 +2251,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "76412e1ed3a7ab9cf9448c5b04b153694c578e90efb06c505fea44f663b96ac5"
+      "contentRevision": "d5b8fa442b4a7b23279ac6ea01967504bec74806f6526dcf5e3d3c648a913ddd"
     },
     {
       "id": "lily-pdf-form",
       "name": "PDF 表单填写",
       "description": "识别、填写、校验 PDF 表单字段，保留原始格式并输出可打开、可复查的填表结果。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2288,13 +2288,13 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "6263ac3108dc14d4b463abc9c5a0c866373c2d854f29196e3856ccbb01a295b1"
+      "contentRevision": "5ceec073a4319ddc97a7ff32effb4352eaa89c360aa7903a3fda2301dfd4f953"
     },
     {
       "id": "lily-runtime-packs",
       "name": "Runtime 能力包",
       "description": "安装、检查或移除可选重型本地 runtime，例如复杂 PDF 解析引擎，避免把大模型/大依赖默认打进基础安装包。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.2",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2325,7 +2325,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "43fcd8451329da6f646ab745e35ce8a2c0e0d7c02fc9834085e409fe89443b72"
+      "contentRevision": "1ef7ee06c906e0225d120e1e65bebcd4b7ae9d5611807601e375c349d5f189fe"
     },
     {
       "id": "lily-engineering-rules",
@@ -2363,7 +2363,7 @@
         "en": "Development",
         "ar": "التطوير"
       },
-      "contentRevision": "65866b34aceeafae88ae0eab724bdda71bda7f6c9d937a39af4daa1db509ac0f"
+      "contentRevision": "fcfcfbf599d292144541888cb1909e9f5ab0826a50cdaead4db5f5c35b4005d0"
     },
     {
       "id": "anthropics-doc-coauthoring",
@@ -2400,7 +2400,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "0097747b5911889cc6f75a81fff105d83d1cef6bbe77f542457e1fa20774afe8",
+      "contentRevision": "936693d59b05631e893de52ec4e0166b18e7dd9c89532b4034acc1532690f3aa",
       "requiredRuntimePacks": [
         "libreoffice"
       ]
@@ -2409,7 +2409,7 @@
       "id": "anthropics-docx",
       "name": "Word 文档",
       "description": "创建、读取、编辑或处理 Word 文档（.docx），包括目录、标题、页码、信头、批注、修订和专业排版。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2440,7 +2440,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "38e27665a893c56756a4e74d1bf3d567d343eabd1961bd7486060d41f49933f5",
+      "contentRevision": "0fe5f63673e1c715276a5f2680bb9478a12bd6fe12610a719449b42f207dd115",
       "requiredRuntimePacks": [
         "libreoffice"
       ]
@@ -2449,7 +2449,7 @@
       "id": "anthropics-pdf",
       "name": "PDF 文档",
       "description": "读取、提取、合并、拆分、旋转、加水印、生成、填写、加密解密或 OCR 处理 PDF 文件。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2480,7 +2480,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "a941ca1f79e5d94cfdf415a2ddd03c53f3fc74acf47392388769043d8d17a749",
+      "contentRevision": "ff0aa0bb23cca1540a9afaf54b7c3d48e0641567d25a13588d1b83f222ccaf84",
       "requiredRuntimePacks": [
         "large-document",
         "pro-pdf",
@@ -2492,7 +2492,7 @@
       "id": "anthropics-pptx",
       "name": "PPT 演示",
       "description": "创建、读取、编辑或组合 PowerPoint 演示文稿，处理模板、版式、讲稿备注、图片和幻灯片结构。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2523,7 +2523,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "17688b0123b5d20a96b96f66549e140cb34d0996eb30031325e4a7945b463d04",
+      "contentRevision": "7f23ad70a74049037d6933db9e323a39a1a8aa57dfdb57194d8c192add01d005",
       "requiredRuntimePacks": [
         "libreoffice"
       ]
@@ -2532,7 +2532,7 @@
       "id": "anthropics-xlsx",
       "name": "Excel 表格",
       "description": "创建、读取、编辑或修复 Excel/CSV/TSV 表格，处理公式、格式、图表、清洗、统计和多工作表数据。",
-      "latestVersion": "1.0.1",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2563,12 +2563,12 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "e72c2aa9e374ac77113e012b607fad761b07170b10b8615e944e162403205709",
+      "contentRevision": "c0ca5ac9ca1260a278ab44c49f9af057be2ad285062815a62ca9c80c240781ed",
       "requiredRuntimePacks": [
         "libreoffice",
         "large-document"
       ]
     }
   ],
-  "registryRevision": "2acc55d13323826f77bb4f6d3d230917c323d6111264e13c664644c94ba35a8e"
+  "registryRevision": "2dbcf6e3719212f17f1bb5426a1d5b5844af336a288d5c5a81bf4d675f93efea"
 }
