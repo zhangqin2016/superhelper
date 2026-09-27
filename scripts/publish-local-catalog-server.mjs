@@ -574,6 +574,29 @@ async function fetchJson(api, auth, route) {
   return response.json();
 }
 
+/**
+ * Follow an admin list's opaque `nextCursor` until every row is read.
+ * The admin lists are keyset-paged (DEFAULT_PAGE_SIZE 50): a single GET silently
+ * truncates past 50 rows, so a conflict check built on the first page misses
+ * later versions and the server rejects them as SKILL_VERSION_IMMUTABLE.
+ */
+async function fetchAllList(api, auth, route, key, { limit = 200 } = {}) {
+  const all = [];
+  let cursor = "";
+  for (;;) {
+    const sep = route.includes("?") ? "&" : "?";
+    const url = cursor
+      ? `${route}${sep}cursor=${encodeURIComponent(cursor)}&limit=${limit}`
+      : `${route}${sep}limit=${limit}`;
+    const body = await fetchJson(api, auth, url);
+    const rows = body?.[key] || [];
+    all.push(...rows);
+    cursor = body?.nextCursor || "";
+    if (!cursor || !rows.length) break;
+  }
+  return all;
+}
+
 function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -715,7 +738,7 @@ async function uploadMultipart(api, auth, route, fields, filePath) {
 async function publishSkills(options, auth) {
   const api = normalizeBaseUrl(options.api);
   const existingRows = options.upload && !options.dryRun
-    ? (await fetchJson(api, auth, "/api/admin/skill-packages")).skillPackages
+    ? await fetchAllList(api, auth, "/api/admin/skill-packages", "skillPackages")
     : [];
   const existing = options.upload && !options.dryRun
     ? existingByKey(existingRows, "skill_id", options.channel)
@@ -840,7 +863,7 @@ async function publishSkills(options, auth) {
 async function publishApps(options, auth) {
   const api = normalizeBaseUrl(options.api);
   const existing = options.upload && !options.dryRun
-    ? existingByKey((await fetchJson(api, auth, "/api/admin/workspace-apps")).workspaceApps, "app_id", options.channel)
+    ? existingByKey(await fetchAllList(api, auth, "/api/admin/workspace-apps", "workspaceApps"), "app_id", options.channel)
     : new Map();
   const results = [];
   const apps = options.appId
