@@ -593,6 +593,8 @@
   "composer.modelNoModels": "دليل النماذج غير متاح مؤقتاً. حاول مرة أخرى بعد قليل.",
   "composer.modelSilentBadge": "لا استجابة",
   "composer.modelSilentTitle": "لم يستجب هذا النموذج {n} مرة مؤخراً خلال {s} ثانية؛ قد يكون غير متاح مؤقتاً",
+  "composer.modelFailedBadge": "فشل مؤخراً",
+  "composer.modelFailedTitle": "فشل هذا النموذج {n} مرة مؤخراً (حد المعدل / الاتصال / بلا مخرجات)؛ يفضّل الوضع التلقائي نماذجك المختارة الأخرى مؤقتاً",
   "composer.modelUnavailable": "النموذج غير متاح",
   "composer.modelKeepOne": "احتفظ بنموذج واحد على الأقل في الوضع التلقائي.",
   "composer.modelSelectionSaved": "تم حفظ الاختيار وسيُطبّق ابتداءً من الجولة التالية.",

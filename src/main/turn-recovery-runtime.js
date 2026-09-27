@@ -95,9 +95,68 @@ function createTurnRecoveryRuntime(options = {}) {
     return result;
   }
 
+  // In-pool failover (auto mode only). When the model that ran fails for a
+  // model-attributable reason, re-run the turn on ANOTHER model the user
+  // selected. The escaped model is excluded EXPLICITLY (avoidModelIds), never by
+  // inference — the 2026-09-27 field loop re-sent 13 times to the same dead model
+  // because the retry re-pinned the source turn's model. Hard-bounded per session
+  // (FAILOVER_MAX within FAILOVER_WINDOW_MS), only on side-effect-free turns, only
+  // while a selected, unmarked alternative exists, and never after the user
+  // switched to a manual pick. Kill switch: LILY_MODEL_HEALTH_ROUTING=0.
+  const FAILOVER_MAX = 3;
+  const FAILOVER_WINDOW_MS = 10 * 60_000;
+  const failoverBudget = new Map(); // sessionId -> { count, avoid:Set, resetAt }
+  async function maybeFailoverToHealthyPoolModel(sessionId, failure) {
+    try {
+      if (process.env.LILY_MODEL_HEALTH_ROUTING === "0") return false;
+      const availability = require("./model-availability");
+      if (!availability.isModelAttributableFailure(failure?.code)) return false;
+      const route = failure?.modelRoute || null;
+      if (!route || route.mode !== "auto" || !route.selectionId) return false;
+      const failedId = String(route.selectionId);
+      availability.noteModelFailure({ providerID: route.providerId || "", modelID: route.modelId || "" }, { code: failure.code });
+      const catalog = require("./model-selection-catalog");
+      const current = catalog.getSessionModelSelection?.(sessionId);
+      if (current && current.mode !== "auto") return false;
+      const now = Date.now();
+      let budget = failoverBudget.get(sessionId);
+      if (!budget || now > budget.resetAt) budget = { count: 0, avoid: new Set(), resetAt: now + FAILOVER_WINDOW_MS };
+      if (budget.count >= FAILOVER_MAX) { log.info("model failover budget exhausted: session=%s", sessionId); return false; }
+      // We already escaped this model once in the window and a turn landed on it
+      // again: the escape did not hold, so another replay would only repeat it.
+      if (budget.avoid.has(failedId)) { log.warn("model failover stopped: %s failed again after being escaped (session=%s)", failedId, sessionId); return false; }
+      const avoid = new Set([...budget.avoid, failedId]);
+      const pub = catalog.listModelSelectionPublic(sessionId);
+      const pool = new Set(pub?.selection?.autoModelIds || []);
+      const alternatives = (pub?.models || []).filter((m) => pool.has(m.id) && !avoid.has(m.id) && !m.unavailable && m.capabilities?.toolCall !== false);
+      if (!alternatives.length) return false;
+      const state = stateFor(sessionId);
+      if (state.turnId || state.queue.length) return false;
+      if (ctx.runnerPool?.get?.(sessionId)?.isBusy?.()) return false;
+      const { isSideEffectFreeToolRun } = require("./tool-call-rescue");
+      if (!isSideEffectFreeToolRun([...(state.tools?.values?.() || [])])) {
+        log.info("model failover retry skipped (non-read-only tools ran): session=%s", sessionId);
+        return false;
+      }
+      budget.count += 1; budget.avoid = avoid; failoverBudget.set(sessionId, budget);
+      require("./runner-live-config").terminateIdleRunners(ctx.runnerPool);
+      log.info("model failover retry: session=%s from=%s avoid=%s attempt=%d/%d code=%s", sessionId, failedId, [...avoid].join(","), budget.count, FAILOVER_MAX, failure.code);
+      const retried = await retryLastMessage(sessionId, { sourceTurnId: failure?.sourceTurnId || failure?.supersedesTurnId, avoidModelIds: [...avoid] });
+      if (!retried?.ok) { log.warn("model failover retry not sent: %s", retried?.error || "unknown"); return false; }
+      // Emit against the NEW turn so the renderer shows it (an emit before the
+      // retry turn exists is dropped as an orphan).
+      emit(sessionId, "turn.model_failover", { fromModelId: failedId, errorCode: failure.code || "", attempt: budget.count }, retried.turnId ? { turnId: retried.turnId } : undefined);
+      return true;
+    } catch (err) {
+      log.warn("model failover failed open: %s", err?.message || err);
+      return false;
+    }
+  }
+
   async function maybeSelfHealAndRetry(sessionId, failure) {
     if (failure?.retryable === false) return;
     try {
+      if (await maybeFailoverToHealthyPoolModel(sessionId, failure)) return;
       if (typeof attemptRescue === "function" && await attemptRescue(sessionId, failure)) return;
       const { attemptModelSelfHeal, isHealableFailureCode } = require("./model-self-heal");
       if (!isHealableFailureCode(failure?.code)) return;

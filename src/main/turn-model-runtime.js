@@ -28,6 +28,33 @@ function manualOverrideAfterSource(sessionId, receipt) {
   }
 }
 
+// A retry must ESCAPE a model that just failed. The manual override above covers
+// "user switched then pressed 重试"; this covers auto mode and the dead-model case
+// directly: drop the source pin when the pinned model is currently cooling from a
+// recent failure, or (in auto mode) is no longer among the user's selected pool.
+// Routing then picks a healthy model from the CURRENT selection instead of
+// re-pinning to the one that died. Fail-open.
+function pinnedModelUnavailableAfterSource(sessionId, receipt, avoidModelIds = []) {
+  if (!receipt || !sessionId) return false;
+  try {
+    const pinnedId = receipt.selectionId || receipt.selection?.manualModelId || "";
+    if (!pinnedId) return false;
+    if (Array.isArray(avoidModelIds) && avoidModelIds.includes(pinnedId)) return true;
+    if (receipt.selection?.mode === "manual") return false; // a manual pick is never overridden
+    const availability = require("./model-availability");
+    if (availability.healthRoutingEnabled()
+      && availability.getModelAvailability({ providerID: receipt.providerId || "", modelID: receipt.modelId || "" })) return true;
+    const current = catalog.getSessionModelSelection(sessionId);
+    if (current?.mode === "auto") {
+      const pool = Array.isArray(current.autoModelIds) ? current.autoModelIds : [];
+      if (pool.length && !pool.includes(pinnedId)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function resolveTurnModel(opts, text, files, context = {}) {
   let receipt = null;
   if (opts?.sourceTurnId && context.sessionId) {
@@ -37,7 +64,7 @@ function resolveTurnModel(opts, text, files, context = {}) {
     } catch {
       return { ok: false, error: "MODEL_SNAPSHOT_UNAVAILABLE" };
     }
-    if (manualOverrideAfterSource(context.sessionId, receipt)) receipt = null;
+    if (manualOverrideAfterSource(context.sessionId, receipt) || pinnedModelUnavailableAfterSource(context.sessionId, receipt, opts?.avoidModelIds)) receipt = null;
   }
   let retained = 0;
   try {
@@ -48,6 +75,7 @@ function resolveTurnModel(opts, text, files, context = {}) {
   const route = catalog.resolveTurnModel({
     selection: receipt?.selection || opts?.modelSelection || undefined,
     pinnedModelId: receipt?.selectionId || "", text, files, sessionId: context.sessionId,
+    avoidModelIds: Array.isArray(opts?.avoidModelIds) ? opts.avoidModelIds : undefined,
     requirements: { tools: true, contextTokens: retained + promptTokens, allowContextMaintenance: true },
   });
   if (route.ok && receipt?.modelId && (receipt.modelId !== route.model?.modelID

@@ -308,6 +308,19 @@ const recoveredSummary = ec.buildIncompleteTurnSummary(recoveredState, {});
 assert(!recoveredSummary.includes("LILY_LIVE_FILE_READ_REQUIRED"), "recovered mid-turn failures are not listed as reasons");
 assert(recoveredSummary.includes("npm test"), "the unrecovered failure is still reported");
 
+// Card split (2026-09-27): a still-RUNNING tool must not be listed under the
+// "失败的子任务" (failed) label — running is reported separately.
+const runningState = { tools: new Map([
+  ["done_1", { id: "done_1", name: "read", input: { file_path: "a.js" }, status: "done" }],
+  ["run_1", { id: "run_1", name: "bash", input: { command: "Start-Sleep -Seconds 300" }, status: "running" }],
+]) };
+const runningSummary = ec.buildIncompleteTurnSummary(runningState, {});
+const failedIdx = runningSummary.indexOf("失败的子任务");
+const runningIdx = runningSummary.indexOf("运行中未结束的子任务");
+assert(runningIdx !== -1, "a running tool is reported under a running label");
+assert(failedIdx === -1, "no failed label when nothing actually failed");
+assert(runningSummary.includes("Start-Sleep"), "the running command is listed as running, not failed");
+
 // Stalled while a permission card / question was still open: the summary must
 // say so plainly instead of blaming an unfinished tool (2026-07-22 field case:
 // an unattended rm -rf permission card hung until the watchdog killed the turn).

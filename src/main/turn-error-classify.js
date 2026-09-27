@@ -1,5 +1,7 @@
 "use strict";
 
+const { isFailedToolStatus, isDoneToolStatus, partitionToolCompletion } = require("./tool-completion-status");
+
 /**
  * Pure turn-failure classification + failure-text extraction, factored out of
  * turn-orchestrator so it can be unit-tested in isolation (no electron, no
@@ -98,14 +100,6 @@ function collectFailureTextFromState(state = {}) {
   return parts.join("\n");
 }
 
-function isFailedToolStatus(status) {
-  return ["failed", "error", "cancelled", "canceled", "timeout"].includes(String(status || "").toLowerCase());
-}
-
-function isDoneToolStatus(status) {
-  return ["done", "completed", "success"].includes(String(status || "").toLowerCase());
-}
-
 function compactToolLabel(tool = {}) {
   const rawInput = tool.input && typeof tool.input === "object" ? tool.input : {};
   const candidate = rawInput.description
@@ -146,34 +140,24 @@ function compactToolResultPreview(result, limit = 900) {
 
 function collectToolCompletionSnapshot(state = {}) {
   const tools = Array.from(state.tools?.values?.() || []);
-  // A failure the turn RECOVERED from is not a reason the turn is incomplete.
-  // Listing every mid-turn error made a 278-tool turn look broken because of a
-  // single guard rejection 28 minutes before the end. A failed call counts as
-  // recovered once a LATER call of the same tool succeeded.
-  const lastDoneIndex = new Map();
-  tools.forEach((tool, index) => {
-    if (isDoneToolStatus(tool?.status)) lastDoneIndex.set(String(tool?.name || ""), index);
+  // Recovery-aware classification lives in ONE organ (tool-completion-status),
+  // shared with the subagent projection so a recovered retry never reads as a
+  // failed (sub)task. Here we only map each tool to the summary's item shape.
+  const toItem = (tool) => ({
+    id: tool.id || "",
+    name: tool.name || "",
+    label: compactToolLabel(tool),
+    status: tool.status || "running",
+    resultPreview: compactToolResultPreview(tool.result, isDoneToolStatus(tool.status) ? 1200 : 420),
   });
-  const done = [];
-  const failed = [];
-  const running = [];
-  const recovered = [];
-  for (const [index, tool] of tools.entries()) {
-    const item = {
-      id: tool.id || "",
-      name: tool.name || "",
-      label: compactToolLabel(tool),
-      status: tool.status || "running",
-      resultPreview: compactToolResultPreview(tool.result, isDoneToolStatus(tool.status) ? 1200 : 420),
-    };
-    if (isDoneToolStatus(tool.status)) done.push(item);
-    else if (isFailedToolStatus(tool.status)) {
-      const recoveredAt = lastDoneIndex.get(String(tool?.name || ""));
-      if (Number.isInteger(recoveredAt) && recoveredAt > index) recovered.push(item);
-      else failed.push(item);
-    } else running.push(item);
-  }
-  return { done, failed, running, recovered, count: tools.length };
+  const part = partitionToolCompletion(tools);
+  return {
+    done: part.done.map(toItem),
+    failed: part.failed.map(toItem),
+    running: part.running.map(toItem),
+    recovered: part.recovered.map(toItem),
+    count: tools.length,
+  };
 }
 
 function isEmptyAssistantCompletion(payload = {}, normalized = {}, state = {}) {
@@ -242,10 +226,10 @@ function buildIncompleteTurnSummary(state = {}, payload = {}, { hasAnswer = fals
     }
   }
   if (failureText) parts.push(`最后错误/提示：${failureText}`);
-  const failed = listToolLabels("未完成或失败的子任务", [...snapshot.failed, ...snapshot.running], 6, {
-    includeResult: true,
-  });
+  const failed = listToolLabels("失败的子任务", snapshot.failed, 6, { includeResult: true });
   if (failed) parts.push(failed);
+  const running = listToolLabels("运行中未结束的子任务", snapshot.running, 6, { includeResult: true });
+  if (running) parts.push(running);
   // The "已完成的子任务和已保留结果" dump exists so a turn WITHOUT an answer still
   // leaves the user something to salvage. When the answer is already there it is
   // pure noise — a 278-tool turn appended 272 successful reads under its delivery.

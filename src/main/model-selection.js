@@ -33,6 +33,7 @@ function normalizeOption(raw) {
     routing: { quality: nonnegative(raw.routing?.quality), cost: nonnegative(raw.routing?.cost) },
     limits: { contextTokens: nonnegative(raw.limits?.contextTokens), outputTokens: nonnegative(raw.limits?.outputTokens) },
     managed: raw.managed !== false,
+    ...(raw.unavailable && typeof raw.unavailable === "object" ? { unavailable: { ...raw.unavailable } } : {}),
   };
 }
 
@@ -86,7 +87,7 @@ function estimateWorkload(text, files = []) {
  * the signed service catalog, while the router only chooses among those the
  * user allowed. It never invents model IDs or treats a role/skill as a model.
  */
-function routeTurn({ selection, options, fallbackId = "", pinnedModelId = "", requirements = {}, text = "", files = [] } = {}) {
+function routeTurn({ selection, options, fallbackId = "", pinnedModelId = "", requirements = {}, text = "", files = [], avoidModelIds = null } = {}) {
   const available = normalizeOptions(options);
   const normalized = normalizeSelection(selection, available, fallbackId);
   const workload = estimateWorkload(text, files);
@@ -125,6 +126,21 @@ function routeTurn({ selection, options, fallbackId = "", pinnedModelId = "", re
   }
 
   pool = pool.filter(model => supportsTools(model) && (!requirements.nativeVision || model.capabilities.vision));
+  // Health-aware auto routing, strictly inside the user's pool: prefer selected
+  // models with no availability mark (model-availability: a recent failure or
+  // silence) and never one the caller explicitly asked to avoid (the model a
+  // failover is escaping). Never emptied — if every selected model is marked,
+  // the pool is used as-is rather than refusing the turn.
+  const avoid = new Set(Array.isArray(avoidModelIds) ? avoidModelIds.map(String) : []);
+  const healthRouting = process.env.LILY_MODEL_HEALTH_ROUTING !== "0";
+  if (avoid.size || healthRouting) {
+    const healthy = pool.filter(model => !avoid.has(model.id) && !(healthRouting && model.unavailable));
+    if (healthy.length) pool = healthy;
+    else if (avoid.size) {
+      const notAvoided = pool.filter(model => !avoid.has(model.id));
+      if (notAvoided.length) pool = notAvoided;
+    }
+  }
   const baseline = pool.find(model => model.id === fallbackId);
   // Preserve the reasoning baseline BEFORE preferring a modality or a cheaper
   // model. Vision-to-text remains available for a stronger text-only model.

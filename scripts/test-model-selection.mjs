@@ -255,3 +255,46 @@ test("inactive model connections cannot inherit global OpenCode transport overri
   assert.equal(route.execution.env.LILY_GATEWAY_PROVIDER, undefined);
   assert.equal(route.execution.env.VISION_MODEL, "keep-vision");
 });
+
+// --- Health-aware auto routing + strict pool containment (2026-09-27) ---
+{
+  const mark = { reason: "failed", code: "RATE_LIMITED", count: 1, until: Date.now() + 60_000 };
+  const pool = (marked = []) => [
+    { id: "fast", label: "Fast", modelID: "provider-fast", providerID: "lily", ...(marked.includes("fast") ? { unavailable: mark } : {}) },
+    { id: "quality", label: "Quality", modelID: "provider-quality", providerID: "lily", ...(marked.includes("quality") ? { unavailable: mark } : {}) },
+    { id: "other", label: "Other", modelID: "provider-other", providerID: "lily" },
+  ];
+  const sel = normalizeSelection({ mode: "auto", autoModelIds: ["fast", "quality"] }, pool());
+
+  // Strict pool containment: marks never push routing onto an unselected model.
+  const contained = routeTurn({ selection: sel, options: pool(["fast", "quality"]), text: "hi" });
+  assert.ok(["fast", "quality"].includes(contained.model.id), "auto routing stays inside the selected pool");
+
+  // A marked (recently failed) model is skipped for a healthy selected alternative.
+  const base = routeTurn({ selection: sel, options: pool(), text: "hi" }).model.id;
+  const rerouted = routeTurn({ selection: sel, options: pool([base]), text: "hi" });
+  assert.notEqual(rerouted.model.id, base, "a marked model is skipped for a healthy pooled alternative");
+  assert.ok(["fast", "quality"].includes(rerouted.model.id));
+
+  // An explicitly avoided model (the one a failover escapes) is excluded even unmarked.
+  const avoided = routeTurn({ selection: sel, options: pool(), text: "hi", avoidModelIds: [base] });
+  assert.notEqual(avoided.model.id, base, "avoidModelIds excludes the escaped model");
+
+  // Every selected model marked → still routes inside the pool (never refuse).
+  const allMarked = routeTurn({ selection: sel, options: pool(["fast", "quality"]), text: "hi" });
+  assert.ok(allMarked.ok && ["fast", "quality"].includes(allMarked.model.id), "all-marked pool still routes");
+
+  // The fallback baseline (active model) is also skipped when marked.
+  const withBaseline = routeTurn({ selection: sel, options: pool(["quality"]), fallbackId: "quality", text: "hi" });
+  assert.equal(withBaseline.model.id, "fast", "a marked baseline does not pin auto routing");
+
+  // Manual mode ignores marks — the user's exact choice is honored.
+  const man = routeTurn({ selection: normalizeSelection({ mode: "manual", manualModelId: "fast" }, pool()), options: pool(["fast"]), text: "hi" });
+  assert.equal(man.model.id, "fast", "manual selection is honored even when marked");
+
+  // Kill switch restores mark-blind routing.
+  process.env.LILY_MODEL_HEALTH_ROUTING = "0";
+  assert.equal(routeTurn({ selection: sel, options: pool([base]), text: "hi" }).model.id, base, "kill switch ignores marks");
+  delete process.env.LILY_MODEL_HEALTH_ROUTING;
+}
+console.log("model-selection health-aware routing: ok");

@@ -14,6 +14,31 @@ let loading = null;
 let saving = null;
 let scope = "";
 let saveError = false;
+// Display order frozen when the popover opens: selected models first (so a pick
+// scrolled below the fold is never mistaken for "not selected" — the 2026-09-27
+// auto-pool confusion), then the rest in catalog order. Frozen so rows never
+// jump under the pointer while the user toggles them.
+let displayOrder = null; // { auto: [ids], manual: [ids] }
+
+function selectedFirst(models, selectedIds) {
+  const chosen = new Set(selectedIds);
+  return [...models.filter(m => chosen.has(m.id)), ...models.filter(m => !chosen.has(m.id))].map(m => m.id);
+}
+
+function orderedModels(mode) {
+  if (!state.loaded || !state.models.length) return state.models;
+  if (!displayOrder) {
+    displayOrder = {
+      auto: selectedFirst(state.models, state.selection.autoModelIds),
+      manual: selectedFirst(state.models, state.selection.manualModelId ? [state.selection.manualModelId] : []),
+    };
+  }
+  const byId = new Map(state.models.map(m => [m.id, m]));
+  const order = displayOrder[mode] || [];
+  const known = order.filter(id => byId.has(id)).map(id => byId.get(id));
+  const fresh = state.models.filter(m => !order.includes(m.id));
+  return [...known, ...fresh];
+}
 
 function copySelection(selection = state.selection) {
   return {
@@ -72,16 +97,19 @@ function modelOption(model, mode) {
   name.textContent = model.label;
   // Silent-model mark: main flags a model that produced zero bytes within the
   // first-response window. Informational only — the option stays selectable.
-  if (model.unavailable?.reason === "no_response") {
+  if (model.unavailable?.reason === "no_response" || model.unavailable?.reason === "failed") {
+    const silent = model.unavailable.reason === "no_response";
     const badge = document.createElement("span");
     badge.className = "model-selection-option-badge";
-    badge.textContent = t("composer.modelSilentBadge");
+    badge.textContent = t(silent ? "composer.modelSilentBadge" : "composer.modelFailedBadge");
     name.append(badge);
     row.classList.add("is-unavailable");
-    row.title = t("composer.modelSilentTitle", {
-      n: Math.max(1, Number(model.unavailable.count) || 1),
-      s: Math.max(1, Math.round((Number(model.unavailable.silentMs) || 0) / 1000)),
-    });
+    row.title = silent
+      ? t("composer.modelSilentTitle", {
+        n: Math.max(1, Number(model.unavailable.count) || 1),
+        s: Math.max(1, Math.round((Number(model.unavailable.silentMs) || 0) / 1000)),
+      })
+      : t("composer.modelFailedTitle", { n: Math.max(1, Number(model.unavailable.count) || 1) });
   }
   const detail = document.createElement("small");
   detail.textContent = model.modelID;
@@ -103,7 +131,7 @@ function renderPopover() {
   }
   for (const [id, mode] of [["modelSelectionAutoList", "auto"], ["modelSelectionManualList", "manual"]]) {
     const list = $(id);
-    list.replaceChildren(...state.models.map(model => modelOption(model, mode)));
+    list.replaceChildren(...orderedModels(mode).map(model => modelOption(model, mode)));
     list.hidden = (mode === "manual") !== manualMode;
   }
   const empty = $("modelSelectionEmpty");
@@ -134,6 +162,7 @@ async function loadModels(force = false) {
       state.models = Array.isArray(result.models) ? result.models : [];
       state.selection = copySelection(result.selection);
       state.loaded = true;
+      if (force) displayOrder = null;
       saveError = false;
       confirmed = copySelection();
       renderPopover();
@@ -182,6 +211,7 @@ function saveSelection() {
 }
 
 function closePopover(restoreFocus = false) {
+  displayOrder = null;
   $("modelSelectionPopover")?.setAttribute("hidden", "");
   $("modelSelectionBtn")?.setAttribute("aria-expanded", "false");
   if (restoreFocus) $("modelSelectionBtn")?.focus();
@@ -199,6 +229,7 @@ function positionPopover() {
 }
 
 function openPopover() {
+  displayOrder = null;
   const root = $("modelSelectionPopover");
   root.hidden = false;
   $("modelSelectionBtn").setAttribute("aria-expanded", "true");

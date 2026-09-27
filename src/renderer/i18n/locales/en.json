@@ -593,6 +593,8 @@
   "composer.modelNoModels": "The model catalog is temporarily unavailable. Try again shortly.",
   "composer.modelSilentBadge": "no response",
   "composer.modelSilentTitle": "This model gave no response {n} time(s) recently within {s}s; it may be temporarily unavailable",
+  "composer.modelFailedBadge": "recently failed",
+  "composer.modelFailedTitle": "This model failed {n} time(s) recently (rate limit / connection / no output); auto mode prefers your other selected models for now",
   "composer.modelUnavailable": "Model unavailable",
   "composer.modelKeepOne": "Keep at least one model in Auto mode.",
   "composer.modelSelectionSaved": "Your choice is saved and applies from the next turn.",

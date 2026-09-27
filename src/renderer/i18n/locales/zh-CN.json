@@ -590,6 +590,8 @@
   "composer.modelNoModels": "模型目录暂不可用，请稍后重试。",
   "composer.modelSilentBadge": "暂无响应",
   "composer.modelSilentTitle": "该模型最近 {n} 次在 {s} 秒内没有任何响应，可能暂时不可用",
+  "composer.modelFailedBadge": "最近失败",
+  "composer.modelFailedTitle": "该模型最近连续 {n} 次调用失败（限流/连接/无输出），自动模式暂时优先用其它已选模型",
   "composer.modelUnavailable": "模型不可用",
   "composer.modelKeepOne": "自动模式至少保留一个模型。",
   "composer.modelPoolEmpty": "已选模型暂不可用，请重新选择或恢复推荐。",

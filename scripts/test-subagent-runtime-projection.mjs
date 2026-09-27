@@ -161,4 +161,57 @@ assert.equal(
   "projection failure falls open so the parent event loop can continue",
 );
 
+// --- Recovery-aware failure (2026-09-27): a failed tool the subagent RECOVERS
+// from is not a failed subtask, and an authoritative done wins. Mirrors the main
+// turn (fccfb9f3) via the shared tool-completion-status organ.
+{
+  const rec = createSubagentRuntimeProjection({ getState: stateFor });
+  // grep fails (no match), then a later grep of the SAME tool succeeds.
+  rec.applyEvent("parent_rec", { sessionId: "child_rec", events: [
+    { kind: "tool", id: "g1", name: "grep", status: "running", ts: 1 },
+    { kind: "tool", id: "g1", name: "grep", status: "failed", ts: 2 },
+  ] });
+  const afterFail = rec.applyEvent("parent_rec", { sessionId: "child_rec", events: [
+    { kind: "tool", id: "g2", name: "grep", status: "done", result: "hit", ts: 3 },
+  ] });
+  assert.notEqual(afterFail.subagent.status, "failed", "a recovered tool failure is not a subagent failure");
+  assert.notEqual(afterFail.subagent.phase, "failed", "recovered failure does not show phase failed");
+  assert.equal(afterFail.subagent.stats.failedTools, 0, "the recovered grep is not counted as a failed tool");
+}
+{
+  // A subagent that completes (authoritative done via the parent task tool) with
+  // a prior unrecovered tool failure is DONE, not failed.
+  const rec = createSubagentRuntimeProjection({ getState: stateFor });
+  rec.applyEvent("parent_done", { sessionId: "child_done", events: [
+    { kind: "tool", id: "b1", name: "bash", status: "failed", ts: 1 },
+  ] });
+  const done = rec.syncFromTool("parent_done", {
+    id: "task_done", name: "task", status: "done",
+    input: { subagent_type: "general" },
+    metadata: { sessionId: "child_done" },
+  });
+  assert.equal(done.status, "done", "authoritative done wins over a prior tool failure");
+  assert.equal(done.phase, "done", "a completed subagent shows done, not failed");
+}
+{
+  // Guard the OLD bug directly: a lone failed tool, still running, must not
+  // make the subtask read as failed (it has not recovered YET, but it is not done).
+  const rec = createSubagentRuntimeProjection({ getState: stateFor });
+  const live = rec.applyEvent("parent_live", { sessionId: "child_live", events: [
+    { kind: "tool", id: "r1", name: "read", status: "running", ts: 1 },
+  ] });
+  assert.equal(live.subagent.status, "running", "a running subagent stays running");
+}
+{
+  // The precise old-bug guard: a LONE failed tool (no recovery, no authoritative
+  // done/failed) must NOT flip the subagent status to "failed" — only an engine
+  // error or the parent task tool can. The old code set status="failed" here,
+  // which fed the "N 个子任务失败" summary for a subagent that was merely mid-work.
+  const rec = createSubagentRuntimeProjection({ getState: stateFor });
+  const lone = rec.applyEvent("parent_lone", { sessionId: "child_lone", events: [
+    { kind: "tool", id: "x1", name: "bash", status: "failed", ts: 1 },
+  ] });
+  assert.equal(lone.subagent.status, "running", "a lone failed tool does not authoritatively fail the subagent");
+}
+
 console.log("subagent-runtime-projection: ok");

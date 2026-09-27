@@ -1777,7 +1777,8 @@ class TurnOrchestrator {
         runner?.agentResumeId || null,
       );
     }
-Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, result?.suppressParentClosure ? null : result?.parentClosureSource || parentClosureSource, { failed, failure: { ...failure, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
+require("./model-availability").noteTurnModelHealth(state.turnModelRoute, { failed, stalled, code: failure?.code });
+Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, result?.suppressParentClosure ? null : result?.parentClosureSource || parentClosureSource, { failed, failure: { ...failure, sourceTurnId: parentClosureSource.state.turnId, modelRoute: state.turnModelRoute || null }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   /** Post-completion procedure-card distillation. Fail-open and async — the
    *  finished turn's UX can never be affected. The active model's capability
@@ -1828,7 +1829,8 @@ Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParen
       error: raw,
       executionProgressKeys: progressKeys,
     }));
-    Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: { ...classified, sourceTurnId: parentClosureSource.state.turnId }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
+    require("./model-availability").noteTurnModelHealth(state.turnModelRoute, { failed: true, stalled: false, code: classified?.code });
+Promise.resolve(finalizeDone).then(result => this.turnRecoveryRuntime.afterParentClosureTerminal(sessionId, parentClosureSource, { failed: true, failure: { ...classified, sourceTurnId: parentClosureSource.state.turnId, modelRoute: state.turnModelRoute || null }, suppressRecovery: Boolean(result?.suppressParentClosure), selfHeal: (id, error) => this._maybeSelfHealAndRetry(id, error), afterFinalize: (id) => this._afterTurnFinalized(id) }));
   }
   _finalize(sessionId, type, payload = {}) {
     return this.terminalFinalizer.finalize(sessionId, type, payload);

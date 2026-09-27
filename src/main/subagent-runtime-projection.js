@@ -1,5 +1,7 @@
 "use strict";
 
+const { partitionToolCompletion } = require("./tool-completion-status");
+
 const { engineNotice } = require("../shared/engine-notices.mjs");
 
 const { getLogger } = require("./logger");
@@ -67,7 +69,10 @@ function refreshSubagentPhase(item = {}) {
     const status = String(tool.status || "");
     return status === "running" || status === "pending";
   });
-  const failedTools = tools.filter((tool) => String(tool.status || "") === "failed");
+  // Recovery-aware: a failed tool a later same-name call recovered is not a
+  // failure (shared organ). A no-match grep (exit 1) or a first-try error the
+  // subagent then recovers no longer marks the whole subtask failed.
+  const failedTools = partitionToolCompletion(tools).failed;
   const doneTools = tools.filter((tool) => ["done", "completed"].includes(String(tool.status || "")));
   const nestedTasks = tools.filter((tool) => String(tool.name || "").toLowerCase() === "task");
   const pending = (item.pendingPermissions?.length || 0) + (item.pendingQuestions?.length || 0);
@@ -87,8 +92,9 @@ function refreshSubagentPhase(item = {}) {
     pendingPrompts: pending,
   };
   item.phaseDetail = subagentPhaseDetail(current);
-  if (item.status === "failed" || failedTools.length) item.phase = "failed";
+  if (item.status === "failed") item.phase = "failed";
   else if (item.status === "done" || item.status === "completed") item.phase = "done";
+  else if (failedTools.length) item.phase = "failed";
   else if (pending > 0) item.phase = "awaiting_user";
   else if (
     current &&
@@ -265,7 +271,12 @@ function createSubagentRuntimeProjection(options = {}) {
           };
           item.tools.set(id, next);
           item.currentToolId = id;
-          item.status = next.status === "failed" ? "failed" : item.status === "done" ? "done" : "running";
+          // A single child tool failing (no-match grep, a recovered retry) is not
+          // the subagent failing — authoritative failure comes from an engine
+          // error (kind:"error") or the parent task tool (syncFromTool). Mirrors
+          // the main turn (fccfb9f3); effective failure is derived recovery-aware
+          // in refreshSubagentPhase. Tools only move running↔(authoritative done).
+          if (item.status !== "done" && item.status !== "failed") item.status = "running";
         } else if (event.kind === "text") {
           item.textPreview = `${item.textPreview || ""}${event.text || ""}`.slice(-600);
           item.textFull = `${item.textFull || ""}${event.text || ""}`.slice(-8_000);

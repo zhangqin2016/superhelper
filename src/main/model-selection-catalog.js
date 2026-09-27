@@ -120,10 +120,14 @@ function resolveTurnModel(input = {}) {
     const state = catalogState();
     if (state.status === "stale") return { ok: false, error: "MODEL_CATALOG_STALE", model: null };
     selection = migrateSelection(selection, state.aliases);
+    // Availability marks become routing input for AUTO mode (manual/pinned
+    // routing ignores them) — the same annotation the picker already shows.
+    let options = state.models;
+    try { options = require("./model-availability").annotateModelOptions(state.models); } catch { options = state.models; }
     const route = routeTurn({
       ...input, selection,
       pinnedModelId: state.aliases[input.pinnedModelId]?.id || input.pinnedModelId,
-      options: state.models, fallbackId: state.fallbackModelId,
+      options, fallbackId: state.fallbackModelId,
     });
     if (route.ok && route.model) {
       const runtime = state.runtimeModels.find(item => item.modelID === route.model.modelID && item.providerID === route.model.providerID);

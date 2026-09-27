@@ -65,4 +65,51 @@ check("a turn with no source is untouched, and a broken store never breaks the s
   assert.match(src, /manualOverrideAfterSource/);
 });
 
+// --- 2026-09-27: a retry must ESCAPE a failed / deselected / avoided model ---
+const availPath = require.resolve("../src/main/model-availability.js");
+const realAvail = require(availPath);
+let marked = new Set();
+require.cache[availPath] = {
+  id: availPath, filename: availPath, loaded: true,
+  exports: { ...realAvail, getModelAvailability: (m) => (marked.has(`${m.providerID}/${m.modelID}`) ? { reason: "failed" } : null) },
+};
+delete require.cache[require.resolve("../src/main/turn-model-runtime.js")];
+const { resolveTurnModel: resolveH } = require("../src/main/turn-model-runtime.js");
+const autoReceipt = { selectionId: "claude", modelId: "claude", providerId: "p", selection: { mode: "auto", autoModelIds: ["claude", "deepseek"] } };
+const autoManager = { getTurnInputByTurnId: (sessionId, turnId) => (turnId === SOURCE_TURN ? { sessionId, turnId, metadata: { modelRoute: autoReceipt } } : null) };
+const autoCtx = { manager: autoManager, sessionId: "s1" };
+const resolve2 = (opts = {}) => resolveH({ sourceTurnId: SOURCE_TURN, ...opts }, "继续", [], autoCtx);
+
+check("auto: a retry drops the pin when the source model has an availability mark", () => {
+  sessionSelection = { mode: "auto", autoModelIds: ["claude", "deepseek"] };
+  marked = new Set(["p/claude"]);
+  assert.equal(resolve2().input.pinnedModelId, "", "a failed source model is not re-pinned");
+  marked = new Set();
+});
+
+check("an explicitly avoided source model is never re-pinned (failover)", () => {
+  sessionSelection = { mode: "auto", autoModelIds: ["claude", "deepseek"] };
+  const route = resolve2({ avoidModelIds: ["claude"] });
+  assert.equal(route.input.pinnedModelId, "");
+  assert.deepEqual(route.input.avoidModelIds, ["claude"], "the avoid list reaches routing");
+});
+
+check("auto: a retry drops the pin when the source model is no longer selected", () => {
+  sessionSelection = { mode: "auto", autoModelIds: ["deepseek"] };
+  assert.equal(resolve2().input.pinnedModelId, "");
+});
+
+check("auto: a healthy, still-selected source model keeps its pin", () => {
+  sessionSelection = { mode: "auto", autoModelIds: ["claude", "deepseek"] };
+  marked = new Set();
+  assert.equal(resolve2().input.pinnedModelId, "claude");
+});
+
+check("a MANUAL source pick is never overridden by an availability mark", () => {
+  sessionSelection = null;
+  marked = new Set(["company/deepseek-v4-flash-0731", "/company/deepseek-v4-flash-0731"]);
+  assert.equal(resolve().input.pinnedModelId, "company/deepseek-v4-flash-0731");
+  marked = new Set();
+});
+
 console.log(`\n${checks} checks passed (model pin override)`);

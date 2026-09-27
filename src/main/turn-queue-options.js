@@ -27,6 +27,7 @@ function queueDispatchOptions(opts = {}) {
     turnId: typeof opts.turnId === "string" ? opts.turnId : null,
     durableQueueKey: typeof opts.durableQueueKey === "string" ? opts.durableQueueKey : null,
     modelSelection: opts.modelSelection && typeof opts.modelSelection === "object" ? opts.modelSelection : null,
+    avoidModelIds: Array.isArray(opts.avoidModelIds) ? opts.avoidModelIds.map(String).slice(0, 16) : null,
   };
   if (Object.hasOwn(opts, "sourceTurnId")) options.sourceTurnId = opts.sourceTurnId;
   if (opts.sourceTaskCore && typeof opts.sourceTaskCore === "object") options.sourceTaskCore = opts.sourceTaskCore;
