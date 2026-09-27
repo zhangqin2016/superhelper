@@ -301,6 +301,37 @@ function findPythonExecutable(pythonRoot, { windowsLayout = false } = {}) {
   throw new Error(`Python executable not found under ${pythonRoot}`);
 }
 
+// `uv python install <major.minor>` downloads a standalone build from GitHub's
+// python-build-standalone, which is unreachable from some networks. The default
+// uv python dir keeps exactly those standalone builds (relocatable, with the
+// same layout `uv python install` would produce), so reuse one when present —
+// a local copy is instant and deterministic. Falls back to the download.
+function findLocalManagedPython(uvPath, version) {
+  let dir = "";
+  try {
+    dir = runCapture(uvPath, ["python", "dir"]).trim();
+  } catch {
+    return "";
+  }
+  if (!dir || !fs.existsSync(dir)) return "";
+  const prefix = `cpython-${version}`;
+  const candidates = fs
+    .readdirSync(dir)
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => path.join(dir, name))
+    .filter((full) => fs.existsSync(full))
+    .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  for (const candidate of candidates) {
+    try {
+      findPythonExecutable(candidate);
+      return candidate;
+    } catch {
+      /* keep looking */
+    }
+  }
+  return "";
+}
+
 async function installPythonAndVenv(uvPath, platform, runtimeRoot) {
   const pythonRoot = path.join(runtimeRoot, "python");
   const venvDir = path.join(runtimeRoot, "venv");
@@ -308,11 +339,17 @@ async function installPythonAndVenv(uvPath, platform, runtimeRoot) {
   rmrf(venvDir);
   ensureDir(pythonRoot);
 
-  run(uvPath, ["python", "install", PYTHON_VERSION], {
-    env: {
-      UV_PYTHON_INSTALL_DIR: pythonRoot,
-    },
-  });
+  const localPython = findLocalManagedPython(uvPath, PYTHON_VERSION);
+  if (localPython) {
+    run("cp", ["-R", localPython, path.join(pythonRoot, path.basename(localPython))]);
+    log(`reused local standalone python ${path.basename(localPython)}`);
+  } else {
+    run(uvPath, ["python", "install", PYTHON_VERSION], {
+      env: {
+        UV_PYTHON_INSTALL_DIR: pythonRoot,
+      },
+    });
+  }
 
   const pythonExe = findPythonExecutable(pythonRoot);
   log(`python at ${pythonExe}`);
