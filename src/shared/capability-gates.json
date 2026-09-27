@@ -2399,7 +2399,7 @@
     },
     {
       "id": "skill-content-reaches-users",
-      "protects": "A changed skill reaches the machines that installed it. A published version names exactly one pack: the client reinstalls a service-managed skill whose registry pack digest differs from the one it installed, even at the same version; the publisher refuses to upload a different pack under a version the server already holds (--bump-changed raises the patch version, manifest and registry, and restamps); the server answers 409 SKILL_VERSION_IMMUTABLE to the same.",
+      "protects": "A changed skill reaches the machines that installed it. A published version names exactly one pack: the client reinstalls a service-managed skill whose registry pack digest differs from the one it installed, even at the same version; the publisher refuses to upload a different pack under a version the server already holds (--bump-changed raises the patch version, manifest and registry, and restamps); the server answers 409 SKILL_VERSION_IMMUTABLE to the same. A changed pack means changed files: packs zip reproducibly (folder entries pinned like files), and when an archive hash differs from the published one the published pack is fetched and compared by content digest — same files are skipped, never refused or re-uploaded; an unreadable published pack counts as changed.",
       "baseline": "A higher version still updates exactly as before; metadata-only republishes (same digest) stay allowed; user-installed and GitHub-sourced skills keep version rules.",
       "failureFallback": "A pack without a recorded digest (bundled, GitHub) is judged by version alone; a failed reinstall retries on the next sync and never downgrades.",
       "tests": [

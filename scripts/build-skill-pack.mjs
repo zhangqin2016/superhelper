@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
+import { skillPackContentDigest } from "./lib/skill-pack-digest.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_OUT_DIR = path.join(ROOT, "dist", "skill-packs");
@@ -132,6 +133,16 @@ async function buildPack({ skillDir, outDir }) {
   if (!files.some((file) => file.rel === "SKILL.md")) fail("skill pack must include SKILL.md");
 
   const zip = new JSZip();
+  const FIXED_DATE = new Date("2000-01-01T00:00:00.000Z");
+  // Folder entries first, with the same fixed date as the files: JSZip creates
+  // missing ones itself with the build time, which made the same content zip
+  // to a different hash every run.
+  const folders = new Set();
+  for (const file of files) {
+    const parts = file.rel.split("/").slice(0, -1);
+    for (let i = 1; i <= parts.length; i += 1) folders.add(`${parts.slice(0, i).join("/")}/`);
+  }
+  for (const folder of [...folders].sort()) zip.file(folder, null, { dir: true, date: FIXED_DATE, unixPermissions: 0o755 });
   let hasManifest = false;
   for (const file of files) {
     if (file.rel === "skill.manifest.json") {
@@ -160,6 +171,7 @@ async function buildPack({ skillDir, outDir }) {
   const outPath = path.join(path.resolve(ROOT, outDir), fileName);
   fs.writeFileSync(outPath, buffer);
   const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  const contentDigest = await skillPackContentDigest(buffer);
 
   return {
     skillId,
@@ -167,6 +179,7 @@ async function buildPack({ skillDir, outDir }) {
     version,
     artifactPath: outPath,
     sha256,
+    contentDigest,
     sizeBytes: buffer.length,
     fileCount: hasManifest ? files.length : files.length + 1,
   };

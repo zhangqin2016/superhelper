@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { skillPackContentDigest } from "./lib/skill-pack-digest.mjs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -189,6 +190,25 @@ function compareSemver(a, b) {
 function skillVersionConflict(pack, published) {
   if (!published?.sha256 || !pack?.sha256) return false;
   return String(published.sha256).toLowerCase() !== String(pack.sha256).toLowerCase();
+}
+
+/**
+ * The archive hashes differ — do the contents? Packs zipped before folder
+ * entries were pinned carry their build time, so an unchanged skill rebuilt
+ * later hashes differently. Only different files are a changed pack; the
+ * published one is fetched and compared file by file.
+ */
+async function publishedContentMatches(pack, published, fetchImpl = fetch) {
+  if (!pack?.contentDigest || !published?.artifact_url) return false;
+  try {
+    const response = await fetchImpl(published.artifact_url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const digest = await skillPackContentDigest(Buffer.from(await response.arrayBuffer()));
+    return digest === pack.contentDigest;
+  } catch (error) {
+    console.warn(`[publish-local-catalog] could not compare ${pack.skillId}@${pack.version} with the published pack (${error?.message || error}); treating it as changed`);
+    return false;
+  }
 }
 
 function nextPatchVersion(version) {
@@ -766,7 +786,15 @@ async function publishSkills(options, auth) {
     // re-uploading every large pack over a flaky link.
     if (only && !only.has(path.basename(skillDir))) continue;
     const pack = buildPack(skillDir);
-    if (skillVersionConflict(pack, existing.get(`${pack.skillId}@${pack.version}`))) conflicts.push({ skillDir, pack });
+    const published = existing.get(`${pack.skillId}@${pack.version}`);
+    if (skillVersionConflict(pack, published)) {
+      if (await publishedContentMatches(pack, published)) {
+        // Same files, different archive bytes: the published pack stands.
+        pack.sameContentAs = published.sha256;
+      } else {
+        conflicts.push({ skillDir, pack });
+      }
+    }
     built.push({ skillDir, pack });
   }
   if (conflicts.length && !options.bumpChanged) {
@@ -788,7 +816,7 @@ async function publishSkills(options, auth) {
   for (const { skillDir, pack } of built) {
     localSkillIds.add(pack.skillId);
     const current = existing.get(`${pack.skillId}@${pack.version}`);
-    if (!options.force && current?.sha256?.toLowerCase() === pack.sha256.toLowerCase()) {
+    if (!options.force && (current?.sha256?.toLowerCase() === pack.sha256.toLowerCase() || pack.sameContentAs)) {
       console.log(`[publish-local-catalog] skill unchanged: ${pack.skillId}@${pack.version}`);
       results.push({ kind: "skill", id: pack.skillId, version: pack.version, action: "skipped" });
       continue;
@@ -936,6 +964,7 @@ async function publishApps(options, auth) {
 export {
   bumpSkillVersion,
   nextPatchVersion,
+  publishedContentMatches,
   skillVersionConflict,
   WORKSPACE_APP_BUILDERS,
   appUploadFields,

@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import { assert, assertEqual, finish } from "./lib/test-assert.mjs";
 import fs from "node:fs";
 import os from "node:os";
+import crypto from "node:crypto";
 import {
   WORKSPACE_APP_BUILDERS,
   bumpSkillVersion,
   nextPatchVersion,
+  publishedContentMatches,
   skillVersionConflict,
   appUploadFields,
   extendedDescription,
@@ -181,6 +183,43 @@ assertEqual(metadataFields.displayInCatalog, "true", "metadata sync should keep 
 assert(skillVersionConflict({ sha256: "a".repeat(64) }, { sha256: "B".repeat(64) }), "a different pack under a published version is a conflict");
 assert(!skillVersionConflict({ sha256: "a".repeat(64) }, { sha256: "A".repeat(64) }), "the same pack is not");
 assert(!skillVersionConflict({ sha256: "a".repeat(64) }, undefined), "an unpublished version is not");
+
+// An archive hash is not the contents (0.1.189: twelve unchanged packs refused
+// because their folder entries carried the build time).
+{
+  const { spawnSync } = await import("node:child_process");
+  const { skillPackContentDigest } = await import("./lib/skill-pack-digest.mjs");
+  const JSZip = (await import("jszip")).default;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "lily-pack-digest-"));
+  const build = (out) => JSON.parse(spawnSync(process.execPath, ["scripts/build-skill-pack.mjs", "--skill", "resources/skills-catalog/anthropics-docx", "--out", out], { encoding: "utf8" }).stdout);
+  const first = build(path.join(tmp, "a"));
+  await new Promise((resolve) => setTimeout(resolve, 2100));
+  const second = build(path.join(tmp, "b"));
+  assertEqual(first.sha256, second.sha256, "the same skill zips to the same bytes at a different time");
+  // A published pack whose folder entries carry a build time: same files, different archive.
+  const legacy = await JSZip.loadAsync(fs.readFileSync(first.artifactPath));
+  const rezipped = new JSZip();
+  for (const name of Object.keys(legacy.files).sort()) {
+    const entry = legacy.files[name];
+    if (entry.dir) rezipped.file(name, null, { dir: true, date: new Date("2026-09-27T11:02:00Z") });
+    else rezipped.file(name, await entry.async("nodebuffer"), { date: new Date("2000-01-01T00:00:00Z") });
+  }
+  const legacyBytes = await rezipped.generateAsync({ type: "nodebuffer", compression: "DEFLATE", platform: "UNIX" });
+  const served = (bytes) => async () => ({ ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) });
+  const published = { sha256: crypto.createHash("sha256").update(legacyBytes).digest("hex"), artifact_url: "https://example.test/pack.zip" };
+  assert(skillVersionConflict(first, published), "the archive hashes differ");
+  assertEqual(await publishedContentMatches(first, published, served(legacyBytes)), true, "but the files are the same: not a changed pack");
+  const changed = new JSZip();
+  for (const name of Object.keys(legacy.files)) if (!legacy.files[name].dir) changed.file(name, await legacy.files[name].async("nodebuffer"));
+  changed.file("SKILL.md", "changed");
+  const changedBytes = await changed.generateAsync({ type: "nodebuffer" });
+  assertEqual(await publishedContentMatches(first, published, served(changedBytes)), false, "a changed file is a changed pack");
+  const warn = console.warn; console.warn = () => {};
+  assertEqual(await publishedContentMatches(first, published, async () => ({ ok: false, status: 404 })), false, "an unreadable published pack counts as changed — never silently skipped");
+  console.warn = warn;
+  assertEqual(first.contentDigest, await skillPackContentDigest(legacyBytes), "the digest is of the files alone");
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
 assertEqual(nextPatchVersion("1.0.9"), "1.0.10", "patch bump");
 let threw = false; try { nextPatchVersion("1.0"); } catch { threw = true; }
 assert(threw, "a non-semver version is never guessed");
