@@ -36,12 +36,27 @@ const CHECKS = [
   ["node", ["scripts/test-common-runtime-pack-publisher.mjs"]],
 ];
 
+// A test never touches the developer's real user-data store. The shell Lily's
+// own agent runs in hands every subprocess LILY_USER_DATA_DIR = the live
+// directory, so a preflight test would read (or worse, write) the live
+// runtime-pack state instead of its mocked/isolated path. An inherited
+// LILY_USER_DATA_DIR is never passed through; a deliberate one is spelled
+// LILY_TEST_USER_DATA_DIR. Everything else (LILY_RELEASE_TARGET, the online
+// preflight flag, etc.) passes through unchanged.
+function isolatedEnv() {
+  const { LILY_USER_DATA_DIR: _inherited, ...baseEnv } = process.env || {};
+  if (baseEnv.LILY_TEST_USER_DATA_DIR) {
+    baseEnv.LILY_USER_DATA_DIR = baseEnv.LILY_TEST_USER_DATA_DIR;
+  }
+  return baseEnv;
+}
+
 function run(command, args) {
   console.log(`[release-preflight] ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, {
     cwd: ROOT,
     stdio: "inherit",
-    env: process.env,
+    env: isolatedEnv(),
   });
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed`);
