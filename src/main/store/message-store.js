@@ -454,6 +454,9 @@ class MessageStore {
     return conversation;
   }
 
+  /** A turn's recorded tool.started/tool.done events, oldest first. */
+  turnToolEvents(sessionId, turnId) { return this._turnToolEvents(sessionId, turnId); }
+
   // Tool events are never pruned (they are not live-only painting), so a turn
   // with no archived record can still show every step it took.
   _turnToolEvents(sessionId, turnId) {

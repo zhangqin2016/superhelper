@@ -1110,6 +1110,13 @@ class SessionManager {
     return this._store().getRuntimeEvents(session.id, opts);
   }
 
+  getTurnToolEvents(sessionId, turnId) {
+    const session = this._find(sessionId);
+    if (!session) return [];
+    this._ensureImported(session);
+    return this._store().turnToolEvents(session.id, turnId);
+  }
+
   getTurnProjection(sessionId, turnId) {
     const session = this._find(sessionId);
     if (!session) return null;

@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const { outcomeObserved } = require("./store");
+const { launchingRoundProgressKeys } = require("./round-progress");
 
 function wakeTurnId(wakeId) {
   const digest = crypto.createHash("sha256").update(String(wakeId || ""), "utf8").digest("hex");
@@ -141,7 +142,8 @@ function createLongTaskWakeHandler(ctx) {
       const reservation = manager.reserveTaskContinuation(wake.sessionId, {
         sourceTurnId: job.turnId,
         continuationTurnId: wakeTurnId(wake.id),
-        progressKeys: [...new Set(jobs.flatMap(progressKeys))],
+        // A job's successful result, or the launching round's own file writes.
+        progressKeys: [...new Set([...jobs.flatMap(progressKeys), ...launchingRoundProgressKeys(manager, wake.sessionId, job.turnId)])],
       });
       if (!reservation?.ok) {
         return withSiblings({ ok: false, permanent: true, error: reservation?.reason || "TASK_CONTINUATION_BUDGET_UNAVAILABLE" });

@@ -10,7 +10,7 @@ function rounds() {
 }
 
 const DETAILS = {
-  TASK_CONTINUATION_NO_PROGRESS: "未观察到新的跨轮执行进展，为避免重复执行，已暂停自动接续。",
+  TASK_CONTINUATION_NO_PROGRESS: "自动接续链中，这一轮既没有新的成功结果，也没有新的文件改动；为避免反复重跑同一个失败的作业，已暂停自动接续。",
   TASK_CONTINUATION_BUDGET_EXHAUSTED: `本次任务已达到 ${rounds()} 次自动接续上限。`,
   TASK_CONTINUATION_DEADLINE: "本次任务已达到 24 小时自动接续时限。",
   TASK_CONTINUATION_SOURCE_UNAVAILABLE: "暂时无法确认原任务的完整要求，未自动继续执行。",
@@ -45,7 +45,14 @@ function createLongTaskPauseHandler(ctx) {
         ? `\n最近记录的进度：${current}${Number.isFinite(total) && total >= current ? ` / ${total}` : ""}。`
         : "";
       const detail = DETAILS[reason] || "自动接续未能启动，已暂停，未重复派发任务。";
-      const content = `任务接续已暂停\n\n${detail}${progress}\n整个任务尚未验证完成；现有记录已保留。可查看已有结果，并明确发送继续原任务的要求；平台不会自行无限重试。`;
+      // The job's real outcome, since no model turn will read it now.
+      let outcome = "";
+      try {
+        outcome = require("./job-outcome-summary").jobOutcomeSummary(job);
+      } catch (err) {
+        console.warn(`[long-task] job outcome for the pause notice unavailable: ${err?.message || err}`);
+      }
+      const content = `任务接续已暂停\n\n${detail}${progress}${outcome ? `\n\n${outcome}` : ""}\n\n整个任务尚未验证完成；现有记录已保留。可查看已有结果，并明确发送继续原任务的要求；平台不会自行无限重试。`;
       manager.pushMessageTo(wake.sessionId, "assistant", content, null, {
         id,
         // A separate platform record must never replace the source answer or

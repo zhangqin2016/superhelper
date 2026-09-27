@@ -2510,6 +2510,25 @@
         "scripts/test-model-context-window-learning.mjs",
         "scripts/test-opencode-model-config.mjs"
       ]
+    },
+    {
+      "id": "node-shim-argv-compatible",
+      "protects": "Lily's node shim (Electron running as Node) gives scripts Node's argv layout: it preloads node-argv-compat.cjs, which sets process.defaultApp when unset, so yargs' hideBin and commander stop treating the script path as an argument; without the file the shim still runs; a shim written for the same binary by an older Lily is rewritten; release preflight checks the node on PATH with electron-builder's own parser before anything is built.",
+      "baseline": "2026-09-27: every yargs/commander CLI run from Lily's shell misread its arguments; release 0.1.189 attempt 3 failed after building the runtime bundle with 'Unknown argument: …/.bin/electron-builder'.",
+      "failureFallback": "A missing or unwritable compat file leaves the previous plain Electron-as-Node shim (the write failure is logged); the preflight check only reads. Mutation-verified: removing --require makes a strict yargs CLI fail under a real Electron shim.",
+      "tests": [
+        "scripts/test-runtime-node.cjs",
+        "scripts/test-job-wake-round-progress.mjs"
+      ]
+    },
+    {
+      "id": "job-wake-fixing-round",
+      "protects": "A job wake inside a continuation chain counts as progress either a successful job result or the launching round's own completed file writes (tool-semantics file_write, content-fingerprinted), so a round that fixed something earns a look at its relaunch's outcome while a round that only relaunched — or repeats a seen edit — does not. A paused chain's notice states the job's terminal state, exit code and last error lines, redacted by every value of the job's launch environment and credential-shaped strings, without a model turn.",
+      "baseline": "2026-09-27: a failed relaunch after a real fix was refused as no progress and its failure was read by no one; the pause notice said only 'no new progress'.",
+      "failureFallback": "Unreadable tool events or logs fall back to job outcomes alone and a notice without the outcome block (logged); the chain's round/deadline caps are unchanged. Mutation-verified: counting every tool, ignoring the launching round, dropping the outcome, skipping launch-env redaction and counting failed writes each fail a named test.",
+      "tests": [
+        "scripts/test-job-wake-round-progress.mjs"
+      ]
     }
   ]
 }

@@ -25,6 +25,8 @@ function releaseMatrixArgs() {
 }
 
 const CHECKS = [
+  // First and cheap: electron-builder must be able to read its own arguments.
+  ["node", ["scripts/check-node-argv.mjs"]],
   ["node", releaseMatrixArgs()],
   ["node", ["scripts/test-runtime-packs.mjs"]],
   ["node", ["scripts/test-spawn-env-runtime.mjs"]],
