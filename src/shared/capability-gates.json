@@ -2477,6 +2477,24 @@
         "scripts/test-auto-model-failover.mjs",
         "scripts/test-model-picker-order.mjs"
       ]
+    },
+    {
+      "id": "current-request-reaches-model",
+      "protects": "The message the model is being asked to answer (the latest user message with non-synthetic text) reaches it whole: the context-window guard's budget pass never excerpts it, so a question layered between platform context and the attachment note cannot be cut out by head+tail trimming.",
+      "baseline": "2026-09-27 field case: a legal knowledge-base question in a long release session over the guard budget was trimmed to head+tail; the model reasoned there was no user request and resumed the previous task.",
+      "failureFallback": "History and this turn's tool outputs are still bounded; the per-part hard cap still applies to a pathological single message, so the deadlock guard is unchanged. Kill switch LILY_CONTEXT_GUARD=0 unchanged. Mutation-verified: removing the exemption fails the field-shape test.",
+      "tests": [
+        "scripts/test-context-window-guard.mjs"
+      ]
+    },
+    {
+      "id": "tests-never-touch-live-userdata",
+      "protects": "The test runner never passes an inherited LILY_USER_DATA_DIR (Lily's agent shell carries the live directory): Node tests run without it, Electron tests always get a throwaway directory, a deliberate one is LILY_TEST_USER_DATA_DIR.",
+      "baseline": "2026-09-27: a suite run from a Lily conversation wrote example.com fixture windows into the live model-context-windows.json because the runner skipped isolation whenever LILY_USER_DATA_DIR was set.",
+      "failureFallback": "Without an inherited variable Node commands run with an unchanged environment; if a temp directory cannot be made an Electron test gets a fixed temp path and the failure is printed. Mutation-verified: the old runner fails the test.",
+      "tests": [
+        "scripts/test-run-all-tests-electron.mjs"
+      ]
     }
   ]
 }

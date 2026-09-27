@@ -56,26 +56,32 @@ const commands = (chainName ? chainCommands(chainName) : discoverCommands()).map
 const failures = [];
 const startedAt = Date.now();
 
-// A plain Node test cannot reach the real user-data store: config.js throws
-// without Electron unless the test stubs its own paths. A real Electron
-// harness can — `app.getPath("userData")` is the developer's live directory,
-// and on 2026-08-02 one wrote fixture rows into it that stayed enabled for
-// seven weeks. So every Electron command gets its own throwaway directory;
-// Node commands and their self-owned fixtures are left exactly as they are.
-function isolatedElectronEnv(command) {
-  const baseEnv = process.env || {};
-  if (!command.startsWith("npx electron") || baseEnv.LILY_USER_DATA_DIR) return undefined;
-  if (typeof mkdtempSync !== "function" || typeof tmpdir !== "function") return undefined;
+// A test never touches the developer's real user-data store. A real Electron
+// harness would reach it through `app.getPath("userData")` — on 2026-08-02 one
+// wrote fixture rows into it that stayed enabled for seven weeks — so every
+// Electron command gets its own throwaway directory. A plain Node test cannot
+// reach it (config.js throws without a base path) unless the shell hands one
+// over, and the shell Lily's own agent runs in does: spawn-env gives every
+// agent subprocess LILY_USER_DATA_DIR = the live directory. On 2026-09-27 a
+// suite run from a Lily conversation filled the live model-context-windows.json
+// with example.com fixture windows. So an inherited LILY_USER_DATA_DIR is never
+// passed through; a deliberate one is spelled LILY_TEST_USER_DATA_DIR.
+function isolatedEnv(command) {
+  const { LILY_USER_DATA_DIR: inherited, ...baseEnv } = process.env || {};
+  if (baseEnv.LILY_TEST_USER_DATA_DIR) return { ...baseEnv, LILY_USER_DATA_DIR: baseEnv.LILY_TEST_USER_DATA_DIR };
+  if (!command.startsWith("npx electron")) return inherited ? baseEnv : undefined;
   try {
     return { ...baseEnv, LILY_USER_DATA_DIR: mkdtempSync(path.join(tmpdir(), "lily-test-userdata-")) };
-  } catch {
-    return undefined;
+  } catch (error) {
+    // Without its own directory an Electron test would write the live one.
+    console.error(`[run-all-tests] cannot isolate user data for ${command}: ${error?.message || error}`);
+    return { ...baseEnv, LILY_USER_DATA_DIR: path.join(tmpdir(), "lily-test-userdata-fallback") };
   }
 }
 
 for (const command of commands) {
   const t0 = Date.now();
-  const env = isolatedElectronEnv(command);
+  const env = isolatedEnv(command);
   try {
     // Force the direct shell to stop at the deadline. This is NOT a process-tree
     // kill: npx/Electron descendants may outlive it and need scoped diagnosis.

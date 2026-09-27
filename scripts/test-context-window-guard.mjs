@@ -94,6 +94,39 @@ const MARKER = "content trimmed to fit the model context window";
   process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
 }
 
+// --- the current request is never excerpted to make room (field 2026-09-27) --
+// A new question arrived in a long session over budget. Lily's layered message
+// is platform context (~5K) + constraints (~3K) + the question + attachment
+// note; head+tail trimming kept both ends and dropped the question, and the
+// model — "there is no user request" — resumed the previous task.
+{
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "20000";
+  const g = await (await import(pluginUrl + "?request")).ContextWindowGuardPlugin({});
+  const t = g["experimental.chat.messages.transform"];
+  const question = "如果我想做个agent使用这个文件作为知识库 问答的时候能够精准找到我想要的法律条款";
+  const layered = `<lily_layer title="platform_context">${"c".repeat(5_000)}</lily_layer>`
+    + `<lily_layer title="execution_constraints">${"e".repeat(3_100)}</lily_layer>`
+    + `<lily_layer title="user_original_request">${question}</lily_layer>`
+    + `[Attachment index]${"a".repeat(1_100)}`;
+  const history = Array.from({ length: 30 }, (_, i) => ({ info: { role: "assistant" }, parts: [{ type: "tool", tool: "bash", callID: `h${i}`, state: { status: "completed", input: { command: "ls" }, output: "H".repeat(8_000) } }] }));
+  const msgs = [
+    { info: { role: "user" }, parts: [{ type: "text", text: "写一篇 release doc" }] },
+    ...history,
+    { info: { role: "user" }, parts: [{ type: "text", text: layered }, { type: "text", text: "synthetic note", synthetic: true }] },
+    { info: { role: "assistant" }, parts: [{ type: "tool", tool: "read", callID: "now", state: { status: "completed", input: { path: "/x" }, output: "R".repeat(8_000) } }] },
+  ];
+  await t({}, { messages: msgs });
+  assert.equal(msgs[31].parts[0].text, layered, "the message being answered reaches the model whole");
+  assert.ok(history.every((m) => m.parts[0].state.output.length < 8_000), "history is still bounded to make room");
+  assert.ok(msgs[32].parts[0].state.output.length < 8_000, "and so is this turn's own tool output — it can be re-read");
+  // An engine-synthetic user message after it does not take its place.
+  const tail = [...msgs.slice(0, 32).map((m) => m), { info: { role: "user" }, parts: [{ type: "text", text: "Continue", synthetic: true }] }];
+  tail[31] = { info: { role: "user" }, parts: [{ type: "text", text: layered }] };
+  await t({}, { messages: tail });
+  assert.equal(tail[31].parts[0].text, layered, "a synthetic engine message does not displace the user's request");
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
+}
+
 // --- fail-open + kill switch ------------------------------------------------
 {
   process.env.LILY_CONTEXT_TOKEN_BUDGET = "12000";

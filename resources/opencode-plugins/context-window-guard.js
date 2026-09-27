@@ -123,13 +123,29 @@ function stringSlots(part) {
   return slots;
 }
 
+// The message the model is being asked to answer: the latest user message that
+// carries text the user (or Lily for them) wrote — not an engine-synthetic one.
+function currentRequestIndex(messages) {
+  let fallback = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.info?.role !== "user" || !Array.isArray(message.parts)) continue;
+    if (fallback < 0) fallback = i;
+    if (message.parts.some((part) => part?.type === "text" && !part.synthetic && String(part.text || "").trim())) return i;
+  }
+  return fallback;
+}
+
 function collectSlots(messages) {
   const slots = [];
-  for (const message of messages) {
+  const request = currentRequestIndex(messages);
+  messages.forEach((message, index) => {
     const parts = message && Array.isArray(message.parts) ? message.parts : null;
-    if (!parts) continue;
-    for (const part of parts) slots.push(...stringSlots(part));
-  }
+    if (!parts) return;
+    for (const part of parts) {
+      for (const slot of stringSlots(part)) slots.push(index === request ? { ...slot, request: true } : slot);
+    }
+  });
   return slots;
 }
 
@@ -152,11 +168,18 @@ export const ContextWindowGuardPlugin = async () => ({
 
       // Pass 2: if the whole request still exceeds the token budget (many medium
       // parts), tighten the cap largest-first until under budget or a floor.
+      // The current request is history's reader, not history: it is never
+      // excerpted to make room. Field case 2026-09-27: a new question arrived
+      // in a long session over budget; its 10,870-char message was cut to head
+      // + tail, which kept the platform context and the attachment note and
+      // dropped the question in the middle, and the model — reasoning "there
+      // is no user request" — resumed the previous task instead.
       let total = slots.reduce((sum, s) => sum + estimateTokens(s.get()), 0);
       let cap = PART_MAX_CHARS;
       for (let i = 0; i < 6 && total > TOKEN_BUDGET; i += 1) {
         cap = Math.max(2_000, Math.floor(cap / 2));
         const ranked = slots
+          .filter((s) => !s.request)
           .map((s) => ({ s, len: s.get().length }))
           .sort((a, b) => b.len - a.len);
         for (const { s, len } of ranked) {
