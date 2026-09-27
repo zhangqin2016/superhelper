@@ -146,7 +146,19 @@ function createOpencodeHistoryRecovery(options = {}) {
     if (!isCurrent()) return payload;
     if (latest?.error) {
       const error = latest.error;
-      return { ...payload, code: 1, error: String(error.data?.message || error.message || error.name || "Engine history contains a failed response"), engineMessageId: latest.engineMessageId };
+      // Keep the error ENVELOPE (name / HTTP status / retryability), not just its
+      // message: providers often send message "Error" for a 429, and the status
+      // is the only signal the classifier can act on. Never the response body.
+      const data = error.data && typeof error.data === "object" ? error.data : {};
+      const engineError = {
+        name: typeof error.name === "string" ? error.name : "",
+        data: {
+          message: typeof data.message === "string" ? data.message.slice(0, 2000) : "",
+          ...(Number.isInteger(data.statusCode) ? { statusCode: data.statusCode } : {}),
+          ...(typeof data.isRetryable === "boolean" ? { isRetryable: data.isRetryable } : {}),
+        },
+      };
+      return { ...payload, code: 1, error: String(data.message || error.message || error.name || "Engine history contains a failed response"), engineError, engineMessageId: latest.engineMessageId };
     }
     if (latest && (!latest.output?.trim() || latest.finish === "tool-calls")) {
       return { ...payload, stalled: true, engineMessageId: latest.engineMessageId };

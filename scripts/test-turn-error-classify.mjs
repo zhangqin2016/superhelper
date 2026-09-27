@@ -321,6 +321,14 @@ assert(runningIdx !== -1, "a running tool is reported under a running label");
 assert(failedIdx === -1, "no failed label when nothing actually failed");
 assert(runningSummary.includes("Start-Sleep"), "the running command is listed as running, not failed");
 
+// 2026-09-27: a provider 429 whose message is literally "Error" is classified by
+// its HTTP status from the engine error envelope, not shown as an opaque "Error".
+const rl = ec.classifyTurnFailure({ code: 1, error: "Error", engineError: { name: "APIError", data: { message: "Error", statusCode: 429, isRetryable: true } } }, { text: "" }, { tools: new Map() });
+assert(rl.code === "RATE_LIMITED", `429 envelope classifies as RATE_LIMITED (got ${rl.code})`);
+assert(!/returned failure: Error/.test(rl.message), "no opaque 'Error' message for a rate limit");
+const noEnv = ec.classifyTurnFailure({ code: 1, error: "Error" }, { text: "" }, { tools: new Map() });
+assert(noEnv.code === "ENGINE_RESULT_FAILED", "without an envelope the generic engine failure is unchanged");
+
 // Stalled while a permission card / question was still open: the summary must
 // say so plainly instead of blaming an unfinished tool (2026-07-22 field case:
 // an unattended rm -rf permission card hung until the watchdog killed the turn).

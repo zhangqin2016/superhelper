@@ -145,6 +145,20 @@ try {
   assert.equal(synced.resultFromOfficialHistory, true);
   assert.deepEqual(supplemental, [{ official: "final answer", missing: " answer" }]);
 
+  // 2026-09-27: a failed history message keeps its error ENVELOPE (status/name)
+  // so a 429 whose message is "Error" is still classifiable — never the body.
+  const failedRecovery = createOpencodeHistoryRecovery({
+    getServer: () => ({ lastPromptText: "question", messages: async () => ({ data: [
+      messages[1],
+      { info: { id: "err", role: "assistant", time: { created: 1_200, completed: 1_300 },
+        error: { name: "APIError", data: { message: "Error", statusCode: 429, isRetryable: true, responseBody: "SECRET-BODY", responseHeaders: { a: "b" } } } }, parts: [] },
+    ] }) }),
+    getTurnStartedAt: () => turnStartedAt,
+  });
+  const failedSync = await failedRecovery.syncFinalOutput({ code: 0, output: "" });
+  assert.equal(failedSync.code, 1);
+  assert.deepEqual(failedSync.engineError, { name: "APIError", data: { message: "Error", statusCode: 429, isRetryable: true } }, "envelope kept; body and headers dropped");
+
   let parentReads = 0;
   let parent = { info: { id: "user", sessionID: "engine", role: "user", time: { created: 1100 } },
     parts: [{ type: "text", text: "question" }] };

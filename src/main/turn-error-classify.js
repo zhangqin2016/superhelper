@@ -385,6 +385,15 @@ function classifyTurnFailure(payload, normalized, state) {
     };
   }
   if (payload?.code && payload.code !== 0) {
+    // The engine's structured error (history recovery) carries the HTTP status
+    // the bare message loses ("Error" for a 429). Let the one runner-failure
+    // classifier read it before falling back to the generic engine failure.
+    if (payload.engineError && typeof payload.engineError === "object") {
+      try {
+        const { classified } = require("./runner-failure").normalizeRunnerFailure(rawError, payload.engineError);
+        if (classified?.code && classified.code !== "ENGINE_ERROR") return classified;
+      } catch { /* fall through to the generic engine failure */ }
+    }
     return {
       code: payload?.source === "process.close" ? "ENGINE_PROCESS_EXITED" : "ENGINE_RESULT_FAILED",
       message: rawError
