@@ -83,13 +83,13 @@ const install = (answer) => installLegalKnowledgePack({ rootDir: root, serviceCl
   check("offline use of an installed pack is bounded by the licence's own end");
 }
 
-// ------------------------------------------------- the turn still answers
+// ------------------------------------------- the legal pack is service-backed
 {
   const { prepareLegalKnowledgeForTurn, knowledgeUnavailable, knowledgeWarmups } = require("../src/main/legal-kb/turn-preparation.js");
   const ctx = {
     legalKnowledgeManager: {
-      status: () => ({ ok: true, installed: true, usable: false, unusableCode: "NOT_ENTITLED" }),
-      ensureLegalKnowledgePack: async () => ({ ok: false, error: "NOT_ENTITLED" }),
+      status: () => ({ ok: true, installed: false, usable: false, unusableCode: "LEGAL_KB_NOT_READY" }),
+      ensureLegalKnowledgePack: async () => ({ ok: false, error: "LEGAL_KB_NOT_READY" }),
     },
     sessionManager: { resolveTurnOwnerScope: () => ({ ok: false }) },
   };
@@ -99,11 +99,17 @@ const install = (answer) => installLegalKnowledgePack({ rootDir: root, serviceCl
   const warn = console.warn; console.warn = () => {};
   try {
     const result = await prepareLegalKnowledgeForTurn({ ctx, session: { id: "s" }, state: {}, options: {}, log: { warn() {} } });
-    assert.deepEqual([result.ready, result.error], [false, "KNOWLEDGE_PACK_NOT_ENTITLED"]);
-    assert.match(knowledgeUnavailable(result).notice, /未获授权/, "the user is told it is an entitlement, not a network, problem");
+    assert.deepEqual(result.packs, [{ packId: "legal-cn-enterprise", ready: true, source: "service" }],
+      "the legal corpus is served remotely: no local install and no local entitlement gate");
+    assert.deepEqual([result.required, result.ready], [true, true]);
+    assert.equal(knowledgeUnavailable(result), null, "nothing to warn about; the tool call is the availability check");
     await knowledgeWarmups();
+
+    // The unavailable copy is unchanged for knowledge that truly cannot be prepared.
+    const refused = { required: true, ready: false, error: "KNOWLEDGE_PACK_NOT_ENTITLED", failedPackId: "legal-cn-enterprise" };
+    assert.match(knowledgeUnavailable(refused).notice, /未获授权/, "an entitlement refusal is still reported as one");
   } finally { agentPolicy.resolveSessionAgentPolicy = original; console.warn = warn; }
-  check("a refused entitlement still never fails the turn, and says why");
+  check("a service-backed legal pack needs no local install; the entitlement copy is unchanged");
 }
 
 fs.rmSync(root, { recursive: true, force: true });

@@ -21,7 +21,7 @@ const PACKS = Object.freeze({
       en: "China enterprise legal knowledge pack",
       ar: "حزمة المعرفة القانونية للشركات في الصين",
     }),
-    tools: Object.freeze(["lily_legal_search"]),
+    tools: Object.freeze(["lily_legal_search", "lily_legal_article"]),
     // Lazy: the legal module pulls the installer + search index.
     manager: () => require("../legal-kb/legal-kb-manager"),
     ensure(options = {}) {

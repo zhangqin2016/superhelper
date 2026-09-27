@@ -135,7 +135,7 @@ try {
     assert.equal(result.receipt.knowledge.preparedAt, "first_turn");
     // tools → advisory mcpAllow recorded, no cold disallow
     assert.equal(result.receipt.tools.status, "applied");
-    assert.deepEqual(result.receipt.tools.mcpAllow, ["lily_legal_search"]);
+    assert.deepEqual(result.receipt.tools.mcpAllow, ["lily_legal_search", "lily_legal_article"]);
     assert.equal(result.receipt.tools.cold, false);
     assert.equal(result.receipt.model.status, "skipped");
     assert.equal(result.receipt.coldApplied, false);

@@ -163,15 +163,37 @@ const STATIC_TOOL_DEFINITIONS = [
     requiredSkillIds: [],
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
-    description: "Search the authorized local China legal knowledge pack and return cited law/article evidence. Use this before legal conclusions; results include version, verification, and source metadata.",
+    description: "Search the authorized China legal corpus (served, nothing installed locally) and return articles with their full text, the law's validity (效力) and a citation. It finds the governing law first, then the article inside it: name the law(s) you judge to govern in `laws`, and write `query` in the statute's own terms (e.g. 裁减人员 rather than 裁员, 解除劳动合同 rather than 辞退). Search again with other terms or laws when the articles do not answer. Cite only what it returns.",
     inputSchema: {
-      query: z.string().min(1).max(240).describe("legal issue, fact pattern, law title, or article to search"),
-      topK: z.number().int().min(1).max(20).optional().describe("maximum evidence results"),
+      query: z.string().min(1).max(240).describe("the legal issue in statutory terms, or a law + article such as 劳动合同法第三十九条"),
+      laws: z.array(z.string().min(1).max(60)).max(5).optional()
+        .describe("the law(s) you judge to govern, e.g. [\"劳动合同法\"]; the corpus still decides what exists and is current"),
+      topK: z.number().int().min(1).max(20).optional().describe("maximum articles"),
+      includeHistorical: z.boolean().optional().describe("also return repealed or superseded law (for questions about the past)"),
     },
     annotations: { readOnlyHint: true, evidenceKind: "knowledge_base" },
-    handler: async ({ query, topK }, _context, deps = {}) => {
-      const manager = deps.legalKnowledgeManager || require("../legal-kb/legal-kb-manager");
-      return manager.search({ query, topK }, deps.legalKnowledgeOptions || {});
+    handler: async ({ query, laws, topK, includeHistorical }, _context, deps = {}) => {
+      const remote = deps.legalKnowledgeRemote || require("../legal-kb/legal-kb-remote");
+      return remote.searchLegalKnowledgeRemote({ query, laws, topK, includeHistorical, serviceFetch: deps.serviceFetch });
+    },
+  },
+  {
+    id: "lily_legal_article",
+    name: "lily_legal_article",
+    group: "legal-kb",
+    requiredSkillIds: [],
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+    description: "Fetch one article's complete text from the authorized China legal corpus — by the `id` a lily_legal_search result carries, or by law and article number. Use it before quoting an article whose search text was truncated, or to read an article the question names.",
+    inputSchema: {
+      id: z.string().min(1).max(400).optional().describe("a result id from lily_legal_search"),
+      law: z.string().min(1).max(60).optional().describe("law name, e.g. 劳动合同法"),
+      article: z.string().min(1).max(40).optional().describe("article number, e.g. 第三十九条 or 第39条"),
+    },
+    annotations: { readOnlyHint: true, evidenceKind: "knowledge_base" },
+    handler: async ({ id, law, article }, _context, deps = {}) => {
+      const remote = deps.legalKnowledgeRemote || require("../legal-kb/legal-kb-remote");
+      return remote.getLegalArticleRemote({ id, law, article, serviceFetch: deps.serviceFetch });
     },
   },
   {

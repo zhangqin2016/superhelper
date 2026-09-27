@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "../../db.js";
-import { planRank } from "../../services/entitlements.js";
+import { resolveViewerEntitlement } from "../../services/legal-kb-access.js";
 import { requireSignedDeviceRequest } from "../../services/device-identity.js";
 import { getQiniuConfig } from "../../services/app-settings.js";
 import { qiniuPrivateDownloadUrlForUrl } from "../../services/qiniu-download.js";
@@ -15,27 +15,6 @@ const requestSchema = z.object({
   deviceId: z.string().min(6).max(120),
   characterId: z.literal(LEGAL_KB_CHARACTER_ID),
 });
-
-// The best active plan on this device, and when the licence carrying it ends:
-// the client uses that as the bound on offline use of an installed pack.
-async function resolveViewerEntitlement(deviceId) {
-  const rows = await db.selectFrom("license_devices")
-    .innerJoin("licenses", "licenses.id", "license_devices.license_id")
-    .select(["licenses.plan as plan", "licenses.expires_at as expires_at"])
-    .where("license_devices.device_id", "=", deviceId)
-    .where("license_devices.status", "=", "active")
-    .where("licenses.status", "=", "active").execute();
-  const now = Date.now();
-  return rows.reduce((best, row) => {
-    const ends = new Date(row.expires_at).getTime();
-    if (ends <= now) return best;
-    const plan = String(row.plan || "free");
-    if (planRank(plan) > planRank(best.plan) || (planRank(plan) === planRank(best.plan) && ends > (best.until || 0))) {
-      return { plan, until: ends };
-    }
-    return best;
-  }, { plan: "free", until: 0 });
-}
 
 export function registerPublicLegalKnowledgePackRoutes(app) {
   app.post("/api/legal-kb/artifact", {

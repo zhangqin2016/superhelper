@@ -2529,6 +2529,19 @@
       "tests": [
         "scripts/test-job-wake-round-progress.mjs"
       ]
+    },
+    {
+      "id": "legal-served-retrieval",
+      "protects": "The official legal agent's corpus is served: the retrieval gateway finds the governing law (named in the question, named by the agent in `laws`, or voted by the V2 lanes with national law above local regulation and repealed law excluded), then ranks that law's current articles, returning corpus full text; the API admits signature, then the pack entitlement, then a per-device quota, and passes only whitelisted fields with an audit line that holds no question text; the gateway serves the managed runtime's active release per request; the client retires the local pack an earlier version downloaded.",
+      "baseline": "2026-09-28 production measurement on 25 plain-language questions: V2 lexical 7/25 and semantic 8/25 at recall@5, gateway 21/25 without a law hint and 24/25 with one. The first served version checked only the device signature and passed the V2 body verbatim.",
+      "failureFallback": "A V2 outage costs the vote and validity (reported 'unknown'), never the corpus answer; an unreadable active pointer keeps the open release; the tool returns ok:false with a reason on refusal, quota or outage; retirement touches only Lily's legal-kb directory. Mutation-verified: eleven mutations each fail a named test.",
+      "tests": [
+        "scripts/test-legal-retrieval-gateway.mjs",
+        "scripts/test-legal-search-route.mjs",
+        "scripts/test-legal-kb-remote.mjs",
+        "scripts/test-legal-kb-tool.mjs",
+        "scripts/test-agent-knowledge-preparation.mjs"
+      ]
     }
   ]
 }

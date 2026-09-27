@@ -1,0 +1,37 @@
+[Unit]
+Description=Lily legal retrieval gateway (governing law, then article; loopback only)
+After=network.target lily-legal-kb.service
+Wants=lily-legal-kb.service
+
+[Service]
+Type=simple
+User=lilykb
+Group=lilykb
+WorkingDirectory=/opt/lily-legal-kb/gateway
+Environment=LILY_LEGAL_RUNTIME_DIR=/opt/lily-legal-kb/runtime
+Environment=LILY_LEGAL_V2_URL=http://127.0.0.1:8790
+Environment=LILY_LEGAL_GATEWAY_PORT=8791
+Environment=LILY_LEGAL_ALIASES=/opt/lily-legal-kb/legal-cn-enterprise-server-V27/service/tools-v2/lib/query/aliases.cjs
+ExecStart=/usr/bin/node /opt/lily-legal-kb/gateway/server.cjs
+Restart=on-failure
+RestartSec=3
+# It only reads the corpus and talks to loopback.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadOnlyPaths=/opt/lily-legal-kb
+# This host also runs the Lily API and its database: a soft ceiling (page
+# cache beyond it is reclaimed first), a hard one only against runaway growth.
+MemoryHigh=1G
+MemoryMax=2G
+CPUWeight=50
+IOWeight=50
+
+[Install]
+WantedBy=multi-user.target

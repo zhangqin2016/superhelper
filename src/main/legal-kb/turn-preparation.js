@@ -27,6 +27,13 @@ const { LEGAL_CHARACTER_ID, requiresLegalKnowledge } = require("./legal-kb-chara
 
 const LEGAL_PACK_ID = "legal-cn-enterprise";
 
+// Packs whose corpus lives on the SERVER, not on this machine. The legal pack
+// moved there: `lily_legal_search` now reads the sealed service (see
+// legal-kb-remote.js), so there is nothing to install, index or warm locally.
+// Marking it ready is not a claim the service is up — the tool call is the check,
+// and a failed call is what tells the model the evidence is missing.
+const SERVICE_BACKED_PACKS = new Set([LEGAL_PACK_ID]);
+
 function characterRevisionOf({ ctx, session, state }) {
   const snapshot = state?.characterWorldsSnapshot;
   if (snapshot?.snapshotStatus !== "ready" || snapshot.mode !== "character" || !snapshot.characterRevisionId) return null;
@@ -99,11 +106,16 @@ async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log 
   if (!packs.size) return { required: false, ready: true, packs: [] };
   const ids = [...packs];
   const status = ids.map((packId) => {
+    // Remote corpus: no local install/index, usable at once.
+    if (SERVICE_BACKED_PACKS.has(packId)) return { packId, ready: true, source: "service" };
     const local = localPackState(packId, ctx.legalKnowledgeManager);
     const error = local === "unknown" ? "KNOWLEDGE_PACK_UNKNOWN" : local === "denied" ? "KNOWLEDGE_PACK_NOT_ENTITLED" : undefined;
     return { packId, ready: local === "ready", ...(error ? { error } : {}) };
   });
-  warmInBackground(ids, { manager: ctx.legalKnowledgeManager, onProgress: options?.onProgress, log });
+  const localIds = ids.filter((packId) => !SERVICE_BACKED_PACKS.has(packId));
+  // The served pack replaces a local copy an earlier version downloaded.
+  if (localIds.length !== ids.length) void require("./local-pack-retirement").retireLocalLegalPack({ log });
+  if (localIds.length) warmInBackground(localIds, { manager: ctx.legalKnowledgeManager, onProgress: options?.onProgress, log });
   const missing = status.find((item) => !item.ready);
   return {
     required: true,

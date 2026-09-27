@@ -16,7 +16,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { MessageStore } = require("../src/main/store/message-store.js");
 const { ensureKnowledgePacks, getKnowledgePack, knowledgePackLabel, listKnowledgePacks } = require("../src/main/agents/knowledge-packs.js");
-const { prepareLegalKnowledgeForTurn, knowledgeWarmups, withKnowledgeAvailability, LEGAL_PACK_ID } = require("../src/main/legal-kb/turn-preparation.js");
+const { prepareLegalKnowledgeForTurn, knowledgeWarmups, knowledgeUnavailable, withKnowledgeAvailability, LEGAL_PACK_ID } = require("../src/main/legal-kb/turn-preparation.js");
 const swallowed = require("../src/main/diagnostics/swallowed-failure.js");
 const { invalidateSessionAgentPolicy } = require("../src/main/agents/session-agent-policy.js");
 
@@ -56,7 +56,7 @@ const session = { id: SESSION };
 try {
   await check("registry knows the legal pack and labels it per locale", async () => {
     assert.deepEqual(listKnowledgePacks().map((pack) => pack.id), [LEGAL_PACK_ID]);
-    assert.deepEqual([...getKnowledgePack(LEGAL_PACK_ID).tools], ["lily_legal_search"]);
+    assert.deepEqual([...getKnowledgePack(LEGAL_PACK_ID).tools], ["lily_legal_search", "lily_legal_article"]);
     assert.equal(knowledgePackLabel(LEGAL_PACK_ID, "zh-CN"), "中国企业法律知识库");
     assert.equal(knowledgePackLabel("unknown-pack", "zh-CN"), "unknown-pack");
     assert.equal(getKnowledgePack("Nope"), null);
@@ -86,7 +86,7 @@ try {
     assert.equal(ensured.length, 0);
   });
 
-  await check("legacy rule: the official legal counsel ROLE still requires the legal pack", async () => {
+  await check("legacy rule: the official legal counsel ROLE still requires the legal pack — served remotely, never installed", async () => {
     const official = require("../src/main/character-worlds/official-character-catalog.js").getOfficialCharacter("lily-cn-legal-counsel", "zh-CN");
     const { officialSource } = require("../src/main/official-character-ipc.js");
     const created = characterRepo.createCharacter({ ownerScope: OWNER, canonical: official.canonical, source: officialSource(official) });
@@ -95,9 +95,9 @@ try {
     const result = await prepareLegalKnowledgeForTurn({ ctx, session, state, options: {}, log });
     assert.equal(result.required, true);
     assert.equal(result.ready, true);
-    assert.deepEqual(result.packs.map((pack) => pack.packId), [LEGAL_PACK_ID]);
+    assert.deepEqual(result.packs, [{ packId: LEGAL_PACK_ID, ready: true, source: "service" }]);
     await knowledgeWarmups();
-    assert.deepEqual(ensured, [LEGAL_PACK_ID], "and it is refreshed in the background");
+    assert.deepEqual(ensured, [], "the remote corpus is not installed or indexed on this machine");
   });
 
   await check("a bound agent's knowledge.packs are prepared; an unknown pack is reported with its id", async () => {
@@ -108,8 +108,9 @@ try {
     const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
     assert.equal(result.required, true);
     assert.equal(result.ready, true);
+    assert.deepEqual(result.packs, [{ packId: LEGAL_PACK_ID, ready: true, source: "service" }]);
     await knowledgeWarmups();
-    assert.deepEqual(ensured, [LEGAL_PACK_ID]);
+    assert.deepEqual(ensured, [], "no local preparation for the remote legal pack");
 
     const odd = agentRepo.createAgent({ ownerScope: OWNER, definition: { name: "怪", knowledge: { packs: ["mystery-pack"] } }, source: { kind: "created" } }).revision;
     agentRepo.setBinding({ sessionId: SESSION, ownerScope: OWNER, expectedBindingVersion: 1, agentRevisionId: odd.id });
@@ -121,41 +122,38 @@ try {
     assert.equal(blocked.failedPackId, "mystery-pack");
   });
 
-  await check("an installed pack is ready at once, even when the update check fails", async () => {
+  await check("a service-backed pack is ready without any local install or update check", async () => {
     const legal = agentRepo.createAgent({ ownerScope: OWNER, definition: { name: "法务2", knowledge: { packs: [LEGAL_PACK_ID] } }, source: { kind: "created" } }).revision;
     agentRepo.setBinding({ sessionId: SESSION, ownerScope: OWNER, expectedBindingVersion: 2, agentRevisionId: legal.id });
     invalidateSessionAgentPolicy(SESSION);
-    failNext = true; // the server / network answer fails this time
+    failNext = true; // a failing server / network answer must not matter
     const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
-    assert.equal(result.ready, true, "a pack already on this machine is usable whatever the update check says");
+    assert.equal(result.ready, true, "the remote corpus needs nothing on this machine");
     await knowledgeWarmups();
     failNext = false;
   });
 
-  await check("a pack that is not installed never holds the turn: it answers without it, told so, and the cause is recorded", async () => {
+  await check("the legal pack never waits on a local download; the unavailable notice is kept for knowledge that truly cannot be prepared", async () => {
     installed = false;
     failNext = true;
-    swallowed.resetSwallowedFailuresForTests();
     const warn = console.warn; console.warn = () => {};
-    let slowEnsure;
-    manager.ensureLegalKnowledgePack = async () => { await new Promise((resolve) => { slowEnsure = resolve; }); ensured.push(LEGAL_PACK_ID); return { ok: false, error: "LEGAL_KB_DOWNLOAD_FAILED" }; };
+    manager.ensureLegalKnowledgePack = async () => { ensured.push(LEGAL_PACK_ID); return { ok: false, error: "LEGAL_KB_DOWNLOAD_FAILED" }; };
     try {
       const result = await prepareLegalKnowledgeForTurn({ ctx, session, state: { characterWorldsSnapshot: null }, options: {}, log });
-      assert.equal(result.ready, false, "returned while the download is still pending — nothing waited for it");
-      assert.equal(result.error, "KNOWLEDGE_PACK_NOT_READY");
+      assert.equal(result.ready, true, "service-backed: a turn never waits on a local download");
+      assert.deepEqual(result.packs, [{ packId: LEGAL_PACK_ID, ready: true, source: "service" }]);
+      await knowledgeWarmups();
+      assert.deepEqual(ensured, [], "and nothing is installed or indexed in the background");
+      assert.equal(knowledgeUnavailable(result), null, "no false 'unavailable' warning when the corpus is remote");
 
+      // The honest-unavailable path is unchanged for knowledge that really cannot be prepared.
+      const unavailable = { required: true, ready: false, error: "KNOWLEDGE_PACK_NOT_READY", failedPackId: LEGAL_PACK_ID };
       const notices = [];
-      const text = withKnowledgeAvailability({ _emitEngineNotice: (_id, notice) => notices.push(notice) }, SESSION, "用户的问题", { legalKnowledge: result });
+      const text = withKnowledgeAvailability({ _emitEngineNotice: (_id, notice) => notices.push(notice) }, SESSION, "用户的问题", { legalKnowledge: unavailable });
       assert.match(text, /NOT available/, "the model is told the knowledge base is unavailable");
       assert.match(text, /用户的问题/, "and still gets the user's question");
       assert.match(notices[0].detail, /本轮已照常回答/, "the user is told the answer ran without it");
       assert.equal(withKnowledgeAvailability({}, SESSION, "q", { legalKnowledge: { required: true, ready: true } }), "q", "a ready pack changes nothing");
-
-      slowEnsure();
-      await knowledgeWarmups();
-      const [recorded] = swallowed.degradedCapabilities();
-      assert.equal(recorded.site, "knowledge pack preparation");
-      assert.match(recorded.cause, /LEGAL_KB_DOWNLOAD_FAILED/, "the background failure keeps its real cause");
     } finally {
       console.warn = warn;
       installed = true;

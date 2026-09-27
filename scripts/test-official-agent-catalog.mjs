@@ -64,7 +64,7 @@ check("legal counsel agent replaces the hard-coded knowledge coupling with data"
   const legal = catalog.getOfficialAgent("lily-agent-cn-legal-counsel", "zh-CN");
   assert.equal(legal.roleOfficialId, "lily-cn-legal-counsel");
   assert.deepEqual(legal.definition.knowledge.packs, ["legal-cn-enterprise"]);
-  assert.deepEqual(legal.definition.tools.mcpAllow, ["lily_legal_search"]);
+  assert.deepEqual(legal.definition.tools.mcpAllow, ["lily_legal_search", "lily_legal_article"]);
   assert.equal(legal.definition.autonomy.permissionModeId, "ask");
   assert.ok(legal.definition.skills.required.includes("lily-document-query"));
   assert.match(legal.definition.knowledge.guidance, /lily_legal_search/);
