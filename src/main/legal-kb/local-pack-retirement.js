@@ -24,6 +24,7 @@ function retireLocalLegalPack({ root, log = console } = {}) {
     // Only Lily's own legal-kb directory, never something a path points elsewhere.
     if (path.basename(resolved) !== "legal-kb" || !fs.existsSync(resolved)) return { ok: true, removed: false };
     try {
+      try { await require("./legal-kb-search").closeAllLegalKnowledgeSearch(); } catch { /* nothing was open */ }
       await fs.promises.rm(resolved, { recursive: true, force: true });
       log.info?.(`[legal-kb] retired the local legal pack at ${resolved}: the corpus is served now`);
       return { ok: true, removed: true };

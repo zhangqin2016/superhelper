@@ -14,7 +14,36 @@
  * Fail-open: an unreachable, unauthorized or rate-limited service is an
  * explicit `ok:false` with no results, never a throw, so the model sees that
  * the evidence is missing instead of inventing a citation.
+ *
+ * Never worse than the local pack it replaces: while the service cannot be
+ * reached (not yet deployed, down) a pack an earlier version installed still
+ * answers, marked `source: "local-fallback"`; a refusal (the admin disabled
+ * the pack, the plan does not cover it, the quota is spent) is never routed
+ * around. The local pack is retired only after the service has answered.
  */
+
+// The service said no: these are decisions, not outages.
+const REFUSALS = new Set(["LEGAL_KB_NOT_ENTITLED", "LEGAL_KB_DISABLED", "LEGAL_SEARCH_RATE_LIMITED", "INVALID_REQUEST",
+  "LEGAL_KB_QUERY_REQUIRED", "LEGAL_KB_QUERY_TOO_LONG", "LEGAL_QUERY_INVALID", "DEVICE_SIGNATURE_INVALID"]);
+
+async function localFallback(args, manager) {
+  try {
+    const local = manager || require("./legal-kb-manager");
+    if (!local.status?.()?.usable) return null;
+    const out = await local.search({ query: args.query, topK: args.topK }, { autoInstall: false });
+    if (!out?.ok) return null;
+    return {
+      ok: true,
+      source: "local-fallback",
+      corpusVersion: String(out.packVersion || ""),
+      note: "the legal service could not be reached; these are excerpts from the pack installed on this machine, which may be older",
+      results: (out.results || []).map((row) => toolArticle({ ...row, text: row.excerpt, textTruncated: true, law: String(row.title || "").replace(/^中华人民共和国/, "") })),
+    };
+  } catch (error) {
+    console.warn(`[legal-kb] local fallback unavailable: ${error?.message || error}`);
+    return null;
+  }
+}
 
 const MAX_QUERY_CHARS = 240;
 const MAX_TOP_K = 20;
@@ -78,7 +107,7 @@ function toolArticle(item = {}) {
 /**
  * @param {{query: string, laws?: string[], topK?: number, includeHistorical?: boolean, serviceFetch?: Function, getDeviceId?: Function}} args
  */
-async function searchLegalKnowledgeRemote({ query, laws, topK = 8, includeHistorical, serviceFetch, getDeviceId } = {}) {
+async function searchLegalKnowledgeRemote({ query, laws, topK = 8, includeHistorical, serviceFetch, getDeviceId, localManager, retire } = {}) {
   const text = compact(query);
   if (!text) return { ok: false, error: "LEGAL_KB_QUERY_REQUIRED", results: [] };
   if (text.length > MAX_QUERY_CHARS) return { ok: false, error: "LEGAL_KB_QUERY_TOO_LONG", results: [] };
@@ -87,7 +116,18 @@ async function searchLegalKnowledgeRemote({ query, laws, topK = 8, includeHistor
   if (names.length) body.laws = names;
   if (includeHistorical === true) body.includeHistorical = true;
   const out = await call("/api/legal/search", body, { serviceFetch, getDeviceId });
-  if (!out.ok) return { ...out, results: [] };
+  if (!out.ok) {
+    if (!REFUSALS.has(out.error)) {
+      const fallback = await localFallback(body, localManager);
+      if (fallback) {
+        console.warn(`[legal-kb] legal service unavailable (${out.error}); answered from the local pack`);
+        return fallback;
+      }
+    }
+    return { ...out, results: [] };
+  }
+  // The service answered: the local copy is no longer needed.
+  try { (retire || require("./local-pack-retirement").retireLocalLegalPack)(); } catch { /* retirement is best effort */ }
   const json = out.json;
   return {
     ok: true,

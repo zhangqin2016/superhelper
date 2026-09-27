@@ -51,6 +51,32 @@ const { searchLegalKnowledgeRemote, getLegalArticleRemote, toolArticle } = requi
   assert.deepEqual([down.ok, down.error, down.results], [false, "LEGAL_KB_SERVICE_UNAVAILABLE", []], "a network failure never throws into the turn");
 }
 
+// Never worse than the pack it replaces: an outage falls back to the installed pack; a refusal does not.
+{
+  let retired = 0;
+  const retire = () => { retired += 1; };
+  const local = {
+    status: () => ({ usable: true }),
+    search: async (args) => ({ ok: true, packVersion: "V23.3", results: [{ id: "l1", title: "中华人民共和国劳动合同法", article: "第二十四条", excerpt: `竞业限制… ${args.query}` }] }),
+  };
+  const warn = console.warn; console.warn = () => {};
+  try {
+    const notDeployed = await searchLegalKnowledgeRemote({ query: "竞业限制", serviceFetch: async () => ({ ok: false, error: "SERVICE_REQUEST_FAILED", status: 404 }), localManager: local, retire });
+    assert.deepEqual([notDeployed.ok, notDeployed.source, notDeployed.results[0].citation, notDeployed.results[0].textTruncated], [true, "local-fallback", "《中华人民共和国劳动合同法》第二十四条", true],
+      "a service not yet deployed (or down) is answered from the installed pack, marked as such");
+    assert.match(notDeployed.note, /may be older/);
+    for (const code of ["LEGAL_KB_DISABLED", "LEGAL_KB_NOT_ENTITLED", "LEGAL_SEARCH_RATE_LIMITED"]) {
+      const refused = await searchLegalKnowledgeRemote({ query: "竞业限制", serviceFetch: async () => ({ ok: false, error: code, status: 403 }), localManager: local, retire });
+      assert.deepEqual([refused.ok, refused.error], [false, code], `${code} is a decision, never routed around through the local pack`);
+    }
+    const none = await searchLegalKnowledgeRemote({ query: "竞业限制", serviceFetch: async () => { throw new Error("offline"); }, localManager: { status: () => ({ usable: false }) }, retire });
+    assert.deepEqual([none.ok, none.error], [false, "LEGAL_KB_SERVICE_UNAVAILABLE"], "without an installed pack the outage is reported as it is");
+    assert.equal(retired, 0, "the local pack is kept while the service has not answered");
+    await searchLegalKnowledgeRemote({ query: "竞业限制", serviceFetch: async () => ({ ok: true, json: { results: [] } }), localManager: local, retire });
+    assert.equal(retired, 1, "and retired once it has");
+  } finally { console.warn = warn; }
+}
+
 console.log("legal-kb-remote: ok");
 
 // The local pack an earlier version downloaded is retired, once, and only Lily's own directory.
@@ -59,6 +85,7 @@ console.log("legal-kb-remote: ok");
   const os = require("node:os");
   const path = require("node:path");
   const retirement = require("../src/main/legal-kb/local-pack-retirement.js");
+  retirement.resetForTests();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "lily-retire-"));
   const root = path.join(base, "legal-kb");
   fs.mkdirSync(path.join(root, "legal-cn-enterprise", "V23.3"), { recursive: true });

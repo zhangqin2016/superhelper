@@ -180,9 +180,16 @@ function closeLegalKnowledgeSearch(packPath = "") {
   if (dbPromise) void dbPromise.then((db) => db.close()).catch(() => {});
 }
 
+/** Every open pack handle closed — a file Windows holds open cannot be removed. */
+async function closeAllLegalKnowledgeSearch() {
+  const pending = [...databases.values()];
+  databases.clear();
+  await Promise.allSettled(pending.map((dbPromise) => dbPromise.then((db) => db.close())));
+}
+
 async function prepareLegalKnowledgeSearch(packPath, onProgress) {
   await getDatabase(packPath, onProgress);
   return { ok: true, packPath };
 }
 
-module.exports = { searchLegalKnowledge, prepareLegalKnowledgeSearch, closeLegalKnowledgeSearch, tokenize };
+module.exports = { searchLegalKnowledge, prepareLegalKnowledgeSearch, closeLegalKnowledgeSearch, closeAllLegalKnowledgeSearch, tokenize };

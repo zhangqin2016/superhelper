@@ -113,8 +113,6 @@ async function prepareLegalKnowledgeForTurn({ ctx, session, state, options, log 
     return { packId, ready: local === "ready", ...(error ? { error } : {}) };
   });
   const localIds = ids.filter((packId) => !SERVICE_BACKED_PACKS.has(packId));
-  // The served pack replaces a local copy an earlier version downloaded.
-  if (localIds.length !== ids.length) void require("./local-pack-retirement").retireLocalLegalPack({ log });
   if (localIds.length) warmInBackground(localIds, { manager: ctx.legalKnowledgeManager, onProgress: options?.onProgress, log });
   const missing = status.find((item) => !item.ready);
   return {
