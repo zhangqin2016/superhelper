@@ -116,9 +116,12 @@ try {
     if (savedBudget === undefined) delete process.env.LILY_TURN_CONTINUATION_BUDGET;
     else process.env.LILY_TURN_CONTINUATION_BUDGET = savedBudget;
   }
-  assert.equal(todoPolicy.detectIncompleteDeliverable(`Saved ${completedPath}`), null);
-  assert.equal(todoPolicy.detectIncompleteDeliverable(`Saved ${path.join(tmp, "missing.pdf")}`)?.reason, "does not exist");
-  assert.equal(todoPolicy.detectIncompleteDeliverable("Saved relative/output.pdf"), null);
+  assert.equal(todoPolicy.detectIncompleteDeliverable("done", { producedPaths: [completedPath] }), null);
+  assert.equal(todoPolicy.detectIncompleteDeliverable("done", { producedPaths: [path.join(tmp, "missing.pdf")] })?.reason, "does not exist");
+  assert.equal(todoPolicy.detectIncompleteDeliverable(`Saved ${path.join(tmp, "missing.pdf")}`), null, "prose alone is never a claim");
+  assert.deepEqual(todoPolicy.withPreGateAnswer({ preGateOutput: "Answer." }, { output: "Fixed." }).output, "Answer.\n\n---\n\nFixed.");
+  assert.equal(todoPolicy.withPreGateAnswer({ preGateOutput: "Answer." }, { output: "Answer. Fixed." }).output, "Answer. Fixed.", "no duplication");
+  assert.equal(todoPolicy.withPreGateAnswer({}, { output: "x" }).output, "x");
 
   const turnStartedAt = 1_000;
   const messages = [

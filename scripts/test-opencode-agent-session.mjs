@@ -2314,7 +2314,10 @@ async function newSession() {
 // --- Pillar 3-B: completion gate ------------------------------------------
 const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-session.js");
 
-// detector: high precision, fail open
+// detector: STRUCTURED evidence only (task contract + this turn's tool ledger),
+// never paths read out of the answer prose — 2026-09-28 a how-to answer that told
+// the user to "edit /etc/shadowsocks-rust/config.json on your server" was gated
+// as a missing local deliverable.
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gate-detect-"));
   const real = path.join(tmp, "out.docx");
@@ -2322,35 +2325,70 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   const empty = path.join(tmp, "empty.pdf");
   fs.writeFileSync(empty, "");
   const missing = path.join(tmp, "nope.pptx");
-  assert(detectIncompleteDeliverable(`Saved to ${missing}`)?.reason === "does not exist", "missing deliverable detected");
-  assert(detectIncompleteDeliverable(`wrote ${empty} ok`)?.reason === "is empty", "empty deliverable detected");
-  assert(detectIncompleteDeliverable(`see ${real}`) === null, "existing deliverable not flagged");
-  assert(detectIncompleteDeliverable("all done, no paths") === null, "no false positive without a path");
-  assert(detectIncompleteDeliverable("edited src/app.docx") === null, "relative path not flagged");
+  assert(detectIncompleteDeliverable("done", { producedPaths: [missing] })?.reason === "does not exist", "a file this turn's tool wrote but is missing is detected");
+  assert(detectIncompleteDeliverable("done", { producedPaths: [empty] })?.reason === "is empty", "an empty tool-produced file is detected");
+  assert(detectIncompleteDeliverable("done", { producedPaths: [real] }) === null, "an existing produced file is not flagged");
+  assert(detectIncompleteDeliverable(`Saved to ${missing}`) === null, "a path only mentioned in prose is never a claim");
+  assert(detectIncompleteDeliverable("装好后编辑配置 `/etc/shadowsocks-rust/config.json`") === null, "a how-to instruction path is never a claim");
+  assert(detectIncompleteDeliverable("all done, no paths") === null, "no false positive without evidence");
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-// gate fires once on a missing deliverable, then settles on the next idle (no loop)
+const writeTool = (fake, filePath, status = "completed") => fake.emitEvent({
+  type: "message.part.updated",
+  properties: { part: { id: `part_w_${status}`, type: "tool", tool: "write", callID: "call_w",
+    state: { status, input: { filePath, content: "x" }, ...(status === "completed" ? { output: "Wrote file successfully." } : {}) } } },
+});
+
+// gate fires once when THIS turn's write tool produced a file that is now missing,
+// keeps the user's answer, then settles (single-shot, no loop)
 {
   const { fake, session, orch } = await newSession();
   session.sendUserMessage({ text: "make a doc" });
   await tick();
   const missing = path.join(os.tmpdir(), "lily-gate-missing-zzz.docx");
   try { fs.rmSync(missing, { force: true }); } catch { /* ignore */ }
-  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Done. Saved to ${missing}` } });
+  const t0 = Date.now() + 1_000;
+  const hist = (userText, answer, at) => [
+    { info: { id: `u_${at}`, role: "user", sessionID: "ses_test", time: { created: at } }, parts: [{ type: "text", text: userText }] },
+    { info: { id: `a_${at}`, role: "assistant", sessionID: "ses_test", time: { created: at + 1, completed: at + 2 } }, parts: [{ type: "text", text: answer }] },
+  ];
+  writeTool(fake, missing, "running");
+  writeTool(fake, missing, "completed");
+  fake.historyMessages = hist(fake.lastPromptText, "Here is the full answer.", t0);
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "Here is the full answer." } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();
   await tick();
-  assert(orch.calls.done.length === 0, "gate keeps the turn open instead of settling on a missing deliverable");
+  assert(orch.calls.done.length === 0, "gate keeps the turn open when a produced file is missing");
   assert(fake.prompts.length === 2 && /Completion check/.test(fake.prompts[1].text), "gate posts exactly one corrective follow-up");
+  // Field shape: the official history's latest assistant for the corrective prompt
+  // holds ONLY the correction, which used to become the whole answer.
+  fake.historyMessages = [...hist("make a doc", "Here is the full answer.", t0), ...hist(fake.lastPromptText, "Fixed: the file now exists.", t0 + 10)];
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "Fixed: the file now exists." } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();
   await tick();
   assert(orch.calls.done.length === 1, "second idle settles the turn — gate is single-shot, never loops");
+  assert(String(orch.calls.done[0]?.output || "").includes("Here is the full answer."), "the corrective round never erases the user's answer");
   session.terminate();
 }
 
-// gate does NOT fire when the claimed deliverable actually exists
+// a path only MENTIONED in the answer (no tool produced it) never triggers the gate
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "how do I set up a proxy on my server" });
+  await tick();
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "装好后编辑配置 `/etc/shadowsocks-rust/config.json`，然后 Saved to /tmp/lily-never-written-zzz.json" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 1, "an instructional answer settles immediately");
+  assert(fake.prompts.length === 1, "no corrective prompt for paths that are only mentioned");
+  session.terminate();
+}
+
+// gate does NOT fire when the produced deliverable actually exists
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gate-ok-"));
   const real = path.join(tmp, "report.docx");
@@ -2358,6 +2396,8 @@ const { detectIncompleteDeliverable } = require("../src/main/opencode-agent-sess
   const { fake, session, orch } = await newSession();
   session.sendUserMessage({ text: "make a doc" });
   await tick();
+  writeTool(fake, real, "running");
+  writeTool(fake, real, "completed");
   fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: `Created ${real}` } });
   fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
   await waitIdleSettle();

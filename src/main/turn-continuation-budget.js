@@ -38,6 +38,11 @@ function createTurnGateState() {
     byGate: {},
     /** Deliverable completion gate (Pillar 3-B) fires at most once per turn. */
     deliverableGated: false,
+    /** Files this turn's own file-writing tool calls produced (tool evidence). */
+    producedPaths: new Set(),
+    pendingWrites: new Map(),
+    /** The answer as it stood when the deliverable gate fired, kept for the user. */
+    preGateOutput: "",
     /** `attempts` counts CONSECUTIVE no-progress nudges; `best` is the low-water mark. */
     todo: { attempts: 0, total: 0, best: Infinity, progress: 0 },
   };

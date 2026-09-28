@@ -27,7 +27,8 @@ try {
   assert.equal(inspectDeliverables([{ path: 'escape/absent.json' }], root)[0].repairable, false, 'symlink escape cannot authorize repair');
   const { detectIncompleteDeliverable } = require('../src/main/opencode-todo-completion-policy');
   assert.equal(detectIncompleteDeliverable('Done', { deliverables: [{ path: 'missing.json' }], workspacePath: root })?.path, path.join(fs.realpathSync(root), 'missing.json'), 'engine correction uses the structured contract, not just final prose');
-  assert.equal(detectIncompleteDeliverable(`Generated ${root}/absent.md`)?.path, `${root}/absent.md`);
+  assert.equal(detectIncompleteDeliverable('Generated', { producedPaths: [`${root}/absent.md`] })?.path, `${root}/absent.md`, 'a tool-produced missing file is caught');
+  assert.equal(detectIncompleteDeliverable(`Generated ${root}/absent.md`), null, 'a path only mentioned in prose is not a claim');
   const { buildIntentContractToolDefinition } = require('../src/main/mcp/intent-contract-tool-definition');
   const definition = buildIntentContractToolDefinition();
   const input = [{ path: 'reports/Quarterly  Report.md' }, { path: 'LICENSE' }];

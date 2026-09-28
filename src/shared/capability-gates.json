@@ -562,14 +562,15 @@
     },
     {
       "id": "turn-completion-honesty",
-      "protects": "A long task that finished is reported as finished: the unfinished-todo gate cannot push a blocked model back into the same turn indefinitely, and a turn that produced a real answer is never labelled stalled or contradicted by a 'no final answer' banner.",
-      "baseline": "A model that quits with work genuinely left is still nudged to continue, and a turn that produced no answer at all still gets the stalled terminal with its salvageable tool results.",
-      "failureFallback": "LILY_DISABLE_TODO_COMPLETION_GATE=1 disables the gate entirely; a snapshot without todos skips it, and the summary builder degrades to plain assistant text.",
+      "protects": "A long task that finished is reported as finished: the unfinished-todo gate cannot push a blocked model back into the same turn indefinitely, and a turn that produced a real answer is never labelled stalled or contradicted by a 'no final answer' banner. The deliverable completion gate judges only STRUCTURED evidence — deliverables the task contract declares and files this turn's own file-writing tool calls produced (turn-artifacts.producedPathFromTool) — never paths read out of the answer prose, as Claude Code and Codex CLI ground 'what was produced' in the tool ledger. When the gate does fire, its corrective round is appended to the user's answer instead of replacing it.",
+      "baseline": "A model that quits with work genuinely left is still nudged to continue, and a turn that produced no answer at all still gets the stalled terminal with its salvageable tool results. 2026-09-28: a how-to answer ('装好后编辑配置 `/etc/shadowsocks-rust/config.json`' on the user's server) was gated as a missing local deliverable by a prose-path regex; the model was pushed to write a real password config into the repo and the corrective round's 'file now exists' replaced the proxy answer the user asked for.",
+      "failureFallback": "LILY_DISABLE_TODO_COMPLETION_GATE=1 disables the gate entirely; a snapshot without todos skips it, and the summary builder degrades to plain assistant text. Mutation-verified 2026-09-28: re-reading prose paths as claims, not recording the tool ledger, and letting the corrective round replace the answer each fail test-opencode-agent-session by name.",
       "tests": [
         "scripts/test-opencode-agent-session.mjs",
         "scripts/test-opencode-session-policies.mjs",
         "scripts/test-turn-error-classify.mjs",
-        "scripts/test-turn-orchestrator.mjs"
+        "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-task-original-acceptance.mjs"
       ]
     },
     {

@@ -1,7 +1,5 @@
 "use strict";
 
-const fileKinds = require("../shared/file-kinds.mjs");
-
 const fs = require("node:fs");
 const { markInternalPrompt } = require("./internal-prompt-marker");
 
@@ -15,36 +13,48 @@ const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
 // can be pushed back into the same turn indefinitely (a field turn burned 7
 // nudges / 13 minutes re-asking for the same 2 user-blocked items).
 const TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS = 6;
-const DELIVERABLE_EXT = `${fileKinds.alternation(fileKinds.EXTENSIONS.ooxml)}|pdf|${fileKinds.alternation(fileKinds.EXTENSIONS.browserImage)}|mp3|wav|mp4|webm|html|csv|zip|json|md`;
-const DELIVERABLE_PATH_RE = new RegExp(
-  String.raw`(?:^|[\s"'` + "`" + String.raw`(>])((?:/|[A-Za-z]:\\)[^\s"'` + "`" + String.raw`)<>|]+\.(?:${DELIVERABLE_EXT}))`,
-  "gi",
-);
-
 /**
- * Detect only high-confidence broken deliverables. Ambiguous or unreadable
- * paths fail open so this guard cannot turn a successful response into a loop.
+ * Detect only high-confidence broken deliverables, from STRUCTURED evidence:
+ *   1. deliverables the task contract declares (task-delivery-manifest), and
+ *   2. files this turn's own file-writing tool calls produced (producedPaths).
+ * It never reads paths out of the answer prose. Prose is where a how-to answer
+ * TELLS the user about paths ("edit /etc/shadowsocks-rust/config.json on your
+ * server"); treating those as claims made this gate demand local files, drove
+ * the model to write a real password config into the repo, and replaced the
+ * user's answer (2026-09-28). Claude Code and Codex CLI likewise ground "what
+ * was produced" in the tool ledger, not in the reply text. Ambiguous or
+ * unreadable paths fail open so this guard cannot loop.
  */
-function detectIncompleteDeliverable(output, { deliverables = [], workspacePath = "" } = {}) {
+function detectIncompleteDeliverable(_output, { deliverables = [], workspacePath = "", producedPaths = [] } = {}) {
   const manifest = require("./task-delivery-manifest").inspectDeliverables(deliverables, workspacePath);
   const broken = manifest.find(item => item.repairable && ["missing", "empty"].includes(item.status));
   if (broken) return { path: broken.path, reason: broken.status === "missing" ? "does not exist" : "is empty" };
-  const text = String(output || "");
-  if (!text) return null;
   const seen = new Set();
-  for (const match of text.matchAll(DELIVERABLE_PATH_RE)) {
-    const filePath = match[1];
-    if (seen.has(filePath)) continue;
+  for (const filePath of Array.isArray(producedPaths) ? producedPaths : []) {
+    if (!filePath || seen.has(filePath)) continue;
     seen.add(filePath);
-    if (seen.size > 12) break;
+    if (seen.size > 32) break;
     try {
       if (!fs.existsSync(filePath)) return { path: filePath, reason: "does not exist" };
-      if (fs.statSync(filePath).size === 0) return { path: filePath, reason: "is empty" };
+      if (fs.statSync(filePath).isFile() && fs.statSync(filePath).size === 0) return { path: filePath, reason: "is empty" };
     } catch {
       // Fail open when the local filesystem cannot prove a violation.
     }
   }
   return null;
+}
+
+/**
+ * The deliverable gate's corrective round must not REPLACE the answer the user
+ * asked for — its reply is usually only "fixed, the file now exists". Keep the
+ * pre-gate answer and append the correction, as a CLI transcript would show both.
+ */
+function withPreGateAnswer(gates = {}, payload = {}) {
+  const before = String(gates?.preGateOutput || "").trim();
+  if (!before) return payload;
+  const after = String(payload?.output || "").trim();
+  if (after.includes(before)) return payload;
+  return { ...payload, output: after ? `${before}\n\n---\n\n${after}` : before };
 }
 
 function normalizeTodoStatus(status) {
@@ -159,6 +169,7 @@ function buildTodoGiveUpPayload(payload = {}, snapshot = {}, collectedOutput = "
 }
 
 module.exports = {
+  withPreGateAnswer,
   rememberTodoProgress,
   TODO_COMPLETION_GATE_MAX_ATTEMPTS,
   TODO_COMPLETION_GATE_MAX_TOTAL_ATTEMPTS,

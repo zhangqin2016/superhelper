@@ -52,9 +52,10 @@ const {
 } = require("./opencode-session-failure-policy");
 const {
   TODO_COMPLETION_GATE_MAX_ATTEMPTS, buildTodoContinuationPrompt, rememberTodoProgress,
-  buildTodoGiveUpPayload, detectIncompleteDeliverable,
+  buildTodoGiveUpPayload, detectIncompleteDeliverable, withPreGateAnswer,
   nativeTodoSnapshot, todoContinuationDecision,
 } = require("./opencode-todo-completion-policy");
+const { producedPathFromTool } = require("./turn-artifacts");
 const { INTERNAL_PROMPT_KINDS, nudgePlatformPrompt, sendPlatformPrompt } = require("./platform-prompt");
 const { claimContinuation, createTurnGateState } = require("./turn-continuation-budget");
 const { earliestPendingRequestAt } = require("./turn-user-wait");
@@ -842,10 +843,17 @@ class OpencodeAgentSession extends EventEmitter {
       const safe = isReplaySafeToolName(payload.name);
       if (id) this._toolReplaySafe.set(id, safe);
       if (!safe) this._sawUnsafeToolActivity = true;
+      const produced = id ? producedPathFromTool({ name: payload.name, input: payload.input }, this.cwd || "") : "";
+      if (produced) this._turnGates.pendingWrites.set(id, produced);
       return;
     }
     if (draft.type === "tool.done") {
       if (id) this._activeTools.delete(id);
+      const produced = id ? this._turnGates.pendingWrites.get(id) : "";
+      if (produced) {
+        this._turnGates.pendingWrites.delete(id);
+        if (!payload.isError && !/fail|error|cancel/i.test(String(payload.status || ""))) this._turnGates.producedPaths.add(produced);
+      }
       const safe = id && this._toolReplaySafe.has(id)
         ? this._toolReplaySafe.get(id)
         : isReplaySafeToolName(payload.name);
@@ -1483,12 +1491,17 @@ class OpencodeAgentSession extends EventEmitter {
       this._server &&
       process.env.LILY_DISABLE_COMPLETION_GATE !== "1"
     ) {
-      const violation = detectIncompleteDeliverable(payload.output, { deliverables: this._activeTaskContract?.intentContract?.deliverables || [], workspacePath: this.cwd || "" });
+      const violation = detectIncompleteDeliverable(payload.output, {
+        deliverables: this._activeTaskContract?.intentContract?.deliverables || [],
+        workspacePath: this.cwd || "",
+        producedPaths: [...this._turnGates.producedPaths],
+      });
       // Out of shared turn re-entries: settle on the answer we have rather than
       // spend a round the other gates may need. The claim itself is never wrong,
       // only late — the deliverable warning is advisory, not a correctness check.
       if (violation && claimContinuation(this._turnGates, "deliverable")) {
         this._turnGates.deliverableGated = true;
+        this._turnGates.preGateOutput = String(payload.output || "");
         this._armResponseTimer();
         this._armProgressNoticeTimer();
         const note =
@@ -1499,7 +1512,7 @@ class OpencodeAgentSession extends EventEmitter {
         return; // keep the turn open for the corrective round
       }
     }
-    this._settleTurn(payload);
+    this._settleTurn(withPreGateAnswer(this._turnGates, payload));
   }
 
   _continueUnfinishedTodosBeforeCompletion(payload) {

@@ -277,7 +277,7 @@ function addCandidate(
 // Tools that write files — their input carries the produced path explicitly, so
 // we trust the structured input rather than guessing from text.
 const FILE_WRITE_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit"]);
-const FILE_WRITE_INPUT_KEYS = ["file_path", "path", "target_file", "notebook_path"];
+const FILE_WRITE_INPUT_KEYS = ["file_path", "filePath", "path", "target_file", "notebook_path"];
 // Framework/instruction files a turn READS to do its work — never user
 // deliverables. Excluded from the heuristic text scrape (a turn that genuinely
 // WRITES one still shows it, since producedPaths overrides this).
@@ -422,8 +422,23 @@ function toolInputMayCreateArtifacts(toolName = "") {
   );
 }
 
+/** The path a successful file-writing tool call produced, from its structured
+ *  input (never from prose). Empty for any other tool. */
+function producedPathFromTool(tool = {}, workspacePath = "") {
+  const name = String(tool?.name || "").toLowerCase();
+  if (!FILE_WRITE_TOOLS.has(name) || !tool?.input || typeof tool.input !== "object") return "";
+  const root = workspacePath ? path.resolve(workspacePath) : "";
+  for (const key of FILE_WRITE_INPUT_KEYS) {
+    if (typeof tool.input[key] !== "string") continue;
+    const resolved = resolveCandidatePath(tool.input[key], root);
+    if (resolved) return path.resolve(resolved);
+  }
+  return "";
+}
+
 module.exports = {
   buildTurnArtifacts,
+  producedPathFromTool,
   isInsidePath,
   isProcessArtifactPath,
   resolveCandidatePath,
