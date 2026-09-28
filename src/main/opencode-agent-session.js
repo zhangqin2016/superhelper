@@ -163,7 +163,7 @@ class OpencodeAgentSession extends EventEmitter {
       pendingQuestions: this._pendingQuestions,
       ingest: (drafts) => this._ingest(drafts),
       onProgress: () => {
-        if (!this._sawActivity) require("./opencode-first-response").clearModelSilenceMark(this); this._sawActivity = true;
+        if (!this._sawActivity) require("./opencode-first-response").clearModelSilenceMark(this); this._sawActivity = true; for (const tool of this._activeTools.values()) if (String(tool.name || "").toLowerCase() === "task") tool.lastActivityAt = Date.now();
         this._armResponseTimer();
         this._armProgressNoticeTimer();
         this._armIdleProbe();

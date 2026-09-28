@@ -116,4 +116,25 @@ try {
   fs.rmSync(userData, { recursive: true, force: true });
 }
 
+// 2026-09-28 audit: only wording about the INPUT not fitting is an overflow.
+// Parameter errors ("max_tokens is too large", a tool name over 64 chars)
+// used to classify as CONTEXT_LIMIT and teach a tiny window.
+{
+  const { classifyAssistantError } = require("../src/main/agent-runner.js");
+  for (const text of ["max_tokens: 65536 > 32768 output tokens", "tool name exceeds maximum length of 64", "400 max_tokens is too large: 100000"]) {
+    assert.notEqual(classifyAssistantError(text)?.code, "CONTEXT_LIMIT", `a parameter error is not a context overflow: ${text}`);
+  }
+  for (const text of [
+    "This model's maximum context length is 128000 tokens. However, you requested 130000 tokens",
+    "prompt is too long: 210000 tokens > 200000 maximum",
+    "The input token count (1100000) exceeds the maximum number of tokens allowed (1048576)",
+    "Range of input length should be [1, 30720]",
+    "Your request exceeded model token limit: 262144",
+    "context_length_exceeded",
+    "413 Request Entity Too Large",
+  ]) {
+    assert.equal(classifyAssistantError(text)?.code, "CONTEXT_LIMIT", `each provider's overflow wording is still an overflow: ${text}`);
+  }
+}
+
 console.log(`model-context-window-learning: ok (${checks} checks)`);

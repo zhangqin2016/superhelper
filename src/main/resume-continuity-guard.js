@@ -84,7 +84,25 @@ function textsOverlap(a = "", b = "") {
   return false;
 }
 
+/** Engine message ids a message carries (msg_…), local record or official. */
+function engineIds(messages = []) {
+  return new Set((Array.isArray(messages) ? messages : [])
+    .flatMap((m) => [m?.engineMessageId, m?.record?.engineMessageId, m?.id])
+    .map((value) => String(value || ""))
+    .filter((value) => value.startsWith("msg_")));
+}
+
 function classifyResumeContinuity({ localMessages = [], officialMessages = [] } = {}) {
+  // Structural evidence first: a turn Lily recorded carries the engine message
+  // id it produced, and that id in the official history proves this is the
+  // same conversation — whatever the texts look like. Text overlap misread a
+  // staged large paste (the engine holds a directive + preview, Lily the
+  // original) as a foreign conversation and reset the session (2026-09-28
+  // audit). Without ids (older records) the text comparison below still rules.
+  const officialIds = engineIds(officialMessages);
+  if (officialIds.size && [...engineIds(localMessages)].some((id) => officialIds.has(id))) {
+    return { ok: true, reason: "engine_message_id_match" };
+  }
   const localUsers = userTexts(localMessages);
   const officialUsers = userTexts(officialMessages);
   if (!officialUsers.length) return { ok: true, reason: "official_history_empty" };

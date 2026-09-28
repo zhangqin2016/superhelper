@@ -117,7 +117,17 @@ function continuationHintFor(recipes = {}) {
 // replay-safe, so a coverage round dispatched as a replay could never fire at
 // all. Continuing is also the better shape for it — the model keeps what it
 // already read and is asked only for the missing next action.
-const CONTINUE_INSTEAD_CODES = new Set(["MALFORMED_TOOL_CALL_TEXT", "SOURCE_COVERAGE_INCOMPLETE", "CONTEXT_LIMIT"]);
+//
+// Interruptions belong here too (2026-09-28 audit): a long turn that already
+// edited files and then lost its connection, had its stream cut, or hit a
+// busy/unreachable provider was neither replayed (side effects) nor continued,
+// so 100 tool calls of work ended as a failure. The work is in the session;
+// only the next step is missing. Side-effect-free turns still replay.
+const CONTINUE_INSTEAD_CODES = new Set([
+  "MALFORMED_TOOL_CALL_TEXT", "SOURCE_COVERAGE_INCOMPLETE", "CONTEXT_LIMIT",
+  "MODEL_CONNECTION_FAILED", "TRUNCATED_TURN_END", "ENGINE_UNAVAILABLE",
+  "MODEL_NO_RESPONSE", "MODEL_OVERLOADED", "RATE_LIMITED",
+]);
 
 function shouldContinueInsteadOfReplay(code, tools = []) {
   if (process.env.LILY_TOOL_CALL_CONTINUATION === "0") return false;

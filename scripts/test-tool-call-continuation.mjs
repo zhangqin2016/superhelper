@@ -43,12 +43,20 @@ assert.equal(
   false,
   "a turn that ran no tools is trivially replay-safe",
 );
-for (const code of ["EMPTY_ASSISTANT_COMPLETION", "RESPONSE_ERROR", "TRUNCATED_TURN_END", "", null]) {
+for (const code of ["EMPTY_ASSISTANT_COMPLETION", "RESPONSE_ERROR", "", null]) {
   assert.equal(
     rescue.shouldContinueInsteadOfReplay(code, WROTE_FILES),
     false,
-    `${JSON.stringify(code)} must not be continued — continuation is specific to a leaked tool call, whose next step is the only thing missing`,
+    `${JSON.stringify(code)} must not be continued`,
   );
+}
+// 2026-09-28 audit: an INTERRUPTED long turn — connection lost, stream cut,
+// provider busy or unreachable — after file edits was neither replayed nor
+// continued and ended as a failure. Its work is in the session; only the next
+// step is missing, exactly as for a leaked tool call.
+for (const code of ["MODEL_CONNECTION_FAILED", "TRUNCATED_TURN_END", "ENGINE_UNAVAILABLE", "MODEL_NO_RESPONSE", "MODEL_OVERLOADED", "RATE_LIMITED"]) {
+  assert.equal(rescue.shouldContinueInsteadOfReplay(code, WROTE_FILES), true, `${code} after edits continues the session`);
+  assert.equal(rescue.shouldContinueInsteadOfReplay(code, READ_ONLY), false, `${code} on a read-only turn still replays cleanly`);
 }
 
 // --- kill switch ---------------------------------------------------------

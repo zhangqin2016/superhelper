@@ -68,7 +68,11 @@ const ERROR_PATTERNS = [
   {
     code: "CONTEXT_LIMIT",
     category: "model",
-    test: /context length|context window|maximum context|token limit|too many tokens|input too long|input length exceeds|maximum.*length|max.*tokens|request too large|payload too large|request entity too large|entity too large|body too large|content length.*exceed|413\b/i,
+    // Only wording about the INPUT not fitting. "maximum.*length" and
+    // "max.*tokens" also matched parameter errors — a tool name over 64 chars,
+    // "max_tokens is too large" — which then taught the model a tiny context
+    // window (2026-09-28 audit). Each provider's own overflow wording is named.
+    test: /context length|context_length_exceeded|context window|maximum context|token limit|too many tokens|input too long|input length exceeds|range of input length|input token count|prompt is too long|request too large|payload too large|request entity too large|entity too large|body too large|content length.*exceed|413\b/i,
     message: "The request is too large for the assistant to process. Reduce large attachments, narrow the task, or start a new session, then retry.",
     retryable: false,
   },

@@ -121,6 +121,52 @@ check("the reducer records the engine's scheduled retry and clears it on any oth
   assert.match(src, /engineRetryNextAt: \(\) => engineRetryNextAt\(this\._eventState\)/, "the session hands the retry schedule to the fuse");
 });
 
+// 2026-09-28 audit: the no-progress window must honour the same engine-busy
+// evidence, and a tool's lease is at least the timeout it declared.
+check("the no-progress window waits out an engine retry and a running compaction", () => {
+  const timers = fakeTimers();
+  const retry = { nextAt: 0 };
+  const compaction = { active: false };
+  let watchdogFired = 0;
+  const liveness = createOpencodeTurnLiveness({
+    sessionId: "s-no-progress",
+    activeTools: new Map(),
+    getState: () => ({ busy: true, turnSettled: false, sawActivity: true, collectedOutput: "x" }),
+    getConfig: () => ({ responseTimeoutMs: 600_000, firstResponseTimeoutMs: 90_000, progressNoticeMs: 45_000, activeToolLeaseMs: 1_200_000 }),
+    hasActiveCompaction: () => compaction.active,
+    engineRetryNextAt: () => retry.nextAt,
+    recoverStalledFinal: () => { watchdogFired += 1; return new Promise(() => {}); },
+    now: timers.now, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout,
+  });
+  liveness.armResponseTimer();
+  retry.nextAt = timers.now() + 900_000; // provider retry-after: 15 minutes
+  timers.advance(600_000);
+  assert.equal(watchdogFired, 0, "a scheduled retry past the window is not a stall");
+  retry.nextAt = 0;
+  compaction.active = true;
+  timers.advance(900_000);
+  assert.equal(watchdogFired, 0, "a running compaction is not a stall");
+  compaction.active = false;
+  timers.advance(1_600_000);
+  assert.equal(watchdogFired, 1, "real silence after both still ends the turn");
+});
+
+check("a tool keeps its lease as long as the timeout it declared", () => {
+  const activeTools = new Map([["build", { id: "build", name: "bash", input: { command: "make all", timeout: 1_800_000 }, startedAt: 1, lastActivityAt: 1 }]]);
+  const { liveness, timers } = makeLiveness({ state: { sawActivity: true }, activeTools });
+  timers.advance(1_500_000); // 25 minutes, past the 20-minute default lease
+  assert.equal(liveness.hasActiveToolLease(), true, "a 30-minute declared build is still leased at 25 minutes");
+  timers.advance(400_000); // past its own timeout + margin
+  assert.equal(liveness.hasActiveToolLease(), false, "and released after its own timeout");
+});
+
+check("a subagent's progress keeps its parent task tool's lease alive", () => {
+  const src = require("node:fs").readFileSync(new URL("../src/main/opencode-agent-session.js", import.meta.url), "utf8");
+  const onProgress = src.slice(src.indexOf("createOpencodeSubagentRuntime({"), src.indexOf("createOpencodeSubagentRuntime({") + 900);
+  assert.match(onProgress, /toLowerCase\(\) === "task"\) tool\.lastActivityAt = Date\.now\(\)/,
+    "subagent progress refreshes the parent task tool, so a long child run is not an expired lease");
+});
+
 check("the first progress action clears the fuse; later silence is the ordinary no-progress window's job", () => {
   const { liveness, timers, events, shared } = makeLiveness();
   liveness.armResponseTimer();

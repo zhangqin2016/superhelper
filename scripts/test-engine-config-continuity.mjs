@@ -106,8 +106,18 @@ const session = (overrides = {}) => ({ _server: {}, busy: false, ...overrides })
     session({ _activeModelConfigFingerprint: before.modelConfigFingerprint, _activeRouteConfigFingerprint: before.routeConfigFingerprint }),
     after,
   );
-  assert.equal(t.action, "restart", "a genuinely different model deserves a fresh engine session");
-  check("switching models still restarts, so old context cannot leak into a new model");
+  // 2026-09-28: an engine session is not bound to a model (each message records
+  // its own; the engine switches models mid-session). Auto mode routing a turn
+  // to the other chosen model wiped the engine context on every switch.
+  assert.equal(t.action, "recycle", "switching models rebuilds the serve and keeps the conversation");
+  assert.equal(t.reason, "model_changed");
+  process.env.LILY_MODEL_SWITCH_KEEPS_CONVERSATION = "0";
+  assert.equal(modelConfigTransition(
+    session({ _activeModelConfigFingerprint: before.modelConfigFingerprint, _activeRouteConfigFingerprint: before.routeConfigFingerprint }),
+    after,
+  ).action, "restart", "the kill switch restores the previous discard-on-switch rule");
+  delete process.env.LILY_MODEL_SWITCH_KEEPS_CONVERSATION;
+  check("switching models keeps the conversation (kill switch restores restart)");
 }
 
 {
@@ -116,8 +126,8 @@ const session = (overrides = {}) => ({ _server: {}, busy: false, ...overrides })
   // No route fingerprint recorded (an engine started before this change shipped):
   // the comparison cannot be made, so the previous, stricter behaviour stands.
   const t = modelConfigTransition(session({ _activeModelConfigFingerprint: before.modelConfigFingerprint }), after);
-  assert.equal(t.action, "restart", "without route evidence the decision falls back to today's behaviour");
-  check("a missing route fingerprint degrades to the previous behaviour, never to a wrong reuse");
+  assert.equal(t.action, "recycle", "without route evidence the conversation is still kept: reuse is valid for any model");
+  check("a missing route fingerprint still keeps the conversation");
 }
 
 {

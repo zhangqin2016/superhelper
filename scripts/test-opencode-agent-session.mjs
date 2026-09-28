@@ -2890,14 +2890,17 @@ const writeTool = (fake, filePath, status = "completed") => fake.emitEvent({
     resumeSessionId: "ses_old_model_config",
   }, { lazy: true });
   assert(made[0].process === null, "stale model-config server is terminated while idle");
-  assert(invalidations.length === 1 && invalidations[0].reason === "model_config_changed", "model config change invalidates the stale resume id");
+  // 2026-09-28: a model switch rebuilds the serve and KEEPS the conversation —
+  // an engine session is not bound to a model (auto mode used to wipe it on
+  // every switch). LILY_MODEL_SWITCH_KEEPS_CONVERSATION=0 restores the discard.
+  assert(!invalidations.some((payload) => payload.resetResume === true), "a model switch never discards the resume id");
 
   session.sendUserMessage({ text: "turn two" });
   await tick();
   assert(serverCount === 2, "changed model config starts a fresh server");
   assert(made[1].opts.configContent === "CONFIG_MODEL_B", "fresh server receives the new OpenCode config");
-  assert(!made[1].opts.resumeSessionID, "fresh model config does not reuse the stale OpenCode session id");
-  assert(made[1].prompts.length === 1 && made[1].prompts[0].text === "turn two", "turn two posts to the fresh model-config session");
+  assert(made[1].opts.resumeSessionID === "ses_test", "the new model continues the same engine session");
+  assert(made[1].prompts.length === 1 && made[1].prompts[0].text === "turn two", "turn two posts to the rebuilt serve");
   session.terminate();
 }
 

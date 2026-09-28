@@ -141,7 +141,11 @@ function createOpencodeTurnLiveness(options = {}) {
         continue;
       }
       const lastActivityAt = Number(tool.lastActivityAt || tool.startedAt || 0);
-      if (leaseMs > 0 && lastActivityAt > 0 && currentTime - lastActivityAt > leaseMs) {
+      // A command the model gave a longer timeout (a 25-minute build) keeps
+      // its lease that long plus a minute, not the fixed default.
+      const declared = Number(tool.input?.timeout);
+      const toolLeaseMs = Number.isFinite(declared) && declared > 0 && declared < 86_400_000 ? Math.max(leaseMs, declared + 60_000) : leaseMs;
+      if (toolLeaseMs > 0 && lastActivityAt > 0 && currentTime - lastActivityAt > toolLeaseMs) {
         log.warn("opencode active tool lease expired", {
           sessionId,
           tool: tool.name || "",
@@ -320,6 +324,16 @@ function createOpencodeTurnLiveness(options = {}) {
     if (getState().sawActivity) clearFirstResponseTimer();
     else armFirstResponseTimer();
     responseTimer = scheduleTimer(() => {
+      // The engine busy on this session — generating a compaction summary, or
+      // waiting out a provider retry it scheduled (retry-after can exceed the
+      // window) — is not a stalled turn; the first-response fuse already knew
+      // this and the no-progress window did not (2026-09-28 audit).
+      const retryRemaining = engineRetryNextAt() + Number(getConfig().responseTimeoutMs || 0) - now();
+      if (hasActiveCompaction() || retryRemaining > 0) {
+        log.info("opencode no-progress window extended for engine work", { sessionId, retryRemaining: Math.max(0, retryRemaining) });
+        armResponseTimer();
+        return;
+      }
       if (hasActiveToolLease()) {
         log.info("opencode no-progress window extended for active tool", {
           sessionId,

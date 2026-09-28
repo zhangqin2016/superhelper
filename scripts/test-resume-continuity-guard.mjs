@@ -226,4 +226,27 @@ const {
   assert.equal(layered.reason, "recent_user_overlap", "a layered message likewise survives rather than vanishing");
 }
 
+// 2026-09-28 audit: the engine holds a staged paste as a directive + preview
+// while Lily holds the original, so the texts never overlap — the engine
+// message id Lily recorded for that turn is the structural proof.
+{
+  const original = "合同全文：" + "第一条 甲方应当按约定支付价款。".repeat(3000);
+  const matched = classifyResumeContinuity({
+    localMessages: [
+      { role: "user", content: original },
+      { role: "assistant", content: "已审阅。", record: { engineMessageId: "msg_turn_7" } },
+    ],
+    officialMessages: [
+      { role: "user", content: "[Large input: 51000 chars pasted into this message were saved to a workspace file …]", engineMessageId: "msg_turn_7" },
+    ],
+  });
+  assert.equal(matched.ok, true, "a recorded engine message id in the official history proves the same conversation");
+  assert.equal(matched.reason, "engine_message_id_match");
+  const foreign = classifyResumeContinuity({
+    localMessages: [{ role: "user", content: "epicrealism" }, { role: "assistant", content: "ok", record: { engineMessageId: "msg_mine" } }],
+    officialMessages: [{ role: "user", content: "analyze stock 600171 latest fundamentals", engineMessageId: "msg_theirs" }],
+  });
+  assert.equal(foreign.ok, false, "a foreign conversation shares neither ids nor texts and is still rejected");
+}
+
 console.log("resume continuity guard tests passed");

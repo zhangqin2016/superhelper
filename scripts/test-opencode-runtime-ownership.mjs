@@ -19,11 +19,14 @@ await check("host model replacement preserves history without a discarded startu
   const a = (await f.ensure("history", "A")).runner;
   const b = (await f.ensure("history", "B")).runner;
   await tick();
-  assert.notEqual(a, b);
+  // 2026-09-28: a model switch recycles the runner in place (the engine session
+  // is not bound to a model), so runner identity is no longer the evidence —
+  // the kept resume id and history are.
+  void a;
   assert.equal(b.agentResumeId, "ses_history");
   assert.equal(f.rows.get(b.agentResumeId).history[0], "original-history-sentinel");
   assert.equal(f.stats.sdkCreates, 0);
-  assert.equal(f.stats.poolEnsures, 3);
+  assert.equal(f.stats.poolEnsures, 2, "no replacement runner is ensured for a model switch");
   assert.equal(b.spawnOptions.model.modelID, "B");
   assert.equal(unhandled.length, 0, "invalidated runner must not start again");
 });

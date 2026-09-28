@@ -621,9 +621,17 @@ resetRescueStateForTests();
   const events = flushEvents();
   const failed = events.find((event) => event.type === "turn.failed");
   assert.equal(failed?.payload?.errorCode, "TRUNCATED_TURN_END", "truncation is still surfaced honestly");
-  assert.equal(events.filter((event) => event.type === "turn.self_heal_retry").length, 0,
-    "a turn that wrote files is never auto-replayed even when truncated");
-  assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "no rescue retry after mutating tools");
+  // 2026-09-28: a truncated turn that wrote files is CONTINUED in its session —
+  // never replayed, which would re-run the write from the user's request.
+  assert.equal(events.filter((event) => event.type === "turn.self_heal_retry").length, 1,
+    "a truncated turn that wrote files gets one continuation");
+  assert.equal(runner.sentPayloads.length, payloadsBefore + 2, "explicit send + one continuation");
+  const continuation = String(runner.sentPayloads.at(-1)?.rawText || runner.sentPayloads.at(-1)?.text || "");
+  assert.ok(!continuation.includes("改完文件后继续"), "the continuation is not a replay of the user's request");
+  runner.busy = false;
+  runner.emit("done", { code: 0, output: "样式已完善。" });
+  await settle();
+  flushEvents();
 }
 
 // Negative: even a SUCCESSFUL heal (profile changed) must not replay a turn
@@ -648,9 +656,18 @@ resetRescueStateForTests();
   await settle();
   const events = flushEvents();
   assert.equal(events.find((event) => event.type === "turn.failed")?.payload?.errorCode, "TRUNCATED_TURN_END");
-  assert.equal(events.filter((event) => event.type === "turn.self_heal_retry").length, 0,
+  // Never a REPLAY of the request (that re-runs the write); the one follow-up
+  // is a continuation of the session (2026-09-28 audit).
+  const sentAfter = runner.sentPayloads.slice(payloadsBefore + 1);
+  assert.ok(sentAfter.length <= 1, "at most one follow-up after mutating tools");
+  assert.ok(sentAfter.every((payload) => !String(payload?.rawText || payload?.text || "").includes("写完文件后被截断的任务")),
     "a healed profile must NOT auto-replay a turn that wrote files");
-  assert.equal(runner.sentPayloads.length, payloadsBefore + 1, "no heal retry after mutating tools");
+  if (sentAfter.length) {
+    runner.busy = false;
+    runner.emit("done", { code: 0, output: "已继续完成。" });
+    await settle();
+    flushEvents();
+  }
   selfHealShouldHeal = false;
 }
 

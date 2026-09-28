@@ -52,15 +52,17 @@ function configFingerprints(configContent = "") {
  * session has to move to a serve built from the new config. The question this
  * answers is what that move costs:
  *
- *   restart — the model or the way it is reached actually changed. The old
- *             conversation state belongs to a different model, so a fresh
- *             engine session is correct and the resume id goes with it.
- *   recycle — the same model reached the same way, differing only in a
- *             credential. The conversation is still valid; it moves to the new
- *             serve keeping its resume id.
- *
- * Falls back to `restart` whenever the route comparison cannot be made, so an
- * absent or unreadable route fingerprint reproduces the previous behaviour.
+ *   recycle — the serve is rebuilt from the new config and the conversation
+ *             moves to it keeping its resume id. An engine session is not bound
+ *             to a model: every message records its own, every prompt names
+ *             the model it runs on, and the engine itself switches models
+ *             mid-session. So a credential rotation AND a model switch keep
+ *             the conversation — the user chose both models, and auto mode
+ *             routing a turn to the other one used to wipe the engine context
+ *             down to a 12K local rebuild (2026-09-28 audit). A smaller window
+ *             is handled by overflow compaction, not by discarding history.
+ *   restart — only with LILY_MODEL_SWITCH_KEEPS_CONVERSATION=0: the previous
+ *             rule, a model/route change discards the resume id.
  *
  * @returns {{ action: "none"|"restart"|"recycle", from?: string, to?: string, reason?: string }}
  */
@@ -80,7 +82,10 @@ function modelConfigTransition(session, options = {}, previousOptions = {}) {
   if (nextRoute && fromRoute && nextRoute === fromRoute) {
     return { action: "recycle", from, to, reason: "credential_rotated" };
   }
-  return { action: "restart", from, to, reason: "model_changed" };
+  if (process.env.LILY_MODEL_SWITCH_KEEPS_CONVERSATION === "0") {
+    return { action: "restart", from, to, reason: "model_changed" };
+  }
+  return { action: "recycle", from, to, reason: "model_changed" };
 }
 
 function toolConfigChanged(session, options = {}, previousOptions = {}) {

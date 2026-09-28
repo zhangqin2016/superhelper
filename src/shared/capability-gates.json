@@ -2663,6 +2663,63 @@
       ]
     },
     {
+      "id": "resume-kept-after-completed-tools",
+      "protects": "A resumed engine session is discarded after a visible model/gateway failure only when a side-effecting tool was still IN FLIGHT when the failure hit (or a user card was pending); tools that completed are recorded in the session history, so the conversation is kept.",
+      "baseline": "2026-09-28 audit: any side-effecting tool that ran during the turn marked the session unaccountable, so a gateway 504 after 50 completed edits cleared the resume id and the next 'continue' got a 12K lossy local rebuild.",
+      "failureFallback": "An in-flight side-effecting tool still drops the resume (the original safety reason); replay of a side-effecting turn is still refused separately. Mutation-verified: restoring 'ran any unsafe tool' fails by name.",
+      "tests": [
+        "scripts/test-opencode-agent-session.mjs"
+      ]
+    },
+    {
+      "id": "session-survives-model-switch",
+      "protects": "Switching the model — by the user or by auto mode routing a turn to another chosen model — rebuilds the serve from the new config and keeps the engine session (recycle): an engine session is not bound to a model; every message records its own and every prompt names the model it runs on.",
+      "baseline": "2026-09-28 audit: a model/route change restarted the engine and discarded the resume id, so every auto-mode switch between the user's chosen models wiped the engine context down to a 12K local rebuild.",
+      "failureFallback": "A smaller window is handled by overflow compaction; a credential rotation still recycles; LILY_MODEL_SWITCH_KEEPS_CONVERSATION=0 restores the discard-on-switch rule. Mutation-verified: restarting on a switch fails by name.",
+      "tests": [
+        "scripts/test-engine-config-continuity.mjs",
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-opencode-runtime-ownership.mjs"
+      ]
+    },
+    {
+      "id": "resume-continuity-by-id",
+      "protects": "Resume continuity is proven structurally first: an engine message id Lily recorded for one of its turns found in the official history means the same conversation, whatever the texts look like. Text overlap rules only when no ids exist, and a foreign conversation (no shared ids, no shared text) is still rejected.",
+      "baseline": "2026-09-28 audit: a staged large paste (the engine holds a directive + preview, Lily the original) never overlapped by text, so the guard read the session as foreign and reset it.",
+      "failureFallback": "Older records without ids use the previous text comparison unchanged. Mutation-verified: disabling the id match fails by name.",
+      "tests": [
+        "scripts/test-resume-continuity-guard.mjs"
+      ]
+    },
+    {
+      "id": "interrupted-long-turn-continues",
+      "protects": "A long turn that already had side effects and was then interrupted (connection lost, stream truncated, engine unavailable, no response, provider overloaded or rate-limited) is CONTINUED in its session with the continuation hint — never replayed from the user's request, which would re-run its edits. Side-effect-free turns still replay.",
+      "baseline": "2026-09-28 audit: such a turn was neither replayed (side effects) nor continued (the continuation set held only leaked tool calls, coverage and context limit), so 100 tool calls of work ended as a failure.",
+      "failureFallback": "The same bounded attempts, delays and engine recycle as the replay strategies apply; LILY_TOOL_CALL_CONTINUATION=0 restores the previous behaviour. Mutation-verified: removing the interruption codes fails by name.",
+      "tests": [
+        "scripts/test-tool-call-continuation.mjs",
+        "scripts/test-tool-call-rescue.mjs"
+      ]
+    },
+    {
+      "id": "watchdogs-honour-engine-work",
+      "protects": "The no-progress watchdog, like the first-response fuse, treats the engine busy on this session (a running compaction, or a provider retry it scheduled) as work, not a stall; a tool's lease lasts at least the timeout it declared plus a minute; a subagent's progress refreshes its parent task tool's activity.",
+      "baseline": "2026-09-28 audit: a retry-after longer than 10 minutes, or a long compaction, ended the turn as stalled; a model-declared 30-minute build lost its fixed 20-minute lease; a long quiet subagent run expired its parent task tool.",
+      "failureFallback": "Real silence after the engine work still ends the turn; compaction windows expire on their own; the default lease is unchanged for tools that declare no timeout. Mutation-verified: dropping the engine-busy extension and a fixed lease each fail by name.",
+      "tests": [
+        "scripts/test-first-response-watchdog.mjs"
+      ]
+    },
+    {
+      "id": "context-limit-is-input-overflow",
+      "protects": "CONTEXT_LIMIT is only wording about the INPUT not fitting (each provider's overflow phrasing named); parameter errors such as 'max_tokens is too large' or a tool name over its maximum length are not overflows and never teach a context window.",
+      "baseline": "2026-09-28 audit: 'maximum.*length' and 'max.*tokens' classified parameter 400s as CONTEXT_LIMIT, non-retryable, and the overflow learner could record the largest accepted request as a new, much smaller window.",
+      "failureFallback": "OpenAI, Anthropic, Gemini, Qwen, DeepSeek, Moonshot overflows and 413 are still CONTEXT_LIMIT. Mutation-verified: restoring the broad patterns fails by name.",
+      "tests": [
+        "scripts/test-model-context-window-learning.mjs"
+      ]
+    },
+    {
       "id": "node-shim-argv-compatible",
       "protects": "Lily's node shim (Electron running as Node) gives scripts Node's argv layout: it preloads node-argv-compat.cjs, which sets process.defaultApp when unset, so yargs' hideBin and commander stop treating the script path as an argument; without the file the shim still runs; a shim written for the same binary by an older Lily is rewritten; release preflight checks the node on PATH with electron-builder's own parser before anything is built.",
       "baseline": "2026-09-27: every yargs/commander CLI run from Lily's shell misread its arguments; release 0.1.189 attempt 3 failed after building the runtime bundle with 'Unknown argument: …/.bin/electron-builder'.",
