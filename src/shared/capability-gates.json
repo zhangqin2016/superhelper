@@ -2644,9 +2644,9 @@
     },
     {
       "id": "todo-continuation-respects-stop",
-      "protects": "The unfinished-todo continuation never overrides a model that decided to stop: nudged once, a model that stops again with no tool call and no todo change (typically waiting on the user) is left alone; the prompt tells it to ask instead of guessing. The answer given before the continuation survives it, whichever way the turn settles.",
+      "protects": "The unfinished-todo continuation never forces a guess: the prompt tells a model that needs the user's decision to stop and ask, the gate settles after two consecutive no-progress nudges, and the answer given before the continuation survives it, whichever way the turn settles.",
       "baseline": "2026-09-28 audit: a model that asked the user '用哪个模板？' was pushed back up to twice more, guessing on the user's behalf; the continuation reply ('已全部标记完成') could replace the real answer given before it.",
-      "failureFallback": "A model making progress still earns nudges; the shared continuation budget and LILY_DISABLE_TODO_COMPLETION_GATE=1 are unchanged. Mutation-verified: no pre-gate capture and a second push each fail by name.",
+      "failureFallback": "A model making progress still earns nudges; two no-progress nudges is the field-measured bound (a second still completes items 7/16 times, later ones 7/23); the shared continuation budget and LILY_DISABLE_TODO_COMPLETION_GATE=1 are unchanged. Mutation-verified: no pre-gate capture and a changed nudge count each fail by name.",
       "tests": [
         "scripts/test-opencode-agent-session.mjs",
         "scripts/test-opencode-session-policies.mjs"
@@ -2793,7 +2793,7 @@
       "id": "earlier-turn-instructions-expire",
       "protects": "An earlier turn's task contract, execution constraints and injected memory do not follow the conversation forward; history keeps the user's request, the attachment provenance and the extracted content.",
       "baseline": "2026-09-28: every layered user message stayed whole in history — one field session carried 22 task contracts (~230K chars), and later turns read an earlier turn's 'separate task, prior conversation is background only'.",
-      "failureFallback": "Text without Lily's layer markup, or a layered message with no recognisable request, is returned unchanged; the current turn is never touched; LILY_STALE_TURN_CONTEXT=0 restores history exactly as stored.",
+      "failureFallback": "The current turn starts at the last layered message carrying its own execution constraints that is not an internal recovery, so a mid-turn steer or continuation never strips the running turn's contract; a turn with no constraints leaves the earlier request whole (the pre-plugin behaviour). Unlayered text is unchanged; LILY_STALE_TURN_CONTEXT=0 restores history exactly as stored.",
       "tests": [
         "scripts/test-stale-turn-context.mjs"
       ]
@@ -2802,7 +2802,7 @@
       "id": "task-contract-no-fixed-thresholds",
       "protects": "The task contract states facts, not fixed thresholds: subagent timing is the model's call, new-task isolation appears only when earlier work exists, and user terms become workspace search targets only for source tasks.",
       "baseline": "2026-09-28: fixed 6000ms/20-file/3-subsystem/60s subagent rules, a 1.8K isolation block on every first turn, a per-turn JSON draft schema, and 'Excel' in a VLOOKUP question treated as a workspace term.",
-      "failureFallback": "Coverage tasks keep the subagent guidance (nesting limit, handoff shape, coverage terms); source tasks keep explicit-term coverage; a relation of 'new' with earlier work keeps the isolation text.",
+      "failureFallback": "Coverage tasks keep the subagent guidance; named terms are kept for source tasks AND for any explicit coverage request, even when the classifier guesses 'general'; a relation of 'new' with earlier work keeps the isolation text.",
       "tests": [
         "scripts/test-subagent-isolation-policy.mjs",
         "scripts/test-task-contract.mjs",

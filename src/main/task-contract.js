@@ -883,7 +883,11 @@ const SOURCE_TASK_TYPES = new Set([
 ]);
 
 function buildSourceCoveragePolicy({ text = "", classification = {} } = {}) {
-  const terms = SOURCE_TASK_TYPES.has(classification.taskType) ? extractExplicitUserTerms(text) : [];
+  // A coverage request ("找出所有调用 fetchUser 的地方") keeps its named terms
+  // even when the task-type classifier guesses "general": dropping them there
+  // left the coverage audit with nothing to check (2026-09-28 re-review).
+  const coverageAsked = require("./turn-policy").hasBroadCoverageIntent(text);
+  const terms = SOURCE_TASK_TYPES.has(classification.taskType) || coverageAsked ? extractExplicitUserTerms(text) : [];
   const required = Boolean(
     classification.active &&
       !isPureExternalFactClassification(classification) &&

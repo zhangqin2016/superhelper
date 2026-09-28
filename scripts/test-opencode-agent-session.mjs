@@ -236,7 +236,7 @@ async function newSession() {
   assert(orch.calls.done.length === 0, "idle with unfinished todos keeps the turn open");
   assert(fake.prompts.length === 2, "unfinished todo gate sends one internal continuation prompt");
   assert(/unfinished todo/i.test(fake.prompts[1].text), "continuation prompt names unfinished todos");
-  assert(/Continuation attempt: 1\/1/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
+  assert(/Continuation attempt: 1\/2/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
 
   fake.emitEvent({
     type: "todo.updated",
@@ -312,9 +312,10 @@ async function newSession() {
     await waitIdleSettle();
     await tick();
   }
-  // 2026-09-28: nudged once, the model stopped again with no tool call and no
-  // todo change — it is waiting on the user, so it is not pushed a second time.
-  assert(fake.prompts.length === 2, `a model that stops again after one nudge is left alone (sent ${fake.prompts.length} prompts)`);
+  // Two no-progress nudges, then the gate settles (field data: the second still
+  // completes items 7/16 times). The prompt itself tells a model waiting on the
+  // user to stop and ask, so the count does not force a guess.
+  assert(fake.prompts.length === 3, `re-planning must not refill the nudge budget: two no-progress nudges, then the model is left alone (sent ${fake.prompts.length} prompts)`);
   assert(orch.calls.done.length === 1, "the gate settles the turn instead of nudging forever");
   const settled = orch.calls.done[0];
   assert(!settled.stalled, "a turn that produced a real answer must never be marked stalled");

@@ -50,4 +50,21 @@ function stripStaleTurnLayers(text) {
   return kept.some((block) => block.startsWith(REQUEST_MARKER)) ? kept.join("\n\n") : text;
 }
 
-module.exports = { isLayeredRequest, stripStaleTurnLayers };
+// Whether a message STARTS a turn: it carries that turn's own instructions
+// (the execution_constraints layer — task contract or source guidance) and is
+// not an internal recovery continuation. A steer ("插话") sent mid-turn is
+// layered too but carries only the user's words and attachment provenance, so
+// it must not make the running turn's contract look stale; a recovery
+// continuation continues the same task. A turn with no constraints (a bare
+// "谢谢") opens nothing, leaving the earlier request whole — the behaviour
+// before this plugin existed.
+const INTERNAL_TURN_RE = /<lily_internal_turn\s+kind="/;
+function opensTurn(text) {
+  if (!isLayeredRequest(text) || INTERNAL_TURN_RE.test(text)) return false;
+  for (const [, title, body] of text.matchAll(LAYER_RE)) {
+    if (title === "execution_constraints" && String(body || "").trim()) return true;
+  }
+  return false;
+}
+
+module.exports = { isLayeredRequest, opensTurn, stripStaleTurnLayers };

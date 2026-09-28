@@ -54,6 +54,29 @@ const messages = () => [
   assert.equal(msgs[3].parts[0].text.startsWith("Task continuity check"), true, "a platform prompt in the same turn is untouched");
 }
 
+// A steer ("插话") and an internal recovery continuation belong to the RUNNING
+// turn: the turn's own contract must stay whole while they are the latest
+// messages. Steer is on by default, so a plain mid-turn remark used to strip
+// the running turn's contract (2026-09-28 re-review). A bare "谢谢" turn opens
+// nothing, so the earlier request stays whole — the pre-plugin behaviour.
+{
+  const { applyInternalRecoveryLayer } = require("../src/main/turn-recovery-context.js");
+  const steer = withAttachmentManifest("顺便把日志也看一下", []);
+  const recovery = applyInternalRecoveryLayer(withAttachmentManifest("继续", []), { kind: "tool_call_continuation", guidance: "Continue from the last completed step." });
+  const thanks = withAttachmentManifest("谢谢", []);
+  assert.equal(layers.isLayeredRequest(steer), true, "fixture: a steer is layered text too");
+  for (const [label, latest] of [["steer", steer], ["recovery continuation", recovery], ["bare thanks", thanks]]) {
+    const msgs = [user(first), assistant("已修复。"), user(second), assistant("正在写测试…"), user(latest)];
+    await transform({}, { messages: msgs });
+    assert.equal(msgs[2].parts[0].text, second, `after a ${label}, the running turn keeps its whole contract`);
+    assert.doesNotMatch(msgs[0].parts[0].text, /<lily_task_contract>/, `and the earlier turn is still reduced (${label})`);
+    assert.equal(msgs[4].parts[0].text, latest, `the ${label} itself is untouched`);
+  }
+  assert.equal(layers.opensTurn(second), true, "a real request opens a turn");
+  assert.equal(layers.opensTurn(steer), false, "a steer does not");
+  assert.equal(layers.opensTurn(recovery), false, "a recovery continuation does not");
+}
+
 // Deterministic: a message strips identically on every later call, so the
 // provider's cached prefix stays stable.
 {

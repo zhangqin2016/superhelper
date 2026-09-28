@@ -6,11 +6,13 @@ const { markInternalPrompt } = require("./internal-prompt-marker");
 // Max CONSECUTIVE continuation nudges that produced no progress. The caller only
 // resets its counter on unique completed execution or a shrinking todo set, bounding
 // confirmed no-progress rather than effort: a model that keeps completing items
-// keeps earning nudges. A model that was nudged once and then stopped again with
-// no tool call and no todo change has DECIDED to stop — typically waiting on the
-// user — and is left alone: pushing it a second time overrode that decision and
-// made it guess on the user's behalf (2026-09-28 audit).
-const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 1;
+// keeps earning nudges. Two consecutive no-progress nudges, measured on the
+// field engine DB (2026-09-28): after a nudge that changed nothing, a second one
+// still led to completed items 7/16 times; a third, 7/23 across all later
+// attempts. A model WAITING on the user is not pushed into guessing by the
+// count — the continuation prompt tells it to stop and ask — and its pre-gate
+// answer is kept either way (withPreGateAnswer).
+const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
 // Absolute per-turn ceiling on continuation nudges. Real progress refills the
 // budget above, so without this cap a model that keeps re-planning its todo list
 // can be pushed back into the same turn indefinitely (a field turn burned 7

@@ -315,6 +315,10 @@ assert(!prefixed.includes("New-task isolation boundary:"), "a session's opening 
   assert.equal(office.sourceCoveragePolicy.required, false, "an English product name in an office question is not a source term to find");
   const code = buildTaskContract({ text: "修复 LoginForm 组件的校验", project: { path: ROOT } });
   assert.deepEqual(code.sourceCoveragePolicy.explicitTerms, ["LoginForm"], "a code task still searches for the user's named symbol");
+  // A coverage request keeps its terms even when the classifier guesses "general".
+  const sweep = buildTaskContract({ text: "找出所有调用 fetchUser 的地方并改成 fetchAccount", project: { path: ROOT } });
+  assert.equal(sweep.taskType, "general", "fixture: the classifier does not recognise this as a source task");
+  assert.deepEqual(sweep.sourceCoveragePolicy.explicitTerms, ["fetchUser", "fetchAccount"], "the coverage audit still has the named symbols to check");
 }
 assert(prefixed.includes("task_type: runtime_protocol"));
 assert(prefixed.includes("Impact checklist:"));
