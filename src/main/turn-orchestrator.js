@@ -1214,6 +1214,7 @@ class TurnOrchestrator {
           ? "Capability readiness: live browser evidence is unavailable for this turn. Continue once using static code inspection, state the evidence limitation, and do not claim browser verification."
           : `Capability readiness: optional task tooling could not be prepared (${[...unavailable, ...failed].slice(0, 5).join(", ")}). Continue once with the listed fallback capabilities and state any verification limitation.`);
       }
+      require("./skill-routing-shadow").beginTurn(state, { text: state.recoveryObjective || rawUserText, files }); // measured, never injected
       try {
         // Route on the request this turn serves: a recovery turn's own text is the platform's correction.
         if (shouldInjectCapabilityContext({ text: state.recoveryObjective || rawUserText, files, dependencyAdvisory, turnPolicy })) {

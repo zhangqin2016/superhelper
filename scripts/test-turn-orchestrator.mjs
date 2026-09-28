@@ -871,10 +871,11 @@ if (agentQualityRecommendedSkills[0] !== "lily-intent-eval") {
 if (!agentQualityRecommendedSkills.includes("lily-skill-quality-gate")) {
   throw new Error(`agent-quality capability trace should include skill quality gate: ${JSON.stringify(agentQualityPayload.trace?.capabilityContext)}\n${agentQualityPayload.text}`);
 }
-const intentEvalIndex = agentQualityPayload.text.indexOf("- lily-intent-eval ");
-const browserQaAgentQualityIndex = agentQualityPayload.text.indexOf("- lily-browser-qa ");
-if (intentEvalIndex < 0 || (browserQaAgentQualityIndex >= 0 && intentEvalIndex > browserQaAgentQualityIndex)) {
-  throw new Error(`agent-quality capability context should not put browser QA before intent eval:\n${agentQualityPayload.text}`);
+// Shadow routing (OpenAI/Codex method): the router's ranking is kept in the
+// trace and measured against what the model reads, but never written into the
+// prompt — the model picks from the catalog.
+if (/Skill capability graph|Best match for this request|- lily-intent-eval /.test(agentQualityPayload.text)) {
+  throw new Error(`shadow routing must not write the router's picks into the prompt:\n${agentQualityPayload.text}`);
 }
 runner.finish("Agent-quality capability route selected.");
 await new Promise((resolve) => setTimeout(resolve, 5));
@@ -897,10 +898,8 @@ const appRecommendedSkills = appCapabilityPayload.trace?.capabilityContext?.reco
 if (appRecommendedSkills[0] !== "lily-app-builder") {
   throw new Error(`app capability trace should put app builder first: ${JSON.stringify(appCapabilityPayload.trace?.capabilityContext)}\n${appCapabilityPayload.text}`);
 }
-const appBuilderIndex = appCapabilityPayload.text.indexOf("- lily-app-builder ");
-const browserQaIndex = appCapabilityPayload.text.indexOf("- lily-browser-qa ");
-if (appBuilderIndex < 0 || browserQaIndex < 0 || appBuilderIndex > browserQaIndex) {
-  throw new Error(`app capability context should preserve recommendation order:\n${appCapabilityPayload.text}`);
+if (/Skill capability graph|Best match for this request|- lily-app-builder /.test(appCapabilityPayload.text)) {
+  throw new Error(`shadow routing must not write the router's picks into the prompt:\n${appCapabilityPayload.text}`);
 }
 runner.finish("App capability route selected.");
 await new Promise((resolve) => setTimeout(resolve, 5));

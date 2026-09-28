@@ -2434,7 +2434,7 @@
       "id": "skill-best-match-directive",
       "protects": "When the capability router has a rule-level best match (score >= 120), the turn says so as an instruction: read that guide completely before acting, or say in one line why it does not fit — Codex's trigger rule applied to Lily's router. Every prompt's capability catalog also asks the model to name the guide it follows and explain skipping a clear match (zh-CN/en/ar).",
       "baseline": "The recommendation listing is unchanged; the directive's characters are granted on top of the capability-context budget, so no skill or route line kept before is displaced; keyword-hint matches (below 120) and chat get no directive.",
-      "failureFallback": "The guide body is never injected (the router misfires even at high scores), so a wrong best match costs one declinable line; any failure returns no directive; LILY_SKILL_BEST_MATCH_DIRECTIVE=0 restores the listing alone.",
+      "failureFallback": "The guide body is never injected (the router misfires even at high scores), so a wrong best match costs one declinable line; any failure returns no directive; LILY_SKILL_BEST_MATCH_DIRECTIVE=0 restores the listing alone. Since 2026-09-29 skill routing runs in shadow by default (gate skill-routing-shadow): the listing and this directive appear only with LILY_SKILL_ROUTING_SHADOW=0; the catalog's name-the-guide / explain-a-skip rule still applies every turn.",
       "tests": [
         "scripts/test-skill-guide-directive.mjs",
         "scripts/test-agent-guide-headroom.mjs",
@@ -2844,6 +2844,16 @@
       "failureFallback": "The test fails if the engine stops loading AGENTS.md or Lily disables project config; LILY_GUIDE_EMBEDS_AGENTS_MD=1 restores the embedded copy.",
       "tests": [
         "scripts/test-learned-context.mjs"
+      ]
+    },
+    {
+      "id": "skill-routing-shadow",
+      "protects": "Which skill a turn needs is the model's call from the catalog, as in ChatGPT/Codex; the hand-written router and a generic BM25 still rank every turn in shadow, and every guide the model reads scores each selector (hit, rank bucket, script, in-catalog) plus a per-turn event for the guide read rate.",
+      "baseline": "2026-09-29 field replay (1872 turns): router hit@1 17.2%, 64% of the guides models read outside its top 8, generic BM25 equal (MRR .231 vs .239), the 'Best match' pick disagreeing with the model's own choice 67/107, ~290 reads of skills the router does not know, 87/153 guide-reading turns short follow-ups.",
+      "failureFallback": "Platform routes are still injected; the catalog and its read-the-guide rule are unchanged; the shadow log holds no user text and every failure is swallowed; LILY_SKILL_ROUTING_SHADOW=0 restores the injected listing and directive. Mutation-verified: re-injection, double counting, a faked hit, logging the request and removing either wire each fail by name.",
+      "tests": [
+        "scripts/test-skill-routing-shadow.mjs",
+        "scripts/test-turn-orchestrator.mjs"
       ]
     }
   ]

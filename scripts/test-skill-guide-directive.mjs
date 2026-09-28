@@ -6,6 +6,10 @@
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+// These assertions cover the router's injected listing and directive, which run
+// only on the LILY_SKILL_ROUTING_SHADOW=0 path since routing moved to shadow
+// mode (scripts/test-skill-routing-shadow.mjs covers the default).
+process.env.LILY_SKILL_ROUTING_SHADOW = "0";
 const require = createRequire(import.meta.url);
 const broker = require("../src/main/capability-broker.js");
 const { bestMatchDirective, DIRECTIVE_MIN_SCORE } = require("../src/main/skill-guide-directive.js");

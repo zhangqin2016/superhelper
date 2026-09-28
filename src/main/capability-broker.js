@@ -462,7 +462,7 @@ function compactCapabilityContext(opts = {}) {
     }
     return `- ${item.id}: ${item.title}; fail open.`;
   });
-  const graphLines = compactSkillCapabilityGraph(opts);
+  const graphLines = require("./skill-routing-shadow").isShadow() ? [] : compactSkillCapabilityGraph(opts); // shadow: the model picks from the catalog
   const lines = hasFocus
     ? [
         "Lily chat-native capabilities:",

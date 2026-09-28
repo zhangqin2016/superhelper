@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+// These assertions cover the router's injected listing and directive, which run
+// only on the LILY_SKILL_ROUTING_SHADOW=0 path since routing moved to shadow
+// mode (scripts/test-skill-routing-shadow.mjs covers the default).
+process.env.LILY_SKILL_ROUTING_SHADOW = "0";
 
 const {
   listCapabilities,

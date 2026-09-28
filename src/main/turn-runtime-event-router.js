@@ -242,6 +242,7 @@ function createTurnRuntimeEventRouter(options = {}) {
           tool.endedAt = now();
           if (Number.isFinite(tool.startedAt)) tool.durationMs = Math.max(0, tool.endedAt - tool.startedAt);
           const evidenceEvent = state.evidenceLedger?.recordTool?.(tool);
+          require("./skill-routing-shadow").recordInvocation(state, tool);
           try {
             const taskContract = state.taskContract || state.pendingTaskContract || null;
             const refinement = applyToolTurnContractRefinement({ taskContract, taskRun: state.taskRun, tool, evidenceEvent });
