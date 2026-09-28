@@ -5,7 +5,6 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  MAIN_FIRST_DISPATCH_THRESHOLDS,
   buildSubagentIsolationHint,
   shouldUseSubagentIsolation,
 } = require("../src/main/subagent-isolation-policy.js");
@@ -15,10 +14,12 @@ assert.equal(
   false,
   "small turns stay direct",
 );
+// 2026-09-28 audit: wording no longer decides; only a coverage task (where
+// sharding by term pays) gets the note, and WHEN to start a Task is the model's.
 assert.equal(
   shouldUseSubagentIsolation({ text: "彻底分析整个链路，不要漏", turnPolicy: { rigor: "fast" } }),
-  true,
-  "broad investigation wording triggers isolation",
+  false,
+  "broad wording alone no longer triggers it",
 );
 assert.equal(
   shouldUseSubagentIsolation({ text: "看一下", turnPolicy: { rigor: "coverage" } }),
@@ -34,22 +35,15 @@ const hint = buildSubagentIsolationHint({
   },
 });
 assert.match(hint, /Subagent Context Isolation/);
-assert.match(hint, /Main-First Dispatch Gate/);
-assert.match(hint, /Lily subagents/);
-assert.match(hint, /deterministic local tools/);
-assert.match(hint, /Do not start Task before this candidate map exists/);
-assert.match(hint, /pure keyword search/);
-assert.match(hint, new RegExp(`<${MAIN_FIRST_DISPATCH_THRESHOLDS.candidateFiles} candidate files`));
-assert.match(hint, new RegExp(`${MAIN_FIRST_DISPATCH_THRESHOLDS.subsystems}\\+ independent subsystems`));
-assert.match(hint, /parent should keep doing other deterministic work/);
-assert.match(hint, new RegExp(`under ${MAIN_FIRST_DISPATCH_THRESHOLDS.subagentTargetSeconds} seconds`));
-assert.match(hint, /Each Task prompt must include/);
+assert.doesNotMatch(hint, /\d{2,}\s*(?:ms|seconds|candidate files)|Do not start Task before/, "no hardcoded thresholds or dispatch bans");
 // The prompt MUST match the engine's depth-1 cap (config-builder injects task:deny
 // into every spawned child). Telling the model nested Task is allowed makes it waste
 // steps on denied attempts and invites the runaway "subtask spawns subtasks" incident.
 assert.match(hint, /Subagents cannot spawn their own Task subagents/);
-assert.match(hint, /MAIN agent dispatches them/);
+assert.match(hint, /MAIN agent to dispatch/);
 assert.doesNotMatch(hint, /Nested Task is allowed/);
+assert.match(hint, /compact handoff/);
+assert.match(hint, /leads, not proof/);
 assert.match(hint, /session\.idle/);
 
 console.log("subagent-isolation-policy: ok");

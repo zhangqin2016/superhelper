@@ -49,9 +49,23 @@ try {
   fs.writeFileSync(path.join(workspace, "AGENTS.md"), "# 团队约定\n提交前跑测试");
   fs.writeFileSync(path.join(workspace, "CLAUDE.md"), "engine-native-should-not-appear");
   const section = buildWorkspaceRulesSection(workspace);
-  if (!section.includes("永远用中文回复") || !section.includes("提交前跑测试")) {
-    throw new Error(`workspace rules must be absorbed: ${section}`);
+  if (!section.includes("永远用中文回复")) {
+    throw new Error(`workspace rules the engine does not read must be absorbed: ${section}`);
   }
+  // AGENTS.md reaches the model through the engine, whole; a second, clipped
+  // copy in the guide only doubled it (2026-09-28 audit).
+  if (section.includes("提交前跑测试")) {
+    throw new Error("AGENTS.md is loaded by the engine natively and must not be embedded a second time");
+  }
+  const engineInstructions = fs.readFileSync(path.join(process.cwd(), "opencode/packages/opencode/src/session/instruction.ts"), "utf8");
+  if (!/instructionFiles = \[\s*"AGENTS\.md"/.test(engineInstructions) || /OPENCODE_DISABLE_PROJECT_CONFIG/.test(fs.readFileSync(path.join(process.cwd(), "src/main/spawn-env.js"), "utf8"))) {
+    throw new Error("the engine must still load the project AGENTS.md itself — otherwise the guide has to embed it again");
+  }
+  process.env.LILY_GUIDE_EMBEDS_AGENTS_MD = "1";
+  if (!buildWorkspaceRulesSection(workspace).includes("提交前跑测试")) {
+    throw new Error("LILY_GUIDE_EMBEDS_AGENTS_MD=1 restores the embedded copy");
+  }
+  delete process.env.LILY_GUIDE_EMBEDS_AGENTS_MD;
   if (section.includes("engine-native-should-not-appear")) {
     throw new Error("legacy CLAUDE.md must be skipped; AGENTS.md is the canonical workspace guide");
   }

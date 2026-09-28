@@ -1173,7 +1173,7 @@ class TurnOrchestrator {
         sessionSummary: summary,
         project,
         disabledKinds: [...memoryDisabledKinds],
-        projectMemory: shouldLoadProjectMemory ? readProjectMemoryIndex(project.path, { maxChars: 1_500 }) : null,
+        projectMemory: shouldLoadProjectMemory ? readProjectMemoryIndex(project.path, { maxChars: 6_000 }) : null,
         workspaceDigest: shouldLoadProjectMemory ? buildWorkspaceDigest(project.path) : "",
         learnedConventions: shouldLoadProjectMemory ? readLearnedConventions(session.projectId) : "",
         turnPolicy,

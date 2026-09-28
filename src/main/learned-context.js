@@ -16,6 +16,17 @@ const { userDataPath } = require("./config");
 
 const MAX_SECTION_CHARS = 4000;
 const WORKSPACE_RULE_FILES = [".cursorrules", "AGENTS.md", ".windsurfrules"];
+// The engine loads the project's AGENTS.md itself, whole, as a system
+// instruction (opencode session/instruction.ts, findUp from the session
+// directory) — embedding it here too sent it twice, the second copy clipped to
+// 4000 chars (2026-09-28 audit). The guide carries only what the engine does
+// not read. LILY_GUIDE_EMBEDS_AGENTS_MD=1 restores the second copy.
+const ENGINE_NATIVE_RULE_FILES = new Set(["AGENTS.md"]);
+function guideRuleFiles() {
+  return process.env.LILY_GUIDE_EMBEDS_AGENTS_MD === "1"
+    ? WORKSPACE_RULE_FILES
+    : WORKSPACE_RULE_FILES.filter((name) => !ENGINE_NATIVE_RULE_FILES.has(name));
+}
 
 /** Guide sections follow the app locale: a Chinese-language system prompt
  * nudges the model into Chinese replies for English users. */
@@ -168,7 +179,7 @@ function buildLearnedSection(projectId) {
 function buildWorkspaceRulesSection(workspacePath) {
   if (!workspacePath) return "";
   const parts = [];
-  for (const name of WORKSPACE_RULE_FILES) {
+  for (const name of guideRuleFiles()) {
     const filePath = path.join(workspacePath, name);
     try {
       if (!fs.existsSync(filePath)) continue;

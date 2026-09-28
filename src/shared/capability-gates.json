@@ -2788,6 +2788,62 @@
       "tests": [
         "scripts/test-preview-pane.cjs"
       ]
+    },
+    {
+      "id": "earlier-turn-instructions-expire",
+      "protects": "An earlier turn's task contract, execution constraints and injected memory do not follow the conversation forward; history keeps the user's request, the attachment provenance and the extracted content.",
+      "baseline": "2026-09-28: every layered user message stayed whole in history — one field session carried 22 task contracts (~230K chars), and later turns read an earlier turn's 'separate task, prior conversation is background only'.",
+      "failureFallback": "Text without Lily's layer markup, or a layered message with no recognisable request, is returned unchanged; the current turn is never touched; LILY_STALE_TURN_CONTEXT=0 restores history exactly as stored.",
+      "tests": [
+        "scripts/test-stale-turn-context.mjs"
+      ]
+    },
+    {
+      "id": "task-contract-no-fixed-thresholds",
+      "protects": "The task contract states facts, not fixed thresholds: subagent timing is the model's call, new-task isolation appears only when earlier work exists, and user terms become workspace search targets only for source tasks.",
+      "baseline": "2026-09-28: fixed 6000ms/20-file/3-subsystem/60s subagent rules, a 1.8K isolation block on every first turn, a per-turn JSON draft schema, and 'Excel' in a VLOOKUP question treated as a workspace term.",
+      "failureFallback": "Coverage tasks keep the subagent guidance (nesting limit, handoff shape, coverage terms); source tasks keep explicit-term coverage; a relation of 'new' with earlier work keeps the isolation text.",
+      "tests": [
+        "scripts/test-subagent-isolation-policy.mjs",
+        "scripts/test-task-contract.mjs",
+        "scripts/test-turn-orchestrator.mjs"
+      ]
+    },
+    {
+      "id": "memory-index-fits-not-vanishes",
+      "protects": "The curated project memory index reaches grounded turns as far as the memory budget allows and names the file holding the rest, instead of its first five entries or nothing.",
+      "baseline": "2026-09-28: the index was cut to 1.2K (five entries of a 10.6K index); raising the cap alone would have dropped it whole under the 3-5K budget.",
+      "failureFallback": "Items without a partialNote keep the whole-or-nothing selection; the memory budget is never exceeded; less than 240 chars of room skips the index as before.",
+      "tests": [
+        "scripts/test-memory-registry.mjs"
+      ]
+    },
+    {
+      "id": "truncated-guide-keeps-catalog",
+      "protects": "On a truncated guide the skill catalog keeps its heading, instructions and the entries that fit, most relevant first, and the user's learned conventions are kept like a guardrail.",
+      "baseline": "2026-09-28: sections were kept or dropped whole, so on the lite 8000-char budget the whole catalog vanished and learned conventions could be shed like any skill section.",
+      "failureFallback": "A guide that fits is byte-identical; prose sections keep whole-or-nothing; any parsing surprise falls back to the legacy head cut; LILY_GUIDE_PARTIAL_LISTS=0 restores whole-or-nothing lists.",
+      "tests": [
+        "scripts/test-guide-catalog-survives.mjs"
+      ]
+    },
+    {
+      "id": "declared-document-parts-sent",
+      "protects": "A model whose preset declares a document mime (capabilities.filePartMimes) receives the original file as a file part, beside Lily's extraction.",
+      "baseline": "2026-09-28: every document was skipped to a source path before the declaration was consulted, so a declared PDF reader never received a PDF.",
+      "failureFallback": "Undeclared models are unchanged (source path + extracted text); the inline size limit still applies; the engine's own modality check and filepart-text-coercion still guard the request.",
+      "tests": [
+        "scripts/test-opencode-message-parts.mjs"
+      ]
+    },
+    {
+      "id": "agents-md-loaded-once",
+      "protects": "The project's AGENTS.md reaches the model once, whole, through the engine's native instruction loading; the guide embeds only rule files the engine does not read.",
+      "baseline": "2026-09-28: AGENTS.md was sent twice — natively by the engine and again in Lily's guide, clipped to 4000 chars.",
+      "failureFallback": "The test fails if the engine stops loading AGENTS.md or Lily disables project config; LILY_GUIDE_EMBEDS_AGENTS_MD=1 restores the embedded copy.",
+      "tests": [
+        "scripts/test-learned-context.mjs"
+      ]
     }
   ]
 }

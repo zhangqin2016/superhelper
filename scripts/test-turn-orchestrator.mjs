@@ -1337,8 +1337,7 @@ if (
 }
 if (
   !coveragePayload.text.includes("Subagent Context Isolation") ||
-  !coveragePayload.text.includes("Main-First Dispatch Gate") ||
-  !coveragePayload.text.includes("Do not start Task before this candidate map exists") ||
+  !coveragePayload.text.includes("Subagents cannot spawn their own Task subagents") ||
   coveragePayload.trace?.subagentIsolation?.enabled !== true
 ) {
   throw new Error(`coverage turn should enable subagent context isolation: ${JSON.stringify(coveragePayload.trace?.subagentIsolation)}\n${coveragePayload.text}`);

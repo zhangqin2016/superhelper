@@ -124,7 +124,18 @@ function selectMemoryItemsWithDiagnostics(items = [], { maxChars = DEFAULT_MAX_C
   }
   for (const item of sorted) {
     const size = item.size;
-    if (selected.length && used + size > maxChars) continue;
+    if (selected.length && used + size > maxChars) {
+      // A list of pointers still helps as a prefix, so it takes the room that
+      // is left and says where the rest is, instead of vanishing whole.
+      const room = maxChars - used - 32 - String(item.partialNote || "").length - 1;
+      if (item.partialNote && room >= 240) {
+        const fitted = { ...item, text: `${compactText(item.text, room)}\n${item.partialNote}`, fittedToBudget: true };
+        fitted.size = itemSize(fitted);
+        selected.push(fitted);
+        used += fitted.size;
+      }
+      continue;
+    }
     if (!selected.length && size > maxChars) {
       const compacted = { ...item, text: compactText(item.text, Math.max(120, maxChars - 32)) };
       compacted.size = itemSize(compacted);
@@ -305,10 +316,14 @@ function buildMemoryItems({
       ].join(":"),
       sourcePointers: projectMemory.filePath ? [{ type: "file", filePath: projectMemory.filePath }] : [],
       reason: "curated workspace memory index",
+      partialNote: `Note: this index was cut to fit; read ${projectMemory.filePath || "the source file"} for the remaining entries.`,
+      // An index of one-line pointers: the model needs all of them to know what
+      // exists (a 10.6K index was cut to 1.2K — the first five entries). When
+      // it still does not fit, it says where the whole file is.
       text: [
         projectMemory.filePath ? `Source: ${compactText(projectMemory.filePath, 300)}` : "",
-        projectMemory.truncated ? "Note: project memory index was truncated to fit the budget." : "",
-        compactText(projectMemory.text, 1_200),
+        projectMemory.truncated ? `Note: this index was truncated; read ${projectMemory.filePath || "the source file"} for the remaining entries.` : "",
+        compactText(projectMemory.text, 6_000),
       ].filter(Boolean).join("\n"),
     });
   }

@@ -1,21 +1,16 @@
 "use strict";
 
-const BROAD_TASK_RE = /(完整|全面|彻底|所有|全部|全量|整个|大范围|不要漏|别漏|scan|audit|全链路|完整链路|architecture|架构)/i;
-const RESEARCH_RE = /(分析|排查|调查|研究|梳理|review|investigate|debug|定位|找出)/i;
-
-const MAIN_FIRST_DISPATCH_THRESHOLDS = Object.freeze({
-  initialDiscoveryMs: 6000,
-  candidateFiles: 20,
-  subsystems: 3,
-  subagentTargetSeconds: 60,
-});
-
-function shouldUseSubagentIsolation({ text = "", turnPolicy = {}, taskContract = null } = {}) {
-  if (turnPolicy?.rigor === "coverage" || turnPolicy?.requiresSourceCoverage) return true;
-  const source = String(text || "");
-  if (BROAD_TASK_RE.test(source) && RESEARCH_RE.test(source)) return true;
-  if (Array.isArray(taskContract?.verificationStrategy) && taskContract.verificationStrategy.length >= 3) return true;
-  return false;
+/**
+ * What a coverage task should know about subagents. WHEN to start a Task is
+ * the model's call — the engine's task tool describes it — so this carries no
+ * thresholds: the hardcoded "discover for up to 6000ms, stay in the main agent
+ * below 20 files / 3 subsystems, target 60 seconds" held a strong model back on
+ * exactly the broad work parallel explorers are for (2026-09-28 audit). What is
+ * left are facts that are always true of Lily's engine and of a good handoff.
+ * Only coverage tasks — where sharding by term actually pays — get it.
+ */
+function shouldUseSubagentIsolation({ turnPolicy = {} } = {}) {
+  return turnPolicy?.rigor === "coverage" || Boolean(turnPolicy?.requiresSourceCoverage);
 }
 
 function buildSubagentIsolationHint(input = {}) {
@@ -25,23 +20,15 @@ function buildSubagentIsolationHint(input = {}) {
     : [];
   return [
     "Subagent Context Isolation:",
-    "Main-First Dispatch Gate:",
-    `- The main agent must first run deterministic local tools/discovery (\`rg\`, glob/list, file search, workspace index) for up to ${MAIN_FIRST_DISPATCH_THRESHOLDS.initialDiscoveryMs}ms or until it has a candidate map. Do not start Task before this candidate map exists.`,
-    `- Stay in the main agent for pure keyword search, TODO/FIXME search, symbol lookup, top-level directory listing, one-subsystem reference checks, or small searches (<${MAIN_FIRST_DISPATCH_THRESHOLDS.candidateFiles} candidate files and <${MAIN_FIRST_DISPATCH_THRESHOLDS.subsystems} subsystems).`,
-    `- Use Lily subagents/task agents only when the candidate map exceeds ${MAIN_FIRST_DISPATCH_THRESHOLDS.candidateFiles} files, spans ${MAIN_FIRST_DISPATCH_THRESHOLDS.subsystems}+ independent subsystems, or contains independent hypotheses that can be checked in parallel.`,
-    "- If a subagent is started, the parent should keep doing other deterministic work when available instead of idly waiting.",
-    `- Treat each subagent as budgeted: target under ${MAIN_FIRST_DISPATCH_THRESHOLDS.subagentTargetSeconds} seconds, return partial evidence if the scope is bigger, and avoid open-ended exploration.`,
-    "- Keep each subagent scoped to one subsystem, directory, or hypothesis. Do not stream full file contents back into the main context.",
-    "- Each Task prompt must include the exact directory/subsystem/hypothesis, files already known, evidence to collect, output schema, and time budget.",
-    "- Subagents cannot spawn their own Task subagents — the engine caps nesting at one level. If a child uncovers more independent shards than its own scope, it must return them as leads in its handoff so the MAIN agent dispatches them; it must not attempt a nested Task.",
-    "- Main context should receive only a compact handoff: files inspected, evidence found, decisions, risks, and remaining open questions.",
+    "- Subagents cannot spawn their own Task subagents — the engine caps nesting at one level. A child that finds more independent shards than its scope returns them as leads for the MAIN agent to dispatch.",
+    "- Scope each subagent to one subsystem, directory or hypothesis, and name what it should return; do not stream full file contents back into the main context.",
+    "- The main context should receive a compact handoff: files inspected, evidence found, decisions, risks, open questions.",
     "- Treat subagent output as leads, not proof; verify decisive claims with direct file/tool evidence before the final answer.",
-    terms.length ? `- Coverage terms to shard first: ${terms.join(", ")}` : "",
+    terms.length ? `- Coverage terms to shard by: ${terms.join(", ")}` : "",
   ].filter(Boolean).join("\n");
 }
 
 module.exports = {
-  MAIN_FIRST_DISPATCH_THRESHOLDS,
   buildSubagentIsolationHint,
   shouldUseSubagentIsolation,
 };

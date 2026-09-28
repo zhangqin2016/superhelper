@@ -415,4 +415,24 @@ const { buildOpencodePromptBody, fileToPart } = require("../src/main/runtime/ope
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// A model DECLARED to read PDFs (capabilities.filePartMimes) gets the original
+// file; one that did not declare it still gets the source path only — the
+// document check used to run first and made the declaration dead.
+{
+  const pdfDir = fs.mkdtempSync(path.join(os.tmpdir(), "lily-declared-pdf-"));
+  const pdfPath = path.join(pdfDir, "contract.pdf");
+  fs.writeFileSync(pdfPath, "%PDF-1.4\n%fixture\n");
+  const declared = fileToPart({ path: pdfPath, name: "contract.pdf" }, { allowedFilePartMimes: ["application/pdf"] });
+  assert.equal(declared?.type, "file", "a declared PDF reader receives the original");
+  assert.equal(declared.mime, "application/pdf");
+  assert.match(declared.url, /^data:application\/pdf;base64,/);
+  const skippedPdf = [];
+  assert.equal(fileToPart({ path: pdfPath, name: "contract.pdf" }, { onSkip: (i) => skippedPdf.push(i) }), null, "an undeclared model does not");
+  assert.equal(skippedPdf.length, 1, "and is told to use the source path");
+  assert.equal(fileToPart({ path: pdfPath, name: "contract.pdf" }, { allowedFilePartMimes: ["application/json"] }), null, "declaring another type does not open PDFs");
+  const uriPart = fileToPart({ uri: "data:application/pdf;base64,JVBERg==", mime: "application/pdf", name: "u.pdf" }, { allowedFilePartMimes: ["application/pdf"] });
+  assert.equal(uriPart?.type, "file", "the uri form honours the declaration too");
+  fs.rmSync(pdfDir, { recursive: true, force: true });
+}
+
 console.log("opencode-message-parts: ok");

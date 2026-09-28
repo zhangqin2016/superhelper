@@ -302,7 +302,20 @@ assert(prefixed.includes("Unsupported factual claims must be downgraded"));
 assert(prefixed.includes("Source coverage gate:"));
 assert(prefixed.includes("Workspace grounding gate:"));
 assert(prefixed.includes("allow_new_top_level: no"));
-assert(prefixed.includes("Model task draft:"));
+// 2026-09-28 audit: the per-turn "internally draft a JSON object" instruction and
+// its 1.5K schema are gone — nothing consumed it; the optional commit tool
+// carries its own schema.
+assert(!prefixed.includes("Model task draft:"));
+assert(!/internally draft a JSON object/.test(prefixed));
+// A first turn has nothing to be isolated from.
+assert(!prefixed.includes("New-task isolation boundary:"), "a session's opening request carries no isolation note");
+// Source-term coverage only for tasks ABOUT the workspace's source.
+{
+  const office = buildTaskContract({ text: "如何用 Excel 的 VLOOKUP 查找数据", project: { path: ROOT } });
+  assert.equal(office.sourceCoveragePolicy.required, false, "an English product name in an office question is not a source term to find");
+  const code = buildTaskContract({ text: "修复 LoginForm 组件的校验", project: { path: ROOT } });
+  assert.deepEqual(code.sourceCoveragePolicy.explicitTerms, ["LoginForm"], "a code task still searches for the user's named symbol");
+}
 assert(prefixed.includes("task_type: runtime_protocol"));
 assert(prefixed.includes("Impact checklist:"));
 assert(prefixed.includes("Verification strategy:"));

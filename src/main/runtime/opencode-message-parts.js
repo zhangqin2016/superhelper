@@ -245,7 +245,10 @@ function fileToPart(file, opts = {}) {
       skipImageAttachment(file.path || file.filePath || "", file.name || file.filename || "", opts);
       return null;
     }
-    if (isPathOnlyDocumentAttachment(file)) {
+    // A model DECLARED to read this document type (capabilities.filePartMimes)
+    // gets the original — layout, tables, figures — beside Lily's extraction;
+    // the document check used to run first and made the declaration dead.
+    if (isPathOnlyDocumentAttachment(file) && !filePartMimeAllowed(file.mime, opts)) {
       skipPathOnlyAttachment(
         file.path || file.filePath || "",
         file.name || file.filename || "",
@@ -302,7 +305,7 @@ function fileToPart(file, opts = {}) {
     }
     return null;
   }
-  if (isPathOnlyDocumentAttachment(file, filePath)) {
+  if (isPathOnlyDocumentAttachment(file, filePath) && !filePartMimeAllowed(mime, opts)) {
     skipPathOnlyAttachment(
       filePath,
       filename,
@@ -413,7 +416,10 @@ function buildOpencodePromptBody(opts = {}) {
 // tight prompt budget, which is what let the model answer confidently wrong.
 // (A distilled copy also rides the never-truncated head; this keeps the FULL
 // discipline block whenever the budget allows.)
-const GUARDRAIL_SECTION_TITLE = /^(?:(?:Large Input Protocol|Process Job Protocol|Tool Protocol)\b|Execution Protocol \(lite support\)$|通用执行纪律|Universal Operating Discipline|انضباط التنفيذ)/i;
+// What the user explicitly asked Lily to remember (learned-context.js
+// buildLearnedSection) is an instruction, not documentation: on a truncated
+// (lite) guide it used to be shed like any skill section (2026-09-28 audit).
+const GUARDRAIL_SECTION_TITLE = /^(?:(?:Large Input Protocol|Process Job Protocol|Tool Protocol)\b|Execution Protocol \(lite support\)$|通用执行纪律|Universal Operating Discipline|انضباط التنفيذ|已学约定|Learned conventions)/i;
 
 const TRUNCATION_NOTICE =
   "[System guide truncated by Lily for this model's input limit. Use available tools and ask for narrower scope if a capability guide is missing.]";
@@ -561,6 +567,8 @@ function truncateSystemGuidance(guidance, maxChars, { intentText = "" } = {}) {
         result = candidate;
       }
     }
+    // A list section that did not fit whole (the skill catalog) keeps what fits.
+    result = require("./guide-list-section").fitOmittedListSections({ kept, omitted, render, limit, intentText }) || result;
 
     return result.length <= limit ? result : legacyHeadCut(text, limit, notice);
   } catch {

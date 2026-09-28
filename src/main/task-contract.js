@@ -874,8 +874,16 @@ function extractExplicitUserTerms(text = "") {
   return terms;
 }
 
+// Tasks ABOUT the workspace's source, where a user's term names something to
+// find in paths and symbols. Elsewhere an English word is just a word: "如何用
+// Excel 的 VLOOKUP" was told to search the workspace for "Excel" (2026-09-28 audit).
+const SOURCE_TASK_TYPES = new Set([
+  "code_change", "configuration_change", "runtime_protocol", "server_change",
+  "ui_change", "architecture_audit", "bug_investigation", "agent_quality",
+]);
+
 function buildSourceCoveragePolicy({ text = "", classification = {} } = {}) {
-  const terms = extractExplicitUserTerms(text);
+  const terms = SOURCE_TASK_TYPES.has(classification.taskType) ? extractExplicitUserTerms(text) : [];
   const required = Boolean(
     classification.active &&
       !isPureExternalFactClassification(classification) &&
@@ -1029,6 +1037,7 @@ function buildTaskContract({
       evidencePolicy: buildEvidencePolicy({ ...classification, priorSourceContentEvidence }),
       sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
       intentContract,
+      hasEarlierWork,
       workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({
         text,
         classification,
@@ -1065,6 +1074,7 @@ function buildTaskContract({
     sourceCoveragePolicy: buildSourceCoveragePolicy({ text, classification }),
     workspaceGroundingPolicy: buildWorkspaceGroundingPolicy({ text, classification, profile }),
     intentContract,
+    hasEarlierWork,
     checklist,
     verificationStrategy,
     modelDraft: {
@@ -1081,7 +1091,9 @@ function withTaskContractPrefix(text, contract) {
   const sourceGuidance = require("./source-resolution-guidance").sourceResolutionGuidance(contract);
   if (sourceGuidance) return addLayersToEngineText(text, { executionConstraints: sourceGuidance });
   const intentRelation = contract.intentContract?.relation || "new";
-  const newTaskIsolation = intentRelation === "new"
+  // A first turn has nothing to be isolated from: 1.8K chars of "prior
+  // conversation is background only" rode every session's opening request.
+  const newTaskIsolation = intentRelation === "new" && contract.hasEarlierWork === true
     ? [
         "",
         "New-task isolation boundary:",
@@ -1171,11 +1183,6 @@ function withTaskContractPrefix(text, contract) {
     "Ask when a necessary user-provided input is missing, the requested source cannot be identified, or acting would be irreversible and materially ambiguous. The inferred criticalUnknowns list may be incomplete. For reversible research or analysis with an identified source, choose a reasonable scope, disclose assumptions, verify and proceed. Waiting for necessary input is an honest pending outcome, not completed delivery; do not manufacture work to avoid asking.",
     "Do not claim the task complete until every deliverable and machine-verifiable success criterion has supporting evidence.",
     "If the session exposes lily_intent_contract_commit and your semantic interpretation materially improves the objective, deliverables, success criteria, assumptions, critical unknowns, or an unfamiliar external claim's verification plan, call it once before the first side effect. It is optional: if unavailable or rejected, continue immediately with this host baseline.",
-    "",
-    "Model task draft:",
-    `schema_version: ${TASK_TYPE_SCHEMA_VERSION}`,
-    "Before acting, internally draft a JSON object that matches this schema. Use it to refine impact surface and verification. Do not show the JSON unless the user asks.",
-    JSON.stringify(contract.modelDraft?.schema || modelDraftSchema()),
     "",
     "Required operating mode:",
     "1. Establish the impact surface before editing or executing non-trivial work.",

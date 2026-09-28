@@ -193,4 +193,22 @@ assert.equal(budgeted.diagnostics.rawCount > budgeted.diagnostics.selectedCount,
 assert.equal(budgeted.diagnostics.maxChars, 420);
 assert.equal(budgeted.items.every((item) => typeof item.size === "number"), true, "selected items carry size diagnostics");
 
+// The curated index is a list of pointers: when it outgrows the budget it
+// takes the room that is left and names the file, instead of vanishing whole
+// (it used to be cut to its first 1.2K — five entries of a 10.6K index).
+{
+  const entries = Array.from({ length: 120 }, (_, i) => `- [Note ${i}](note-${i}.md) — pointer ${i}`).join("\n");
+  const big = buildContextMemory({
+    sessionSummary: summary,
+    project: { name: "lily", path: "/repo/lily" },
+    projectMemory: { filePath: "/repo/lily/memory/MEMORY.md", mtimeMs: 1, bytes: entries.length, text: entries, truncated: false },
+    turnPolicy: { rigor: "grounded", memoryBudget: { maxChars: 5000 } },
+  });
+  const index = big.items.find((item) => item.kind === "project_memory");
+  assert.ok(index, "an oversized index is kept, not dropped");
+  assert.match(index.text, /Note 40\]/, "far more than the old five entries reach the model");
+  assert.match(index.text, /read \/repo\/lily\/memory\/MEMORY\.md for the remaining entries/, "and it says where the rest is");
+  assert.ok(big.diagnostics.usedChars <= 5000, `the budget still holds: ${big.diagnostics.usedChars}`);
+}
+
 console.log("memory-registry: ok");
