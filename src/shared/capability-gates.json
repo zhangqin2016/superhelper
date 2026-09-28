@@ -2658,6 +2658,15 @@
       "tests": [
         "scripts/test-websearch-provider-fallback.mjs"
       ]
+    },
+    {
+      "id": "generated-media-marker-only",
+      "protects": "A turn announces media as generated only when a tool result carries the <generated_media> marker a media skill prints; a listing, cat or search that merely mentions a generated-assets path never does.",
+      "baseline": "2026-09-28: a new turn's find and cat of the workspace listed an image an earlier turn generated (and the user had deleted), and the marker-less generated-assets path scan announced it as 已生成文件 in the new turn.",
+      "failureFallback": "Every bundled media skill prints the marker and bundled skills are reinstalled from the app whenever a file differs; an orphaned generation is still surfaced by the media-result tracker from its .lily-results record. Mutation-verified: the previous path scan fails the listing case by name.",
+      "tests": [
+        "scripts/test-renderer-import.cjs"
+      ]
     }
   ]
 }

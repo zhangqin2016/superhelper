@@ -1474,42 +1474,39 @@ app.whenReady().then(async () => {
       }
     )()`);
     console.log(generatedMediaNarrativePreserveResult);
-    // Real-world regression: version-skewed generate-video.cjs printed only
-    // "Done! … saved to: <path>" with NO <generated_media> marker. The video file
-    // still lives under generated-assets/, so it must still hoist + preview. WHY:
-    // previews cannot depend on a marker the deployed skill copy may not emit, or
-    // the user loses the preview entirely (degrading below baseline file-chip UX).
+    // Field regression (2026-09-28): the new turn's `find` and `cat` of the
+    // workspace listed an image an EARLIER turn generated (and the user had
+    // deleted), and the turn announced it as generated media. Only the
+    // <generated_media> marker a media skill prints means "this call made it".
     const markerlessMediaResult = await win.webContents.executeJavaScript(`(
       async () => {
         const { createLiveTurnArticleShell, renderLiveTurnArticle } = await import("./modules/turn-view-renderer.js");
-        const p = "/Users/x/aicode/xiaoshuo/generated-assets/video-2026-06-27T20-13-49-148Z-a92cdf.mp4";
-        const stdout = "\\n[4/4] Done! 7.8 MB saved to:\\n      " + p + "\\n\\n" + p + "\\n";
-        const tools = new Map();
-        tools.set("t1", { id: "t1", name: "Bash", status: "done", result: { content: stdout, truncated: false } });
-        const liveTurn = {
-          turnId: "turn_markerless", phase: "done", assistantText: "第三版生成完毕",
-          thinkingText: "", contentBlocks: [], processEvents: [], tools, timeline: [],
+        const old = "/Users/x/test/output/gauntlet/generated-assets/image-1-2026-09-28T09-56-43-272Z-d79af2.png";
+        const base = {
+          phase: "done", assistantText: "检查完成",
+          thinkingText: "", contentBlocks: [], processEvents: [], timeline: [],
           notices: [], permissions: new Map(), questions: new Map(), hooks: new Map(),
           resultBlocks: [], artifacts: [], startedAt: Date.now(),
-          final: { type: "turn.completed", payload: { assistant: "第三版生成完毕" }, ts: Date.now() },
+          final: { type: "turn.completed", payload: { assistant: "检查完成" }, ts: Date.now() },
         };
-        const article = createLiveTurnArticleShell(liveTurn);
-        renderLiveTurnArticle(article, liveTurn, { sessionId: "s_ml", sealed: true });
-        const videos = article.querySelectorAll('[data-role="artifacts"] .assistant-hoisted-media video');
-        if (videos.length !== 1) throw new Error("marker-less generated-assets video must hoist exactly once, got " + videos.length);
-        if (!String(videos[0].getAttribute("src") || "").startsWith("app-file://media/")) {
-          throw new Error("marker-less hoisted video must use app-file:// scheme: " + videos[0].getAttribute("src"));
+        const listing = new Map();
+        listing.set("t1", { id: "t1", name: "Bash", status: "done", result: { content: "=== tree ===\\n./generated-assets/image-1-2026-09-28T09-56-43-272Z-d79af2.png\\n./output/report.pdf\\n", truncated: false } });
+        listing.set("t2", { id: "t2", name: "Bash", status: "done", result: { content: JSON.stringify({ artifacts: { a: { kind: "image", currentPath: old } } }), truncated: false } });
+        const lt = { ...base, turnId: "turn_listing", tools: listing };
+        const art = createLiveTurnArticleShell(lt);
+        renderLiveTurnArticle(art, lt, { sessionId: "s_ls", sealed: true });
+        if (art.querySelector('[data-role="artifacts"] .assistant-hoisted-media')) {
+          throw new Error("a listing that mentions an earlier generated image must NOT announce it as generated");
         }
-        // A referenced/read image OUTSIDE generated-assets must NOT hoist.
-        const tools2 = new Map();
-        tools2.set("t2", { id: "t2", name: "Read", status: "done", result: { content: "see /Users/x/project/assets/logo.png for the brand mark" } });
-        const lt2 = { ...liveTurn, turnId: "turn_ref", tools: tools2 };
+        // The same image reported by the skill's marker still hoists exactly once.
+        const made = new Map();
+        made.set("t3", { id: "t3", name: "Bash", status: "done", result: { content: '<generated_media type="image">\\n  <file path="' + old + '" bytes="1649697" />\\n</generated_media>\\n', truncated: false } });
+        const lt2 = { ...base, turnId: "turn_made", tools: made };
         const art2 = createLiveTurnArticleShell(lt2);
-        renderLiveTurnArticle(art2, lt2, { sessionId: "s_ref", sealed: true });
-        if (art2.querySelector('[data-role="artifacts"] .assistant-hoisted-media')) {
-          throw new Error("referenced image outside generated-assets must NOT be hoisted");
-        }
-        return "markerless-generated-assets-media-regression: ok";
+        renderLiveTurnArticle(art2, lt2, { sessionId: "s_mk", sealed: true });
+        const imgs = art2.querySelectorAll('[data-role="artifacts"] .assistant-hoisted-media img');
+        if (imgs.length !== 1) throw new Error("a marked generated image must hoist exactly once, got " + imgs.length);
+        return "generated-media-marker-only-regression: ok";
       }
     )()`);
     console.log(markerlessMediaResult);

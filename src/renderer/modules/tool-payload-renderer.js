@@ -149,52 +149,20 @@ export function parseGeneratedMedia(text = "") {
   return blocks;
 }
 
-// Map a media file extension to its <generated_media> block type.
-const MEDIA_EXT_TYPE = {
-  mp4: "video", webm: "video", mov: "video", m4v: "video", mkv: "video",
-  png: "image", jpg: "image", jpeg: "image", webp: "image", gif: "image", svg: "image",
-  mp3: "audio", wav: "audio", m4a: "audio", aac: "audio", ogg: "audio", flac: "audio",
-};
-
-// Fallback for skill scripts that report a saved file path WITHOUT the
-// <generated_media> marker (older/version-skewed generate-image/generate-video
-// copies print only "Done! … saved to: <path>"). We surface only paths that live
-// under a generated-assets/ directory with a media extension — that directory is
-// exclusively where the image/video skills write their output, so this never picks
-// up referenced or read-in images (those live elsewhere). Scoped to tool results.
-function generatedAssetsMediaFromText(text = "") {
-  const source = String(text || "");
-  if (!source.includes("generated-assets")) return [];
-  const seen = new Set();
-  const blocks = [];
-  for (const token of source.split(/[\s"'<>()]+/)) {
-    const t = token.trim();
-    if (!t || t.indexOf("generated-assets") === -1) continue;
-    if (!/[/\\]generated-assets[/\\]/.test(t)) continue;
-    const ext = (t.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase();
-    if (!ext || !MEDIA_EXT_TYPE[ext]) continue;
-    if (isPlaceholderGeneratedPath(t)) continue;
-    if (seen.has(t)) continue;
-    seen.add(t);
-    blocks.push({ type: MEDIA_EXT_TYPE[ext], taskId: "", files: [{ path: t, bytes: 0, mimeType: "" }] });
-  }
-  return blocks;
-}
-
-// Marker is authoritative (carries bytes/taskId/grouping); fall back to a
-// generated-assets path scan only when no marker is present.
-function collectGeneratedMedia(text) {
-  const marked = parseGeneratedMedia(text);
-  return marked.length ? marked : generatedAssetsMediaFromText(text);
-}
-
+// The <generated_media> marker is the only proof a tool call produced media:
+// every bundled media skill prints it, and bundled skills are reinstalled from
+// the app whenever any file differs (bundled-skill-sync.js), so the marker-less
+// copies an earlier path scan covered cannot outlive an update. That scan read ANY generated-assets path in
+// ANY tool output as new media — a later `find`/`ls`/`cat` of the workspace
+// re-announced an old (even deleted) image as generated in the new turn
+// (2026-09-28).
 export function generatedMediaFromPayload(payload) {
   if (!payload) return [];
-  if (typeof payload === "string") return collectGeneratedMedia(payload);
+  if (typeof payload === "string") return parseGeneratedMedia(payload);
   if (typeof payload !== "object") return [];
   const out = [];
   for (const key of GENERATED_MEDIA_TEXT_KEYS) {
-    if (typeof payload[key] === "string") out.push(...collectGeneratedMedia(payload[key]));
+    if (typeof payload[key] === "string") out.push(...parseGeneratedMedia(payload[key]));
   }
   return out;
 }
