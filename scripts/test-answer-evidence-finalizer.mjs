@@ -146,16 +146,20 @@ const partialImage = evaluateAnswerEvidence({
   userText: imageText,
 });
 assert.equal(partialImage.assessment.reason, "partial_source_content_without_disclosure");
-assert(!partialImage.assistant.includes("三个产品"));
-assert.match(partialImage.assistant, /只成功读取了部分/);
+// 2026-09-28: an overclaiming answer over a PARTIAL read is no longer erased by
+// a prose regex — what was read is real work ("delivered content is never
+// zero"). The appended note is true whatever the answer claimed: only the read
+// part is grounded, and a claim of completeness is flagged as unverified.
+assert.match(partialImage.assistant, /三个产品/, "the analysis of what was read is kept");
+assert.match(partialImage.assistant, /只解析了附件的部分内容/, "the real scope is stated");
+assert.match(partialImage.assistant, /“完整”“全部”之类的表述）都未经核实/, "and the completeness claim is marked unverified");
 
 // 2026-09-18 field case: a 3 MB .docx, 23 tool steps and 18 reasoning segments,
 // and the user was handed a refusal instead of the analysis of the pages that
 // HAD been read. A partial read means bytes were read — the gate itself reports
 // hasEvidence: true and fails only on the missing scope sentence — so the answer
-// is real work and the sentence is what was missing. Three-way, not two: nothing
-// read is replaced, an answer overclaiming the whole source is replaced, an
-// honestly partial answer stands with its scope disclosed.
+// is real work and the sentence is what was missing. Nothing read is replaced;
+// anything read stands with its scope disclosed.
 const partialHonest = evaluateAnswerEvidence({
   assistant: "文档里我读到的章节提出了三阶段架构：接入层、编排层、执行层。",
   taskContract: imageContract,

@@ -1,11 +1,11 @@
 "use strict";
 
-// Top-tier ingestion: a huge pasted/typed message is a DATA DUMP, not a prompt.
-// Dumping it straight into the model context is exactly the anti-pattern that
-// bloats history and overflows the window (Cursor/Claude Code never do this —
-// they persist bulk content and RETRIEVE only what the question needs).
+// Top-tier ingestion: a paste that fits this turn's model is sent whole, as
+// Claude Code and Codex CLI send it — the model reads all of it. A paste too big
+// for the window is a DATA DUMP: inlining it overflows the window and then
+// compaction summarizes it away, so it is persisted and RETRIEVED instead.
 //
-// So when the message text is very large, we stage it to a workspace file and
+// So when the message text is too large for the model, we stage it to a workspace file and
 // replace the model-facing text with a compact DIRECTIVE + a head/tail preview +
 // the path, pointing the model at Lily's existing `lily_file_intelligence` tool
 // (inspect_file → index/query/sample/extract) to work with it selectively. The
@@ -23,9 +23,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-// ~40k chars ≈ 10k tokens: comfortably above a real instruction/log a user wants
-// read inline, at the point where the text is clearly bulk data, not a prompt.
+// Used when this turn's model window is unknown (or the model is lite-graded):
+// ~40k chars ≈ 10k tokens, above a real instruction/log a user wants read inline.
 const DEFAULT_THRESHOLD_CHARS = 40_000;
+// With a KNOWN window the paste is inlined — as Claude Code and Codex CLI send it
+// — while it takes at most this share of the model's usable input, leaving the
+// rest to the system prompt, the history and the answer. Beyond it the next
+// turns would overflow and compaction would summarize the paste away, so it is
+// staged and retrieved instead. A fixed 40k chars staged a 50k-char contract on
+// a 1M-window model, which then saw a 6,000-char preview.
+const INLINE_SHARE_OF_BUDGET = 0.25;
 const DEFAULT_PREVIEW_CHARS = 6_000;
 // A weak (lite-grade) model will answer from whatever preview it sees instead of
 // retrieving — so for lite we give it a SMALL preview (just enough for the
@@ -80,16 +87,22 @@ function buildDirective({ filePath, chars, preview, strict }) {
  *
  * @returns {{ staged: boolean, text: string, file: {path,name,size}|null }}
  */
-function stageLargeInputText({ text, cwd, threshold, previewChars, grade } = {}) {
+/** Does this text belong inline for this turn's model? */
+function fitsInline(source, { threshold, grade, budgetTokens } = {}) {
+  const fixed = positiveInt(threshold) || positiveInt(process.env.LILY_LARGE_INPUT_STAGE_CHARS);
+  if (fixed) return source.length <= fixed;
+  const budget = positiveInt(budgetTokens);
+  if (!budget || String(grade || "").toLowerCase() === "lite") return source.length <= DEFAULT_THRESHOLD_CHARS;
+  const { estimateTokensForText } = require("./context-budget-manager");
+  return estimateTokensForText(source).tokens <= budget * INLINE_SHARE_OF_BUDGET;
+}
+
+function stageLargeInputText({ text, cwd, threshold, previewChars, grade, budgetTokens } = {}) {
   const source = typeof text === "string" ? text : "";
   try {
     const lite = String(grade || "").toLowerCase() === "lite";
     if (process.env.LILY_LARGE_INPUT_STAGE === "0") return { staged: false, text: source, file: null };
-    const limit =
-      positiveInt(threshold) ||
-      positiveInt(process.env.LILY_LARGE_INPUT_STAGE_CHARS) ||
-      DEFAULT_THRESHOLD_CHARS;
-    if (source.length <= limit) return { staged: false, text: source, file: null };
+    if (fitsInline(source, { threshold, grade, budgetTokens })) return { staged: false, text: source, file: null };
     if (!cwd || typeof cwd !== "string") return { staged: false, text: source, file: null };
 
     const dir = path.join(cwd, ".lily-work", "inbox");
@@ -123,6 +136,7 @@ function stageLargeInputText({ text, cwd, threshold, previewChars, grade } = {})
 module.exports = {
   DEFAULT_THRESHOLD_CHARS,
   DEFAULT_PREVIEW_CHARS,
+  INLINE_SHARE_OF_BUDGET,
   headTailPreview,
   stageLargeInputText,
 };

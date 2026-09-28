@@ -17,6 +17,7 @@
 
 const { DESTRUCTIVE_BASH, CATASTROPHIC_BASH } = require("./opencode-config-builder");
 const { assessWorkspaceWrite } = require("../workspace-grounding-gate");
+const { isProvablyReadOnlyShell } = require("./shell-read-only");
 
 function escapeRe(x) {
   return String(x).replace(/[.+?^${}()|[\]\\]/g, "\\$&");
@@ -99,8 +100,13 @@ function decidePermissionVerdict(mode, toolName, input = {}, context = {}) {
 
   switch (mode) {
     case "plan":
-      // Read-only: every mutation denied (reads/research already "allow" server-side).
-      if (["edit", "write", "patch", "bash", "external_directory"].includes(tool)) return "deny";
+      // Read-only: every edit denied (reads/research already "allow" server-side).
+      if (["edit", "write", "patch", "external_directory"].includes(tool)) return "deny";
+      // Shell is how a plan investigates (ls, git log, rg). A provably read-only
+      // command runs; anything else is the user's call — denying every shell
+      // command left planning unable to look at the workspace at all, where the
+      // engine's plan agent and Claude Code's plan mode both allow it.
+      if (tool === "bash") return isProvablyReadOnlyShell(command) ? "allow" : "ask";
       return "allow";
 
     case "ask":

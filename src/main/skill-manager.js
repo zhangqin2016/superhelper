@@ -1180,8 +1180,16 @@ function mergeAgentGuide() {
   fs.writeFileSync(guidePath, mergeManagedAgentGuide(existing, generated), "utf8");
 }
 
+/**
+ * Engine-native tools Lily replaces. WebSearch needs the engine's Exa backend;
+ * Lily ships its own search skill. WebFetch is NOT here: it was denied when the
+ * engine was Claude Code, whose WebFetch preflights every domain against
+ * Anthropic's servers (unreachable from mainland China). OpenCode's webfetch
+ * fetches locally — no key, bounded size and timeout, format control — so the
+ * webfetch skill is now its fallback, not its replacement.
+ */
 function getDisallowedTools() {
-  return ["WebSearch", "WebFetch"];
+  return ["WebSearch"];
 }
 
 function getServiceRegistryUrl() {

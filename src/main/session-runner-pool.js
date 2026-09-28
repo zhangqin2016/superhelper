@@ -212,7 +212,20 @@ class SessionRunnerPool {
       const budget = resolveContextBudget({ contextWindowTokens: Number(cfg.model?.contextWindowTokens) || undefined });
       const limit = budget.usableInputTokens;
       if (limit) env.LILY_CONTEXT_TOKEN_BUDGET = String(Math.min(Number(env.LILY_CONTEXT_TOKEN_BUDGET) || limit, limit));
-      log.info(`context window: model=${cfg.model?.modelID || "-"} window=${budget.contextWindowTokens || "unknown"} source=${cfg.model?.contextWindowSource || "-"} guardBudget=${env.LILY_CONTEXT_TOKEN_BUDGET || "none"}`);
+      // One serve runs every model in its config (auto mode routes turns across
+      // the pool), so the guard needs each model's OWN budget, keyed the way a
+      // user message records the model it ran on. The single budget above stays
+      // as the fallback for a model the map does not name.
+      const budgets = {};
+      const providers = JSON.parse(cfg.configContent || "{}").provider || {};
+      for (const [providerID, provider] of Object.entries(providers)) {
+        for (const [modelID, model] of Object.entries(provider?.models || {})) {
+          const usable = resolveContextBudget({ contextWindowTokens: Number(model?.limit?.context) || undefined }).usableInputTokens;
+          if (usable) budgets[`${providerID}/${modelID}`] = usable;
+        }
+      }
+      if (Object.keys(budgets).length) env.LILY_CONTEXT_TOKEN_BUDGETS = JSON.stringify(budgets);
+      log.info(`context window: model=${cfg.model?.modelID || "-"} window=${budget.contextWindowTokens || "unknown"} source=${cfg.model?.contextWindowSource || "-"} guardBudget=${env.LILY_CONTEXT_TOKEN_BUDGET || "none"} perModel=${Object.keys(budgets).length}`);
     } catch (err) {
       log.warn(`context window budget failed open (guard bounds single parts only): ${err?.message || err}`);
     }
@@ -461,7 +474,7 @@ class SessionRunnerPool {
         candidates.push(path.join(PROJECT_ROOT, rel));
         return candidates.find((p) => fs.existsSync(p)) || null;
       };
-      return ["runtime-dependency-hint.js", "runtime-identity.js", "public-hooks-bridge.js", "windows-office-cli.js", "verify-edit.js", "compaction-memory.js", "compaction-continuity.js", "loop-detector.js", "todo-progress-nudge.js", "subtask-guard.js", "large-output-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
+      return ["runtime-dependency-hint.js", "runtime-identity.js", "public-hooks-bridge.js", "windows-office-cli.js", "verify-edit.js", "compaction-memory.js", "compaction-continuity.js", "loop-detector.js", "todo-progress-nudge.js", "subtask-guard.js", "filepart-text-coercion.js", "empty-assistant-history-guard.js", "context-window-guard.js", "live-file-history-guard.js"].map(resolve).filter(Boolean);
     } catch {
       return [];
     }

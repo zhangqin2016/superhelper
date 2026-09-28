@@ -285,7 +285,13 @@ function baseSharedPermission() {
     // merge) and DEFEATS that guard — a subagent then keeps `task` and spawns more
     // subagents (the depth-2+ "俄罗斯套娃" + runaway 10-min turns reported in the
     // field). Top-level agents still get `task` via OpenCode's own "*":"allow".
-    edit: "ask", write: "ask", bash: "ask", external_directory: "ask",
+    edit: "ask", write: "ask", bash: "ask",
+    // external_directory is deliberately NOT set: the engine's own default is
+    // already "ask" for every outside path EXCEPT its truncation directory, its
+    // tmp and the skill directories. A plain "ask" here is the last rule, so it
+    // overrode that allow-list — the full output the engine saves when it
+    // truncates a tool result (and Lily's skill guides) then needed a permission
+    // card to read, and plan mode could not read it at all.
     // Lily skills reach the model through AGENT.md and the capability graph,
     // not the engine's native `skill` tool (see translatePermission). This
     // shared block is what production runs, and it lacked the rule: the tool
@@ -350,7 +356,7 @@ function buildSharedBaseConfig(opts = {}) {
   applySkillPaths(config, opts.skillPaths);
 
   config.permission = baseSharedPermission();
-  // App-wide disabled tools (e.g. WebSearch/WebFetch) — a constant policy, so it
+  // App-wide disabled tools (e.g. WebSearch) — a constant policy, so it
   // belongs in the shared base. Denied outright (no host-side gate needed).
   for (const t of opts.disallowedTools || []) {
     config.permission[TOOL_NAME_MAP[t] || String(t).toLowerCase()] = "deny";

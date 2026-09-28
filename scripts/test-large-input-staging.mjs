@@ -112,10 +112,29 @@ const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "lily-input-stage-"));
   assert.equal(stageLargeInputText({ text: msg, cwd, threshold: 1_000 }).staged, true, "a lower threshold stages smaller input");
 }
 
+// --- the threshold follows THIS turn's model window (2026-09-28 audit) --------
+// A fixed 40k chars staged a 50k-char contract on a 1M-window model, which then
+// saw a 6,000-char preview. Claude Code and Codex CLI send a paste that fits.
+{
+  const contract = "第一条 甲方应当按约定支付价款。".repeat(3_400); // ~51k chars, ~51k tokens
+  const onLarge = stageLargeInputText({ text: contract, cwd, budgetTokens: 960_000 });
+  assert.equal(onLarge.staged, false, "a paste that fits a 1M-window model is sent whole");
+  assert.equal(onLarge.text, contract, "and verbatim");
+  const onSmall = stageLargeInputText({ text: contract, cwd, budgetTokens: 120_000 });
+  assert.equal(onSmall.staged, true, "the same paste is staged for a 128k-window model, where it would crowd out the conversation");
+  const unknown = stageLargeInputText({ text: contract, cwd });
+  assert.equal(unknown.staged, true, "an unknown window keeps the previous 40k-char threshold");
+  const lite = stageLargeInputText({ text: contract, cwd, budgetTokens: 960_000, grade: "lite" });
+  assert.equal(lite.staged, true, "a lite-graded model keeps the previous threshold and enforced retrieval");
+  const operator = stageLargeInputText({ text: contract, cwd, budgetTokens: 960_000, threshold: 10_000 });
+  assert.equal(operator.staged, true, "an explicit operator threshold still wins");
+}
+
 // wired into the engine send path
-const smSrc = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "../src/main/runtime/opencode-server-manager.js"), "utf8");
+const smSrc =fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "../src/main/runtime/opencode-server-manager.js"), "utf8");
 assert.ok(/stageLargeInputText/.test(smSrc) && /promptText/.test(smSrc), "staging must be wired into sendPrompt before buildOpencodePromptBody");
 assert.ok(/LILY_MODEL_CAPABILITY_GRADE/.test(smSrc), "sendPrompt must pass the capability grade so weak models get enforced retrieval");
+assert.ok(/LILY_CONTEXT_TOKEN_BUDGETS/.test(smSrc) && /budgetTokens/.test(smSrc), "sendPrompt must pass the turn model's own budget");
 
 fs.rmSync(cwd, { recursive: true, force: true });
 console.log("large-input-staging: ok");

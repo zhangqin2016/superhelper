@@ -254,10 +254,17 @@ class OpencodeServerManager extends EventEmitter {
     let promptText = text;
     try {
       const { stageLargeInputText } = require("../large-input-staging");
+      const turnModel = this._turnModel || this.model;
+      let budgetTokens = Number(this.env?.LILY_CONTEXT_TOKEN_BUDGET) || 0;
+      try {
+        const own = Number(JSON.parse(this.env?.LILY_CONTEXT_TOKEN_BUDGETS || "{}")[`${turnModel?.providerID}/${turnModel?.modelID}`]);
+        if (own > 0) budgetTokens = own;
+      } catch { /* the serve-wide budget stands */ }
       const staged = stageLargeInputText({
         text: promptText,
         cwd: this.cwd,
         grade: this.env?.LILY_MODEL_CAPABILITY_GRADE,
+        budgetTokens,
       });
       if (staged.staged && staged.text) promptText = staged.text;
     } catch {

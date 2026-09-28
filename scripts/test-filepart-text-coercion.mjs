@@ -10,7 +10,7 @@ const { FilePartTextCoercionPlugin } = mod;
 
 // The plugin file must export ONLY the factory (named + default) — the OpenCode
 // loader instantiates every export as a plugin, so exporting a helper makes it
-// call the helper as a factory → crash. Guard that regression (see large-output-guard).
+// call the helper as a factory → crash. Guard that regression.
 {
   const exported = Object.keys(mod).filter((k) => k !== "default");
   assert.deepEqual(exported, ["FilePartTextCoercionPlugin"], `plugin must export only the factory, got: ${exported.join(",")}`);

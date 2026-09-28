@@ -5,6 +5,8 @@
  * system-prompt/skill guidance into the OpenCode engine, so the shapes must
  * match OpenCode's V1 config exactly.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
@@ -153,6 +155,27 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   const cfg = JSON.parse(r.configContent);
   assert(cfg.compaction.auto === true, "shared serve -> auto compaction enabled");
   assert(cfg.compaction.prune === false, "shared serve -> prune off (pressure trimming belongs to context-window-guard)");
+  // The engine's webfetch fetches locally (no key, bounded, format-aware). It was
+  // denied only because Claude Code's WebFetch preflights domains against
+  // Anthropic, unreachable from mainland China; the webfetch skill is now its
+  // fallback. WebSearch stays Lily's own (the engine's needs Exa).
+  const { getDisallowedTools } = require("../src/main/skill-manager.js");
+  const production = JSON.parse(buildSharedBaseConfig({
+    lilyEnv: { LILY_API_BASE_URL: "https://api.deepseek.com", LILY_API_KEY: "sk", LILY_MODEL: "deepseek-chat" },
+    disallowedTools: getDisallowedTools(),
+  }).configContent);
+  assert(production.permission.webfetch === "allow", "production serve allows the engine's native webfetch");
+  assert(production.permission.websearch === "deny", "production serve still replaces the engine's websearch");
+  // Tool output is bounded by the ENGINE (every built-in, plugin and MCP tool:
+  // 50 KB / 2000 lines, full text saved, a hint to grep or page it) — Lily's
+  // 32k-char head+tail cap duplicated it more tightly and, on MCP results, ran
+  // before it. Two things keep that engine behaviour whole: no smaller limit,
+  // and no external_directory rule, which (last rule wins) would override the
+  // engine's allow-list for its own truncation directory and skill directories.
+  assert(!("external_directory" in production.permission), "the engine's external_directory allow-list is not overridden");
+  assert(!production.tool_output, "the engine's tool-output truncation limits are not tightened");
+  const pluginList = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "../src/main/session-runner-pool.js"), "utf8");
+  assert(!pluginList.includes("large-output-guard"), "no Lily plugin re-truncates tool output ahead of the engine");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
   assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
   // summarize-500 root cause: OpenCode's processCompaction resolves the model via

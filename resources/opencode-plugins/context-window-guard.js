@@ -20,9 +20,10 @@
 // SAFE BY DESIGN: only oversized string CONTENT is trimmed (tool input/output,
 // text/reasoning) to head+tail+marker; whole messages and tool-call/result
 // PAIRING are never dropped (dropping a tool call or its result would itself
-// crash the provider). Normal-sized sessions are untouched — the guard only acts
-// when a part exceeds the per-part cap or the whole request exceeds the budget,
-// so it never makes a healthy session dumber. The trimmed file/output already
+// crash the provider). With a known window the guard acts only when the whole
+// request would not fit that window, measured against the engine's reported
+// usage; only with an UNKNOWN window does it cap single oversized parts, so it
+// never makes a healthy session dumber. The trimmed file/output already
 // lives on disk; the model can re-read it with file tools if it needs the rest.
 //
 // NOT ALL CONTENT MAY BE EXCERPTED. A tool output or an earlier answer survives
@@ -36,8 +37,9 @@
 // lib/history-elision.cjs.
 //
 // FAIL OPEN: never throws. Kill switch: LILY_CONTEXT_GUARD=0.
-// Budgets: LILY_CONTEXT_PART_MAX_CHARS (per part, default 48000),
-//          LILY_CONTEXT_TOKEN_BUDGET (the model's input limit; absent = unknown).
+// Budgets: LILY_CONTEXT_TOKEN_BUDGETS (per model, JSON), LILY_CONTEXT_TOKEN_BUDGET
+//          (fallback input limit; absent = unknown), LILY_CONTEXT_PART_MAX_CHARS
+//          (per-part cap used only when the window is unknown, default 48000).
 //
 // NOTE: only the plugin factory is exported (named + default) — the OpenCode
 // loader instantiates every export as a plugin factory, so a helper export would
@@ -55,6 +57,23 @@ const PART_MAX_CHARS = Math.max(4_000, Number(process.env.LILY_CONTEXT_PART_MAX_
 const TOKEN_BUDGET = Number(process.env.LILY_CONTEXT_TOKEN_BUDGET) > 0
   ? Math.max(1_000, Number(process.env.LILY_CONTEXT_TOKEN_BUDGET))
   : 0;
+// One serve runs every model in its config, so each turn is measured against
+// the budget of the model it actually runs on ("providerID/modelID" → tokens,
+// from LILY_CONTEXT_TOKEN_BUDGETS); the single budget is the fallback.
+const MODEL_BUDGETS = (() => {
+  try {
+    const parsed = JSON.parse(process.env.LILY_CONTEXT_TOKEN_BUDGETS || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+})();
+
+function budgetFor(messages, requestIndex) {
+  const model = messages[requestIndex]?.info?.model;
+  const own = model ? Number(MODEL_BUDGETS[`${model.providerID}/${model.modelID}`]) : 0;
+  return own > 0 ? Math.max(1_000, own) : TOKEN_BUDGET;
+}
 // Used only before the engine has reported any usage: the estimate covers the
 // trimmable parts, not the system prompt and tool schemas beside them.
 const UNMEASURED_HEADROOM = 0.85;
@@ -217,28 +236,36 @@ export const ContextWindowGuardPlugin = async () => ({
       if (!messages) return;
       const slots = collectSlots(messages);
       if (!slots.length) return;
+      const budget = budgetFor(messages, currentRequestIndex(messages));
 
-      // Pass 1: hard-cap any single oversized part (kills the giant write-input /
-      // tool-output blobs). This alone resolves the common concentrated-blob case.
-      for (const slot of slots) {
-        const value = slot.get();
-        if (value.length <= PART_MAX_CHARS) continue;
-        slot.set(slot.reproducible ? elision.elideFileBody({ path: slot.path, bytes: value.length }) : trim(value, PART_MAX_CHARS));
+      // Pass 1 — ONLY when the window is unknown. With nothing to measure
+      // against, a single oversized part (a multi-megabyte write input) is
+      // capped so the request and its compaction can fit at all: the deadlock
+      // escape. With a known window it used to run anyway and cut the middle
+      // out of every part over 48k chars — a long report the user then asked to
+      // revise — however much room the model had; measured pressure below
+      // decides instead.
+      if (!budget) {
+        for (const slot of slots) {
+          const value = slot.get();
+          if (value.length <= PART_MAX_CHARS) continue;
+          slot.set(slot.reproducible ? elision.elideFileBody({ path: slot.path, bytes: value.length }) : trim(value, PART_MAX_CHARS));
+        }
+        return;
       }
 
-      // Pass 2: only with a known limit, and only when the request would not
-      // fit it — compaction (Lily's before the turn, the engine's after each
-      // step) acts below this line, so the guard is the last resort, not the
-      // everyday trimmer. Tighten the cap largest-first until it fits or a floor.
+      // Pass 2: only when the request would not fit the known limit —
+      // compaction (Lily's before the turn, the engine's after each step) acts
+      // below this line, so the guard is the last resort, not the everyday
+      // trimmer. Tighten the cap largest-first until it fits or a floor.
       // The current request is history's reader, not history: it is never
       // excerpted to make room. Field case 2026-09-27: a new question arrived
       // in a long session over budget; its 10,870-char message was cut to head
       // + tail, which kept the platform context and the attachment note and
       // dropped the question in the middle, and the model — reasoning "there
       // is no user request" — resumed the previous task instead.
-      if (!TOKEN_BUDGET) return;
       const { sessionID, project: projected } = projector(messages, slots);
-      if (projected() <= TOKEN_BUDGET) { sessionNote(sessionID, { trimmed: false }); return; }
+      if (projected() <= budget) { sessionNote(sessionID, { trimmed: false }); return; }
       sessionNote(sessionID, { trimmed: true });
       // The largest per-part cap that fits: trimmed only as far as needed, so
       // the request lands just under the limit — where the engine's usage
@@ -250,13 +277,15 @@ export const ContextWindowGuardPlugin = async () => ({
           s.set(value.length <= cap ? value : s.reproducible ? elision.elideFileBody({ path: s.path, bytes: value.length }) : trim(value, cap));
         }
       };
-      let lo = 2_000, hi = PART_MAX_CHARS;
+      // Upper bound: the longest part, so a request that fits once one 200k part
+      // is cut to 150k is not cut to 48k.
+      let lo = 2_000, hi = Math.max(lo, ...trimmable.map(({ value }) => value.length));
       apply(lo);
-      if (projected() > TOKEN_BUDGET) return; // the floor is all that can be done
+      if (projected() > budget) return; // the floor is all that can be done
       while (hi - lo > 500) {
         const mid = Math.floor((lo + hi) / 2);
         apply(mid);
-        if (projected() <= TOKEN_BUDGET) lo = mid; else hi = mid;
+        if (projected() <= budget) lo = mid; else hi = mid;
       }
       apply(lo);
     } catch {

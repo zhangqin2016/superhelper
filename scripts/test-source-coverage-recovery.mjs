@@ -153,7 +153,7 @@ check("the finalizer asks for the round and still delivers an answer either way"
   }
 });
 
-check("only an actual overclaim is erased — a negated or self-disclosing answer is not", () => {
+check("no answer over a partial read is erased — an overclaim is kept with its completeness marked unverified", () => {
   const userText = "这份文档讲了什么";
   const taskContract = buildTaskContract({ text: userText, files: [{ name: "proposal.docx", isImage: false }] });
   const run = (assistant) => evaluateAnswerEvidence({
@@ -165,14 +165,15 @@ check("only an actual overclaim is erased — a negated or self-disclosing answe
     userText,
   }).assistant;
 
-  // The claim this branch exists for: totality asserted over pages nobody saw.
-  assert.ok(!run("图片完整展示了三个产品及全部价格。").includes("三个产品"), "an overclaim is still replaced");
+  // Totality asserted over pages nobody saw used to erase the whole answer, via
+  // a prose regex. The analysis of the pages that WERE read went with it. Now
+  // it stands, and the note — true whatever the answer said — marks the claim.
+  const overclaim = run("图片完整展示了三个产品及全部价格。");
+  assert.ok(overclaim.includes("三个产品"), "an overclaim over a partial read keeps what was read");
+  assert.match(overclaim, /12\/40/, "states how much was actually read");
+  assert.match(overclaim, /都未经核实/, "and marks anything beyond it, the completeness claim included, unverified");
 
-  // A totality word NEGATED is the opposite of an overclaim, and an answer that
-  // already states its own scope cannot be claiming the whole source. Matching
-  // the word alone erased both — the second one is an answer being honest about
-  // the very shortfall the branch exists to catch, which is worse than the
-  // confabulation it was written to stop.
+  // Negated totality words and self-disclosing answers survive too, as before.
   for (const honest of [
     "文档没有完整列出所有字段，我只看到前 12 页。",
     "这份材料未能完整解析，以下只覆盖读到的部分。",

@@ -1374,7 +1374,6 @@
         "scripts/test-history-elision.mjs",
         "scripts/test-context-window-guard.mjs",
         "scripts/test-live-file-history-guard.mjs",
-        "scripts/test-large-output-guard.mjs",
         "scripts/test-empty-assistant-history-guard.mjs"
       ]
     },
@@ -2529,6 +2528,45 @@
       "tests": [
         "scripts/test-task-contract.mjs",
         "scripts/test-task-request-continuity.mjs"
+      ]
+    },
+    {
+      "id": "plan-mode-investigates",
+      "protects": "Plan mode can look at the workspace with the shell, as the engine plan agent and Claude Code plan mode can: a provably read-only command (every segment a known read-only program without its writing or executing flags, no redirection, substitution, backgrounding or variable assignment) runs; anything else asks the user; edits stay denied.",
+      "baseline": "2026-09-28 integration audit: plan mode denied every bash command, so a plan could not even run ls, git log or rg; with WebFetch also denied it had no way to investigate beyond the read tool.",
+      "failureFallback": "Any doubt answers not-read-only and ASKS; nothing unknown is auto-allowed. Unattended turns still turn ask into deny; the catastrophic backstop and edit denial are unchanged. Mutation-verified: dropping the syntax check, dropping the flag check, denying shell again and allowing all shell each fail by name.",
+      "tests": [
+        "scripts/test-plan-mode-shell.mjs",
+        "scripts/test-permission-policy-noninteractive.mjs"
+      ]
+    },
+    {
+      "id": "engine-native-tools-kept",
+      "protects": "Engine-native capabilities Lily has no better replacement for stay on: the engine webfetch (local fetch, no key, bounded, format-aware; the webfetch skill is its fallback), the engine tool-output truncation (every built-in, plugin and MCP result, 50 KB / 2000 lines, full text saved with a grep/page hint), and the engine external_directory allow-list for its own truncation, tmp and skill directories.",
+      "baseline": "2026-09-28 integration audit: WebFetch was still denied from the Claude Code era (whose WebFetch preflights domains against Anthropic, unreachable from mainland China); a Lily plugin re-truncated tool output to 32k chars head+tail, tighter than the engine and ahead of it on MCP results; and a plain external_directory ask (last rule wins) overrode the engine allow-list, so reading the full output the engine saved needed a permission card and plan mode could not read it.",
+      "failureFallback": "WebSearch stays Lily's own (the engine's needs Exa). Every other outside path still asks through the engine default and the host policy. Old histories keep their large tool output markers recognised by lib/history-elision.cjs. Mutation-verified: re-denying WebFetch and re-adding the external_directory override each fail by name.",
+      "tests": [
+        "scripts/test-opencode-config-builder.mjs"
+      ]
+    },
+    {
+      "id": "context-guard-per-turn-model",
+      "protects": "Context trimming and paste staging follow THIS turn's model window. The guard measures each turn against the budget of the model it runs on (every configured model's own budget, from the engine config limit.context), trims only when the request would not fit, and only as far as needed; single oversized parts are capped only when the window is unknown. A paste is inlined while it takes at most a quarter of the model's usable input, as Claude Code and Codex CLI send it, and staged for retrieval beyond that.",
+      "baseline": "2026-09-28 integration audit: every history part over 48k chars lost its middle whatever the window (a report the user then asked to revise); the budget was the serve's start-up model even when auto mode routed a turn elsewhere; under pressure parts were cut to 48k even when far less trimming fitted; and any paste over 40k chars was staged, so a 1M-window model saw a 6,000-char preview of a 50k-char contract.",
+      "failureFallback": "Unknown window: the previous per-part cap and 40k-char staging threshold. Lite-graded models keep the previous staging threshold and enforced retrieval; an operator LILY_LARGE_INPUT_STAGE_CHARS still wins; a model missing from the budget map uses the serve budget. Kill switches LILY_CONTEXT_GUARD=0 and LILY_LARGE_INPUT_STAGE=0 unchanged. Mutation-verified: pass 1 always, serve-wide budget, a 48k search ceiling, a fixed staging threshold and ignoring lite each fail by name.",
+      "tests": [
+        "scripts/test-context-window-guard.mjs",
+        "scripts/test-large-input-staging.mjs"
+      ]
+    },
+    {
+      "id": "partial-read-never-erased",
+      "protects": "An answer over a PARTIALLY read source is never replaced: it stands with a scope note that is true whatever the answer claimed (only the read part is grounded; anything about the unread part, a claim of completeness included, is unverified). Only an answer over a source nothing was read from is replaced, since every content claim there is fabricated by construction.",
+      "baseline": "2026-09-28 integration audit: a prose regex (完整展示, 全部价格, entire document…) decided an answer overclaimed and replaced the WHOLE answer with a template, discarding the real analysis of the pages that were read, against the delivered-content-is-never-zero invariant (evidence-risk-tiers).",
+      "failureFallback": "The scope note keeps the wording the evidence gate recognises as a partial-scope disclosure; the unread-attachment replacement and the source-coverage retry are unchanged. Mutation-verified: putting a regex-driven replacement back fails test-source-coverage-recovery by name.",
+      "tests": [
+        "scripts/test-answer-evidence-finalizer.mjs",
+        "scripts/test-source-coverage-recovery.mjs"
       ]
     },
     {

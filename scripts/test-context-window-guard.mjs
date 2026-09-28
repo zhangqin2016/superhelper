@@ -186,10 +186,65 @@ await transform({}, { messages: [null, {}, { parts: [null, { type: "tool" }] }] 
   process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
 }
 
+// --- a KNOWN window trims only under measured pressure (2026-09-28 audit) ----
+// The per-part 48k cap used to run whatever the window: a 150k-char report in
+// a 1M-window session lost its middle, and "revise section 3 of the report
+// above" found nothing there. Now only an unknown window caps single parts.
+{
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "900000";
+  const g = await (await import(pluginUrl + "?known-fits")).ContextWindowGuardPlugin({});
+  const report = "报告正文。".repeat(30_000); // 150k chars
+  const msgs = [
+    { info: { role: "user" }, parts: [{ type: "text", text: "写一份完整报告" }] },
+    { info: { role: "assistant" }, parts: [{ type: "text", text: report }, { type: "tool", tool: "bash", callID: "b1", state: { status: "completed", input: { command: "cat log" }, output: "L".repeat(60_000) } }] },
+    { info: { role: "user" }, parts: [{ type: "text", text: "修改上面那份报告的第 3 节" }] },
+  ];
+  const before = JSON.stringify(msgs);
+  await g["experimental.chat.messages.transform"]({}, { messages: msgs });
+  assert.equal(JSON.stringify(msgs), before, "a known window with room leaves long parts whole");
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
+}
+
+// --- each turn is measured against the model it runs on ---------------------
+// One serve runs every model in its config (auto mode routes across the pool);
+// a serve-wide budget belonged to whichever model the serve started with.
+{
+  process.env.LILY_CONTEXT_TOKEN_BUDGETS = JSON.stringify({ "lily/big": 900_000, "other/small": 12_000 });
+  const g = await (await import(pluginUrl + "?per-model")).ContextWindowGuardPlugin({});
+  const t = g["experimental.chat.messages.transform"];
+  const history = () => Array.from({ length: 6 }, (_, i) => ({ info: { role: "assistant" }, parts: [{ type: "tool", tool: "read", callID: `m${i}`, state: { status: "completed", input: { path: `/m${i}` }, output: "Q".repeat(30_000) } }] }));
+  const onBig = [...history(), { info: { role: "user", model: { providerID: "lily", modelID: "big" } }, parts: [{ type: "text", text: "总结" }] }];
+  const bigBefore = JSON.stringify(onBig);
+  await t({}, { messages: onBig });
+  assert.equal(JSON.stringify(onBig), bigBefore, "a turn on the large-window model is not trimmed");
+  const onSmall = [...history(), { info: { role: "user", model: { providerID: "other", modelID: "small" } }, parts: [{ type: "text", text: "总结" }] }];
+  await t({}, { messages: onSmall });
+  const smallTokens = onSmall.slice(0, 6).reduce((sum, m) => sum + m.parts[0].state.output.length * 0.28, 0);
+  assert.ok(smallTokens < 12_000, `the same history on the small-window model is bounded to ITS budget: ${smallTokens}`);
+  delete process.env.LILY_CONTEXT_TOKEN_BUDGETS;
+}
+
+// --- under pressure, trimmed only as far as needed ---------------------------
+{
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "50000"; // one 200k-char part ≈ 56k tokens
+  const g = await (await import(pluginUrl + "?just-enough")).ContextWindowGuardPlugin({});
+  const msgs = [
+    { info: { role: "assistant" }, parts: [{ type: "tool", tool: "bash", callID: "big", state: { status: "completed", input: { command: "cat big" }, output: "B".repeat(200_000) } }] },
+    { info: { role: "user" }, parts: [{ type: "text", text: "go on" }] },
+  ];
+  await g["experimental.chat.messages.transform"]({}, { messages: msgs });
+  const kept = msgs[0].parts[0].state.output.length;
+  assert.ok(kept < 200_000, "a request over budget is trimmed");
+  assert.ok(kept > 100_000, `but only as far as needed, not down to the old 48k ceiling: ${kept}`);
+  process.env.LILY_CONTEXT_TOKEN_BUDGET = "";
+}
+
 // registered as an engine plugin + Lily wires the model-aware budget
 const poolSrc = fs.readFileSync(path.join(__dirname, "../src/main/session-runner-pool.js"), "utf8");
 assert.ok(poolSrc.includes("context-window-guard.js"), "plugin must be registered in the runner plugin list");
 assert.ok(/LILY_CONTEXT_TOKEN_BUDGET/.test(poolSrc) && /resolveContextBudget/.test(poolSrc),
   "Lily must set the model-aware LILY_CONTEXT_TOKEN_BUDGET for the engine");
+assert.ok(/LILY_CONTEXT_TOKEN_BUDGETS/.test(poolSrc) && /limit\?\.context/.test(poolSrc),
+  "Lily must hand the guard every configured model's own budget, read from the engine config's limit.context");
 
 console.log("context-window-guard: ok");

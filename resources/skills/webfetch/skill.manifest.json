@@ -2,17 +2,14 @@
   "schemaVersion": 1,
   "id": "webfetch",
   "name": "网页抓取",
-  "version": "1.0.1",
-  "description": "打开链接并读取网页正文，无需 API Key。",
+  "version": "1.0.2",
+  "description": "网页正文读取的兜底方案：内置 webfetch 工具失败时使用，无需 API Key。",
   "minAppVersion": "0.1.0",
   "runtime": "node",
   "entry": "scripts/webfetch.cjs",
   "placeholders": {
     "{{WEBFETCH_SCRIPT}}": "scripts/webfetch.cjs"
   },
-  "replaceNativeTools": [
-    "WebFetch"
-  ],
   "permissions": {
     "network": true,
     "filesystem": "none",
@@ -21,7 +18,7 @@
   "guideMd": {
     "title": "联网能力（必读）",
     "priority": 21,
-    "body": "打开链接并读取正文：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再 webfetch 读具体页面，最后按用户当前语言总结并附上来源。"
+    "body": "读取链接正文先用内置 webfetch 工具。它失败时（网站拦截、超时或工具不可用）再用脚本：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再读取具体页面，最后按用户当前语言总结并附上来源。"
   },
   "name_i18n": {
     "zh-CN": "网页抓取",
@@ -29,25 +26,25 @@
     "ar": "جلب صفحات الويب"
   },
   "description_i18n": {
-    "zh-CN": "打开链接并读取网页正文，无需 API Key。",
-    "en": "Open links and read webpage content. No API key required.",
-    "ar": "فتح الروابط وقراءة محتوى صفحات الويب. لا يتطلب مفتاح API."
+    "zh-CN": "网页正文读取的兜底方案：内置 webfetch 工具失败时使用，无需 API Key。",
+    "en": "Fallback for reading webpages when the built-in webfetch tool fails. No API key required.",
+    "ar": "بديل احتياطي لقراءة صفحات الويب عند فشل أداة webfetch المضمنة. لا يتطلب مفتاح API."
   },
   "guideMd_i18n": {
     "zh-CN": {
       "title": "联网能力（必读）",
       "priority": 21,
-      "body": "打开链接并读取正文：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再 webfetch 读具体页面，最后按用户当前语言总结并附上来源。"
+      "body": "读取链接正文先用内置 webfetch 工具。它失败时（网站拦截、超时或工具不可用）再用脚本：\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"用户想了解的问题\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\n常见流程：先搜索找到链接，再读取具体页面，最后按用户当前语言总结并附上来源。"
     },
     "en": {
       "title": "Web Access (Required)",
       "priority": 21,
-      "body": "Built-in WebSearch / WebFetch are not available in this app. Do not call these two tools.\nWhen you need to open a link and read page content, use the web fetch script.\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"what the user wants to know\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nCommon workflow: search first with websearch to find links, then webfetch to read specific pages, finally summarize in the user's current language with sources cited."
+      "body": "Read a link with the built-in webfetch tool first. If it fails (the site blocks it, it times out, or the tool is unavailable), use the script:\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"what the user wants to know\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nCommon workflow: search with websearch to find links, then read specific pages, finally summarize in the user's current language with sources cited."
     },
     "ar": {
       "title": "الوصول إلى الويب (مطلوب)",
       "priority": 21,
-      "body": "أدوات WebSearch / WebFetch المضمنة غير متاحة في هذا التطبيق. لا تستدع هاتين الأداتين.\nعند الحاجة لفتح رابط وقراءة محتوى الصفحة، استخدم سكريبت جلب الويب.\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"ما يريد المستخدم معرفته\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nسير العمل الشائع: ابحث أولاً باستخدام websearch للعثور على الروابط، ثم webfetch لقراءة صفحات محددة، وأخيراً لخص بلغة المستخدم مع ذكر المصادر."
+      "body": "اقرأ الرابط أولاً باستخدام أداة webfetch المضمنة. إذا فشلت (حظر الموقع أو انتهاء المهلة أو عدم توفر الأداة)، استخدم السكريبت:\n\n```\necho '{\"url\":\"https://example.com\",\"prompt\":\"ما يريد المستخدم معرفته\"}' | \"{{NODE_BIN}}\" \"{{WEBFETCH_SCRIPT}}\"\n```\n\nسير العمل الشائع: ابحث أولاً باستخدام websearch للعثور على الروابط، ثم اقرأ صفحات محددة، وأخيراً لخص بلغة المستخدم مع ذكر المصادر."
     }
   }
 }
