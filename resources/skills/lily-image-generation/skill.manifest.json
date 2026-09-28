@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-image-generation",
   "name": "图片生成",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "生成图片并保存到当前工作区，支持阿里百炼 Qwen-Image、火山方舟即梦 Seedream、可灵 Kling、MiniMax 海螺、智谱 CogView 等服务商。",
   "minAppVersion": "0.1.0",
   "category": "media",

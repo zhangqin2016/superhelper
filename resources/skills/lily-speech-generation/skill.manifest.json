@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-speech-generation",
   "name": "语音生成",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "使用设置里的默认语音服务商生成配音、旁白和音频，支持 Lily GPU 和阿里云百炼语音合成。",
   "minAppVersion": "0.1.0",
   "category": "media",

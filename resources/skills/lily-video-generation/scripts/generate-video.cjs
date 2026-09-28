@@ -174,18 +174,23 @@ async function main() {
   xml += "</generated_media>\n";
   process.stdout.write(xml);
   // Drop a result record so the workbench can surface the media even if the turn was
-  // already torn down (watchdog/interrupt) before this stdout was captured. The
-  // main-process media tracker scans these and injects the result into the session.
+  // already torn down (watchdog/interrupt) before this stdout was captured, or the
+  // caller cut the marker off it (`| tail`). The main-process media tracker scans
+  // these and injects the result into the session.
   writeResultRecord(outputDir, { type: "video", provider: providerId, taskId, content: xml });
 }
 
 function writeResultRecord(outputDir, record) {
   try {
-    const dir = path.join(outputDir, ".lily-results");
+    // The host names the inbox; the output dir is the fallback for older hosts.
+    const dir = process.env.LILY_MEDIA_RESULTS_DIR || path.join(outputDir, ".lily-results");
     fs.mkdirSync(dir, { recursive: true });
     const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
     fs.writeFileSync(path.join(dir, name), JSON.stringify({ ...record, createdAt: Date.now() }), "utf8");
-  } catch { /* best effort — stdout path still works when the turn is alive */ }
+  } catch (error) {
+    // Best effort — the stdout marker still works when the turn is alive.
+    process.stderr.write(`[lily-video-generation] result record not written: ${error?.message || error}\n`);
+  }
 }
 
 main().catch((error) => fail(msg("视频生成失败。", "Video generation failed."), error?.message || String(error)));

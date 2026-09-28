@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { sweep, extractPaths, alreadyShown, sessionForProject, GRACE_MS } = require("../src/main/media-result-tracker.js");
+const { sweep, extractPaths, alreadyShown, sessionForProject, mediaResultsInbox, GRACE_MS, INBOX_ORPHAN_MS } = require("../src/main/media-result-tracker.js");
 
 function assert(c, m) { if (!c) throw new Error(m); }
 
@@ -92,7 +92,13 @@ assert(!alreadyShown(makeCtx([{ role: "user", content: winPath }]), "s1", [winPa
 assert(!alreadyShown(makeCtx([{ role: "assistant", content: winPath + ".backup" }]), "s1", [winPath]), "A filename prefix is not delivery");
 assert(alreadyShown(makeCtx([{ role: "assistant", content: winPath.toLowerCase() }]), "s1", [winPath]), "Windows path case is equivalent");
 assert(!alreadyShown(makeCtx([{ role: "assistant", content: winPath }]), "s1", [winPath, "D:/other.png"]), "Every image must be delivered");
-assert(alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: { content: winPath } }] } }]), "s1", [winPath]), "Media in tool output survives dedup");
+const winMarker = `<generated_media type="image">\n  <file path="${winPath}" bytes="1" />\n</generated_media>\n`;
+assert(alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: { content: winMarker } }] } }]), "s1", [winPath]), "A marker in tool output is what the renderer shows: deduped");
+// A tool output that only mentions the path did not show the media: a later
+// listing, or the skill's own output with the marker cut off by `| tail -2`.
+assert(!alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: { content: `./generated-assets/x\n${winPath}\n` } }] } }]), "s1", [winPath]), "A listing is not delivery");
+assert(!alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: { content: `  <file path="${winPath}" bytes="1" />\n</generated_media>\n` } }] } }]), "s1", [winPath]), "A marker cut by tail is not delivery");
+assert(alreadyShown(makeCtx([{ role: "assistant", record: { tools: [{ status: "done", result: JSON.stringify({ content: winMarker }) }] } }]), "s1", [winPath]), "A JSON-encoded tool result with a marker is delivery");
 ctx = makeCtx();
 ctx.sessionManager.listForProject = () => [{ id: "s1" }, { id: "s2" }];
 assert(sessionForProject(ctx, { id: "p1" }, {}) === null, "Do not guess ownership from active tab");
@@ -116,6 +122,40 @@ ctx.eventBus.emit = emit;
 sweep(ctx);
 assert(ctx.injected.length === 1, "Persisted supplement can be re-emitted without another task");
 console.log("media-tracker: Windows, ownership, partial delivery and durable failure regressions ok");
+
+// 5. Host inbox: a generation whose output_dir (or a `cd`) put it outside
+//    <workspace>/generated-assets is still found, owned by the workspace that
+//    contains the file, delivered once, and the receipt cleared. Field case
+//    2026-09-28: output/capability-gauntlet/generated-assets/.lily-results sat
+//    unswept for 38 minutes.
+{
+  const inbox = mediaResultsInbox(path.join(root, "userData"));
+  fs.mkdirSync(inbox, { recursive: true });
+  const nested = path.join(root, "output", "gauntlet", "generated-assets", "cover.png");
+  const content = `<generated_media type="image">\n  <file path="${nested}" bytes="9" />\n</generated_media>\n`;
+  fs.writeFileSync(path.join(inbox, "a.json"), JSON.stringify({ type: "image", content, createdAt: Date.now() - GRACE_MS - 1000 }));
+  // The live turn cut the marker off (`| tail -2`): the path is in tool output, the media was never shown.
+  ctx = makeCtx([{ role: "assistant", content: "封面已生成", record: { tools: [{ status: "done", result: { content: `  <file path="${nested}" bytes="9" />\n</generated_media>\n` } }] } }]);
+  sweep(ctx, Date.now(), { inbox });
+  assert(ctx.injected.length === 1, `marker-cut generation must be delivered from the inbox, got ${ctx.injected.length}`);
+  assert(String(ctx.injected[0].assistant).includes("cover.png"), "delivered content carries the marker");
+  assert(fs.readdirSync(inbox).length === 0, "inbox receipt cleared after delivery");
+  sweep(ctx, Date.now(), { inbox });
+  assert(ctx.injected.length === 1, "delivered once");
+
+  // A record no workspace owns waits, then is dropped (with a log) after the orphan window.
+  const outside = path.join(os.tmpdir(), "not-a-workspace", "generated-assets", "x.png");
+  const orphan = `<generated_media type="image">\n  <file path="${outside}" bytes="1" />\n</generated_media>\n`;
+  fs.writeFileSync(path.join(inbox, "o.json"), JSON.stringify({ type: "image", content: orphan, createdAt: Date.now() - GRACE_MS - 1000 }));
+  ctx = makeCtx([]);
+  sweep(ctx, Date.now(), { inbox });
+  assert(ctx.injected.length === 0 && fs.existsSync(path.join(inbox, "o.json")), "an unowned record waits");
+  const warn = console.warn; const warnings = []; console.warn = (m) => warnings.push(String(m));
+  try { sweep(ctx, Date.now() + INBOX_ORPHAN_MS + 1, { inbox }); } finally { console.warn = warn; }
+  assert(!fs.existsSync(path.join(inbox, "o.json")), "an unowned record is dropped after the orphan window");
+  assert(warnings.some((m) => m.includes("no workspace owns")), "the drop is logged");
+  console.log("media-tracker: host inbox, marker-cut delivery and orphan expiry ok");
+}
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log("test-media-result-tracker: ALL_OK");

@@ -314,6 +314,29 @@ try {
   assert.match(speech.stdout, /generated_media type="speech"/);
   assert.match(assertGeneratedPath(speech.stdout, "generated-assets"), /generated-assets\/speech-/);
 
+  // Every media skill leaves its result record in the host-named inbox, wherever
+  // output_dir points, holding the same marker it printed — the tracker surfaces
+  // the media from it when the turn died or the caller cut the marker off stdout.
+  const inbox = path.join(tmp, "host-inbox");
+  const runs = {
+    image: [scripts.image, { prompt: "一张莲花图", output_dir: "nested/deep/generated-assets" }],
+    video: [scripts.video, { prompt: "一段莲花盛开视频", timeout_ms: 5000, output_dir: "nested/deep/generated-assets" }],
+    speech: [scripts.speech, { text: "你好", output_dir: "nested/deep/generated-assets" }],
+  };
+  for (const [type, [script, input]] of Object.entries(runs)) {
+    fs.rmSync(inbox, { recursive: true, force: true });
+    const run = await runNode(script, input, { ...env, LILY_MEDIA_RESULTS_DIR: inbox }, tmp);
+    assert.equal(run.code, 0, run.stderr);
+    const records = fs.readdirSync(inbox).filter((f) => f.endsWith(".json"));
+    assert.equal(records.length, 1, `${type}: one record in the host inbox`);
+    const record = JSON.parse(fs.readFileSync(path.join(inbox, records[0]), "utf8"));
+    assert.equal(record.type, type);
+    assert.ok(record.createdAt > 0, `${type}: record is timestamped for the grace window`);
+    const marker = run.stdout.match(/<generated_media[\s\S]*<\/generated_media>\n/)[0];
+    assert.equal(record.content, marker, `${type}: the record carries the printed marker`);
+    assert.ok(!fs.existsSync(path.join(tmp, "nested/deep/generated-assets/.lily-results")), `${type}: nothing left beside the output`);
+  }
+
   // The self-hosted GPU provider was retired on 2026-09-23 with its bespoke
   // endpoints, contracts and gateway routes; every remaining provider is
   // exercised through the generic adapter path above.
@@ -398,9 +421,10 @@ try {
   assert.equal(zhipuVideo.code, 0, zhipuVideo.stderr);
   assert.match(assertGeneratedPath(zhipuVideo.stdout, "generated-assets"), /generated-assets\/video-/);
 
-  assert.equal(seen.image, 1);
-  assert.equal(seen.video, 1);
-  assert.equal(seen.speech, 2);
+  // One call each from the host-inbox runs above.
+  assert.equal(seen.image, 2);
+  assert.equal(seen.video, 2);
+  assert.equal(seen.speech, 3);
   assert.equal(seen.volcImage, 1);
   assert.equal(seen.volcVideo, 1);
   assert.equal(seen.klingImage, 1);

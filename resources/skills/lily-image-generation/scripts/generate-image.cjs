@@ -186,13 +186,16 @@ async function main() {
   xml += "</generated_media>\n";
   process.stdout.write(xml);
   // Result record for the main-process media tracker — surfaces the media even if the
-  // turn was torn down before this stdout was captured. Best-effort.
+  // turn was torn down, or the caller cut the marker off this stdout (`| tail`).
+  // The host names the inbox; the output dir is the fallback for older hosts.
   try {
-    const dir = path.join(outputDir, ".lily-results");
+    const dir = process.env.LILY_MEDIA_RESULTS_DIR || path.join(outputDir, ".lily-results");
     fs.mkdirSync(dir, { recursive: true });
     const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
     fs.writeFileSync(path.join(dir, name), JSON.stringify({ type: "image", provider: providerId, taskId, content: xml, createdAt: Date.now() }), "utf8");
-  } catch { /* best effort */ }
+  } catch (error) {
+    process.stderr.write(`[lily-image-generation] result record not written: ${error?.message || error}\n`);
+  }
 }
 
 main().catch((error) => fail(msg("图片生成失败。", "Image generation failed."), error?.message || String(error)));

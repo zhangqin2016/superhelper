@@ -200,12 +200,24 @@ function downloadHeaders(url) {
   return {};
 }
 
-function writeGeneratedSpeech(files) {
-  process.stdout.write("<generated_media type=\"speech\">\n");
+function writeGeneratedSpeech(files, outputDir) {
+  let xml = "<generated_media type=\"speech\">\n";
   for (const file of files) {
-    process.stdout.write(`  <file path="${file.path}" bytes="${file.bytes}" />\n`);
+    xml += `  <file path="${file.path}" bytes="${file.bytes}" />\n`;
   }
-  process.stdout.write("</generated_media>\n");
+  xml += "</generated_media>\n";
+  process.stdout.write(xml);
+  // Result record for the main-process media tracker, as the image and video
+  // skills write: the audio still reaches the conversation when the turn was torn
+  // down or the caller cut the marker off this stdout (`| tail`).
+  try {
+    const dir = process.env.LILY_MEDIA_RESULTS_DIR || path.join(outputDir, ".lily-results");
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 8)}.json`;
+    fs.writeFileSync(path.join(dir, name), JSON.stringify({ type: "speech", content: xml, createdAt: Date.now() }), "utf8");
+  } catch (error) {
+    process.stderr.write(`[lily-speech-generation] result record not written: ${error?.message || error}\n`);
+  }
 }
 
 
@@ -268,7 +280,7 @@ async function main() {
     }
   }
 
-  writeGeneratedSpeech(files);
+  writeGeneratedSpeech(files, outputDir);
 }
 
 main().catch((error) => fail(msg("语音生成失败。", "Speech generation failed."), error?.message || String(error)));

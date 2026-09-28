@@ -16,6 +16,42 @@ const path = require("node:path");
 const { deliverMediaResult, containsMediaPaths } = require("./media-result-delivery");
 
 const RESULTS_SUBPATH = path.join("generated-assets", ".lily-results");
+// The host-named inbox the media skills write to (LILY_MEDIA_RESULTS_DIR): a
+// custom output_dir or a `cd` into a subfolder put records outside
+// <workspace>/generated-assets/.lily-results, where no sweep ever looked.
+// RESULTS_SUBPATH stays swept for records written by older skill copies.
+const INBOX_NAME = "media-results";
+// An inbox record no workspace owns (output written outside every project) is
+// dropped after this, with a log line, instead of being re-read forever.
+const INBOX_ORPHAN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function mediaResultsInbox(userDataDir) {
+  return userDataDir ? path.join(userDataDir, INBOX_NAME) : "";
+}
+
+function defaultInbox() {
+  try { return mediaResultsInbox(require("electron").app.getPath("userData")); } catch { return ""; }
+}
+
+// What the renderer shows as generated media: a complete <generated_media>
+// block. A listing, a `cat`, or a marker cut off by `| tail` only mentions the
+// path, so it neither shows the media nor proves it was shown.
+const MARKER_BLOCK = /<generated_media\b[^>]*>[\s\S]*?<\/generated_media>/g;
+function markerBlocks(value) {
+  const blocks = [];
+  const visit = (v) => {
+    if (typeof v === "string") {
+      // Tool results are often stored JSON-encoded; decoding keeps a Windows
+      // path's separators single so it matches the record's path.
+      if (/^\s*[{[]/.test(v)) {
+        try { visit(JSON.parse(v)); return; } catch { /* plain text that starts with a brace */ }
+      }
+      blocks.push(...(v.match(MARKER_BLOCK) || []));
+    } else if (v && typeof v === "object") Object.values(v).forEach(visit);
+  };
+  visit(value);
+  return blocks;
+}
 // Let the live turn surface the media first; only sweep records older than this so the
 // normal (turn-alive) path wins and the tracker is the safety net for orphaned results.
 const GRACE_MS = 30_000;
@@ -44,7 +80,7 @@ function alreadyShown(ctx, sessionId, paths) {
     content: message.content || message.text,
     artifacts: message.record?.artifacts,
     results: message.record?.resultBlocks,
-    outputs: message.record?.tools?.filter((t) => !t.isError && t.status === "done").map((t) => t.result),
+    outputs: message.record?.tools?.filter((t) => !t.isError && t.status === "done").map((t) => markerBlocks(t.result)),
   })), paths);
 }
 
@@ -80,36 +116,70 @@ function sessionCanReceiveFallback(ctx, sessionId) {
   return snap.phase === "idle" && !(snap.queueLength > 0);
 }
 
-function sweep(ctx, now = Date.now()) {
-  const projects = ctx.projectManager?.projects || [];
+function owningProject(projects, paths) {
+  let best = null;
   for (const project of projects) {
-    const dir = path.join(project.path || "", RESULTS_SUBPATH);
-    let files;
-    try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { continue; }
-    for (const file of files) {
-      const full = path.join(dir, file);
-      let record;
-      try { record = JSON.parse(fs.readFileSync(full, "utf8")); } catch { continue; }
-      if (record.createdAt && now - record.createdAt < GRACE_MS) continue; // give the live turn a chance
-      const sessionId = sessionForProject(ctx, project, record);
-      if (!sessionId) continue; // no session to attach to yet — leave for a later sweep
-      const paths = extractPaths(record.content);
-      if (!paths.length) continue;
-      if (alreadyShown(ctx, sessionId, paths)) { safeRm(full); continue; } // dedup vs the live turn
-      if (!sessionCanReceiveFallback(ctx, sessionId)) continue; // never surface fallback media as a queued user message
-      try {
-        if (deliverMediaResult(ctx, sessionId, record, paths)) safeRm(full);
-      } catch { /* Retain the receipt for retry after persistence or event failure. */ }
+    const root = project?.path ? path.resolve(project.path) : "";
+    if (!root) continue;
+    const owns = paths.every((p) => {
+      const file = path.resolve(p);
+      return file === root || file.startsWith(root + path.sep);
+    });
+    if (owns && (!best || root.length > path.resolve(best.path).length)) best = project;
+  }
+  return best;
+}
+
+function sweepRecord(ctx, full, project, now) {
+  let record;
+  try { record = JSON.parse(fs.readFileSync(full, "utf8")); } catch (error) {
+    console.warn(`[media-result-tracker] unreadable record ${full}: ${error?.message || error}`);
+    return;
+  }
+  if (record.createdAt && now - record.createdAt < GRACE_MS) return; // give the live turn a chance
+  const paths = extractPaths(record.content);
+  if (!paths.length) return;
+  const owner = project || owningProject(ctx.projectManager?.projects || [], paths);
+  if (!owner) {
+    if (record.createdAt && now - record.createdAt > INBOX_ORPHAN_MS) {
+      console.warn(`[media-result-tracker] dropping ${full}: no workspace owns ${paths.join(", ")}`);
+      safeRm(full);
     }
+    return;
+  }
+  const sessionId = sessionForProject(ctx, owner, record);
+  if (!sessionId) return; // no session to attach to yet — leave for a later sweep
+  if (alreadyShown(ctx, sessionId, paths)) { safeRm(full); return; } // dedup vs the live turn
+  if (!sessionCanReceiveFallback(ctx, sessionId)) return; // never surface fallback media as a queued user message
+  try {
+    if (deliverMediaResult(ctx, sessionId, record, paths)) safeRm(full);
+  } catch (error) {
+    // Retain the receipt for retry after persistence or event failure.
+    console.warn(`[media-result-tracker] delivery failed for ${full}: ${error?.message || error}`);
   }
 }
 
-function startMediaResultTracker(ctx, { intervalMs = 5000 } = {}) {
+function jsonFiles(dir) {
+  try { return fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => path.join(dir, f)); } catch { return []; }
+}
+
+function sweep(ctx, now = Date.now(), { inbox = "" } = {}) {
+  const projects = ctx.projectManager?.projects || [];
+  for (const project of projects) {
+    for (const full of jsonFiles(path.join(project.path || "", RESULTS_SUBPATH))) sweepRecord(ctx, full, project, now);
+  }
+  if (inbox) for (const full of jsonFiles(inbox)) sweepRecord(ctx, full, null, now);
+}
+
+function startMediaResultTracker(ctx, { intervalMs = 5000, inbox = defaultInbox() } = {}) {
   const timer = setInterval(() => {
-    try { sweep(ctx); } catch { /* never let the tracker crash the app */ }
+    try { sweep(ctx, Date.now(), { inbox }); } catch (error) {
+      // Never let the tracker crash the app.
+      console.warn(`[media-result-tracker] sweep failed: ${error?.message || error}`);
+    }
   }, intervalMs);
   timer.unref?.();
   return () => clearInterval(timer);
 }
 
-module.exports = { startMediaResultTracker, sweep, extractPaths, alreadyShown, sessionForProject, sessionCanReceiveFallback, GRACE_MS };
+module.exports = { startMediaResultTracker, sweep, extractPaths, alreadyShown, sessionForProject, sessionCanReceiveFallback, mediaResultsInbox, GRACE_MS, INBOX_ORPHAN_MS };

@@ -2661,11 +2661,13 @@
     },
     {
       "id": "generated-media-marker-only",
-      "protects": "A turn announces media as generated only when a tool result carries the <generated_media> marker a media skill prints; a listing, cat or search that merely mentions a generated-assets path never does.",
-      "baseline": "2026-09-28: a new turn's find and cat of the workspace listed an image an earlier turn generated (and the user had deleted), and the marker-less generated-assets path scan announced it as 已生成文件 in the new turn.",
-      "failureFallback": "Every bundled media skill prints the marker and bundled skills are reinstalled from the app whenever a file differs; an orphaned generation is still surfaced by the media-result tracker from its .lily-results record. Mutation-verified: the previous path scan fails the listing case by name.",
+      "protects": "A turn announces media as generated only when a tool result carries the complete <generated_media> marker a media skill prints; a listing, cat or search that merely mentions a generated-assets path never does. A generation whose marker never reached the conversation — the turn died, or the caller cut it off with | tail — is still delivered once from the skill's result record: image, video and speech skills write it to the host-named inbox (LILY_MEDIA_RESULTS_DIR) wherever output_dir points, and the tracker counts media as already shown only where a complete marker (or the answer, or a result card) showed it.",
+      "baseline": "2026-09-28: a new turn's find and cat of the workspace listed an image an earlier turn generated (and the user had deleted), and the marker-less generated-assets path scan announced it as 已生成文件. The same scan was the only thing surfacing 3 real generations (2026-07-02) whose marker the model cut with | tail; the tracker would have treated those as shown, because the path appeared in tool output, and speech wrote no record at all; records beside a custom output_dir were never swept (38 minutes unswept in the field).",
+      "failureFallback": "No inbox env (older host): records stay beside the output and <workspace>/generated-assets/.lily-results is still swept. Unowned inbox records wait, and are dropped with a log after 7 days. A record-write failure is logged to stderr and the stdout marker still works. Mutation-verified: the old path scan, counting raw tool output as shown, skipping the inbox, and the record-less speech skill each fail by name.",
       "tests": [
-        "scripts/test-renderer-import.cjs"
+        "scripts/test-renderer-import.cjs",
+        "scripts/test-media-result-tracker.mjs",
+        "scripts/test-media-generation-skills.mjs"
       ]
     }
   ]

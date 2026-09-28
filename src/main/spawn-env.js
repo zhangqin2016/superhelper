@@ -173,6 +173,8 @@ function buildAgentSpawnEnv(options = {}) {
     // Lets agent-run CLIs (e.g. runtime-pack-cli) resolve the same userData
     // dir the main process uses — they run as plain node without electron.
     LILY_USER_DATA_DIR: app.getPath("userData"),
+    // Where the media skills drop result records for the media-result tracker.
+    LILY_MEDIA_RESULTS_DIR: require("./media-result-tracker").mediaResultsInbox(app.getPath("userData")),
   };
 
   if (truthy(lilyEnv.LILY_TLS_SKIP_VERIFY)) {
