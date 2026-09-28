@@ -14,6 +14,10 @@ const tests = [
   ...new Set(registry.gates.flatMap((gate) => gate.tests || [])),
 ];
 
+// A hung test fails loud instead of stalling the whole gate forever.
+const configuredTimeout = Number(process.env.LILY_CAPABILITY_GATE_TEST_TIMEOUT_MS);
+const TEST_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 20 * 60 * 1000;
+
 const failures = [];
 for (const testFile of tests) {
   process.stdout.write(`\n[capability-gate] ${testFile}\n`);
@@ -31,7 +35,12 @@ for (const testFile of tests) {
     cwd: ROOT,
     env: childEnv,
     stdio: "inherit",
+    timeout: TEST_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
+  if (result.error?.code === "ETIMEDOUT") {
+    console.error(`[capability-gate] ${testFile} timed out after ${TEST_TIMEOUT_MS} ms`);
+  }
   if (result.status !== 0) failures.push(testFile);
 }
 

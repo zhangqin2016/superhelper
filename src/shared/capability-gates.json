@@ -1726,7 +1726,6 @@
       "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
       "failureFallback": "Not claimed by this gate: Workflow/UI transport and accounts remain fixtures; combined real encryption/network/service acceptance remains pending.",
       "tests": [
-        "scripts/lib/remote-task-ui-fixture.cjs",
         "scripts/test-remote-task-dual-client-ui.cjs",
         "scripts/test-remote-task-git-transport.mjs",
         "scripts/test-remote-task-workflow.mjs",
@@ -1840,7 +1839,6 @@
       "tests": [
         "scripts/test-integration-admission.mjs",
         "scripts/test-integration-worker.mjs",
-        "server/scripts/collaboration-native-turn-fixture.cjs",
         "server/scripts/collaboration-task-git-http-fixture.mjs"
       ]
     },
@@ -2038,7 +2036,6 @@
       "baseline": "Ordinary conversation is untouched: this capability is reached only through the collaboration task surface, which the signed policy can switch off.",
       "failureFallback": "Cross-account application writer (2026-09-14): every task apply/rollback and local startup recovery uses one nonwaiting OS-user SQLite write lock, independent of account/profile and covering nested roots. Process death releases the lock without expiry; busy admission leaves no partial journal and retains a retryable UI plan. Node 22/Electron Node 24 independent-process tests verify stalled writes, SIGKILL recovery, stale-preview rejection and separate account journals; ZIP/Git workflows, encrypted recovery and Electron retry UI pass. Not claimed by this gate: This locks cooperating application",
       "tests": [
-        "scripts/lib/remote-task-ui-fixture.cjs",
         "scripts/remote-task-live-acceptance.mjs",
         "scripts/test-local-writer.mjs",
         "scripts/test-remote-task-application.mjs",

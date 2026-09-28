@@ -12,6 +12,16 @@ const docLines = capabilityGateDoc.split("\n");
 
 assert.equal(registry.schemaVersion, 1);
 assert(Array.isArray(registry.gates) && registry.gates.length > 0);
+const requiredCjsHelpers = new Set();
+for (const dir of ["scripts", "scripts/lib", "server/scripts"]) {
+  const abs = path.join(ROOT, dir);
+  if (!fs.existsSync(abs)) continue;
+  for (const name of fs.readdirSync(abs).filter((n) => /\.(mjs|cjs|js)$/.test(n))) {
+    const src = fs.readFileSync(path.join(abs, name), "utf8");
+    for (const match of src.matchAll(/require\(\s*["'`]([^"'`]+\.cjs)["'`]\s*\)/g)) requiredCjsHelpers.add(path.basename(match[1]));
+  }
+}
+
 const ids = new Set();
 for (const gate of registry.gates) {
   assert(gate.id && !ids.has(gate.id), `duplicate or missing capability gate id: ${gate.id}`);
@@ -22,6 +32,13 @@ for (const gate of registry.gates) {
   assert(Array.isArray(gate.tests) && gate.tests.length > 0, `${gate.id} must own at least one test`);
   for (const testFile of gate.tests) {
     assert(fs.existsSync(path.join(ROOT, testFile)), `${gate.id} references missing test ${testFile}`);
+    // A .cjs helper that other scripts require is never run as a test: the gate
+    // runs .cjs under Electron, and a module that only exports keeps the app
+    // alive with no timeout (remote-task-ui-fixture.cjs and
+    // collaboration-native-turn-fixture.cjs each hung the whole gate for hours).
+    if (testFile.endsWith(".cjs")) {
+      assert(!requiredCjsHelpers.has(path.basename(testFile)), `${gate.id} lists helper ${testFile} as a test; list the test that requires it`);
+    }
   }
 }
 
