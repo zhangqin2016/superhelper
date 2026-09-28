@@ -129,6 +129,67 @@ function joinUrl(base, key) {
   return `${String(base || "").replace(/\/+$/g, "")}/${String(key || "").replace(/^\/+/g, "")}`;
 }
 
+// A release uploads the same bytes under several keys (the Windows installer
+// is both the versioned download and the auto-update package): from a slow
+// uplink that is ten minutes of re-sending a file Qiniu already holds. Content
+// is identified by its Qiniu etag; an object that already has it is left as
+// it is, and a second key for uploaded bytes is copied inside Qiniu. Any
+// failure to prove either falls back to the plain upload.
+const UPLOADED_INDEX = path.join(ROOT, "release", ".qiniu-uploaded.json");
+
+function qshellLine(args, label) {
+  const result = spawnSync("qshell", args, { encoding: "utf8" });
+  if (result.status !== 0) return { ok: false, text: `${result.stderr || result.stdout || ""}`.trim() || `${label} exited ${result.status}` };
+  return { ok: true, text: String(result.stdout || "") };
+}
+
+function localEtag(file) {
+  const out = qshellLine(["qetag", file], "qetag");
+  const tag = out.ok ? out.text.trim().split(/\s+/).pop() : "";
+  return /^[A-Za-z0-9_-]{28}$/.test(tag) ? tag : "";
+}
+
+function remoteEtag(bucket, key) {
+  const out = qshellLine(["stat", bucket, key], "stat");
+  return out.ok ? (/^Etag:\s*(\S+)/m.exec(out.text)?.[1] || "") : "";
+}
+
+function readUploadedIndex() {
+  try { return JSON.parse(fs.readFileSync(UPLOADED_INDEX, "utf8")); } catch { return {}; }
+}
+
+function recordUploaded(bucket, tag, key) {
+  if (!tag) return;
+  try {
+    const index = readUploadedIndex();
+    index[bucket] = { ...(index[bucket] || {}), [tag]: key };
+    fs.mkdirSync(path.dirname(UPLOADED_INDEX), { recursive: true });
+    const temp = `${UPLOADED_INDEX}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, `${JSON.stringify(index, null, 2)}\n`);
+    fs.renameSync(temp, UPLOADED_INDEX);
+  } catch (error) {
+    console.warn(`[release-admin] could not record uploaded ${key}: ${error?.message || error}`);
+  }
+}
+
+/** true when `key` now holds exactly this file without sending it. */
+function reuseRemoteContent({ bucket, key, tag }) {
+  if (!tag) return false;
+  if (remoteEtag(bucket, key) === tag) {
+    console.log(`[release-admin] already in Qiniu with the same content, not re-sent: ${key}`);
+    return true;
+  }
+  const source = readUploadedIndex()[bucket]?.[tag];
+  if (!source || source === key || remoteEtag(bucket, source) !== tag) return false;
+  const copied = qshellLine(["copy", bucket, source, bucket, "-k", key, "--overwrite"], "copy");
+  if (copied.ok && remoteEtag(bucket, key) === tag) {
+    console.log(`[release-admin] copied inside Qiniu instead of re-sending: ${source} -> ${key}`);
+    return true;
+  }
+  console.warn(`[release-admin] Qiniu copy ${source} -> ${key} not verified (${copied.text.slice(0, 160)}); uploading`);
+  return false;
+}
+
 function uploadQiniu({ bucket, key, file, dryRun, upHost }) {
   const localFile = path.resolve(ROOT, file);
   if (!bucket || !key || !file) usage();
@@ -155,13 +216,17 @@ function uploadQiniu({ bucket, key, file, dryRun, upHost }) {
   console.log(`[release-admin] upload: ${command.map(shellQuote).join(" ")}`);
   if (dryRun) return;
 
+  const tag = localEtag(localFile);
+  if (reuseRemoteContent({ bucket, key, tag })) { recordUploaded(bucket, tag, key); return; }
+
   let result = spawnSync(command[0], command.slice(1), { stdio: "inherit" });
-  if (result.status === 0) return;
+  if (result.status === 0) { recordUploaded(bucket, tag, key); return; }
 
   const legacy = ["qshell", "rput", bucket, key, uploadFile, "true"];
   console.log(`[release-admin] retry legacy qshell syntax: ${legacy.map(shellQuote).join(" ")}`);
   result = spawnSync(legacy[0], legacy.slice(1), { stdio: "inherit" });
   if (result.status !== 0) fail(`qshell upload failed for ${key}`);
+  recordUploaded(bucket, tag, key);
 }
 
 function runBuild(target) {
