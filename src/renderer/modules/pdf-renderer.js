@@ -2,6 +2,7 @@ import { t } from "../i18n/index.js";
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { loadPdfjs, pdfResourceOptions, pdfSourceFromBlock } from "./pdf-core.js";
 import { showToast } from "./toast.js";
+import { iconButton } from "./ui-icons.js";
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.2;
@@ -24,30 +25,9 @@ function bytesText(bytes) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function makeAction(label, disabled, handler) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "assistant-renderer-action";
-  button.textContent = label;
+function makeIconAction(icon, label, disabled, handler) {
+  const button = iconButton("assistant-reveal-btn", icon, label);
   button.disabled = Boolean(disabled);
-  if (!disabled) button.addEventListener("click", handler);
-  return button;
-}
-
-function makeRevealAction(disabled, handler) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "assistant-reveal-btn";
-  button.title = t("file.reveal");
-  button.setAttribute("aria-label", t("file.reveal"));
-  button.disabled = Boolean(disabled);
-  button.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4h4.47c.73 0 1.43.29 1.94.8l1.04 1.04c.23.23.54.36.86.36h4.19A2.75 2.75 0 0 1 21 8.95v8.3A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z"></path>
-      <path d="M14.25 12.25h3.5v3.5"></path>
-      <path d="m17.75 12.25-4.5 4.5"></path>
-    </svg>
-  `;
   if (!disabled) button.addEventListener("click", handler);
   return button;
 }
@@ -74,15 +54,15 @@ export function renderPdfBlock(block = {}) {
 
   const actions = document.createElement("div");
   actions.className = "assistant-renderer-chart-actions";
-  const readAction = makeAction(tr("renderer.pdfOpenViewer", "Read"), false, async () => {
+  const readAction = makeIconAction("openInPane", tr("preview.openInPane", "Open on the right"), false, async () => {
     const { openPdfViewer } = await import("./pdf-viewer.js");
     openPdfViewer(block);
   });
   readAction.classList.add("assistant-pdf-open-viewer");
   actions.appendChild(readAction);
-  actions.appendChild(makeAction(tr("file.open", "Open"), !block.path, () => void openLocalFile(block.path)));
-  actions.appendChild(makeRevealAction(!block.path, () => void revealLocalFileInFolder(block.path)));
-  actions.appendChild(makeAction(t("common.copy"), false, async () => {
+  actions.appendChild(makeIconAction("openExternal", tr("file.open", "Open"), !block.path, () => void openLocalFile(block.path)));
+  actions.appendChild(makeIconAction("reveal", t("file.reveal"), !block.path, () => void revealLocalFileInFolder(block.path)));
+  actions.appendChild(makeIconAction("copy", t("common.copy"), false, async () => {
     try {
       await navigator.clipboard.writeText(String(block.path || block.relativePath || block.fileName || ""));
       showToast(t("common.copied"), "success");
@@ -101,9 +81,10 @@ export function renderPdfBlock(block = {}) {
 
   const controls = document.createElement("div");
   controls.className = "assistant-pdf-controls";
-  const zoomOut = makeAction("−", true, () => {});
-  const fit = makeAction(tr("renderer.pdfFitWidth", "Fit"), true, () => {});
-  const zoomIn = makeAction("+", true, () => {});
+  const zoomOut = iconButton("assistant-reveal-btn", "zoomOut", tr("renderer.pdfZoomOut", "Zoom out"));
+  const fit = iconButton("assistant-reveal-btn", "fitWidth", tr("renderer.pdfFitWidth", "Fit"));
+  const zoomIn = iconButton("assistant-reveal-btn", "zoomIn", tr("renderer.pdfZoomIn", "Zoom in"));
+  for (const button of [zoomOut, fit, zoomIn]) button.disabled = true;
   const pageLabel = document.createElement("span");
   pageLabel.className = "assistant-renderer-meta assistant-pdf-page-label";
   pageLabel.textContent = tr("renderer.pdfLoading", "Loading PDF...");

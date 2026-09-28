@@ -195,18 +195,55 @@ app.whenReady().then(async () => {
       const { renderHtmlBlock } = await import(${JSON.stringify(moduleUrl("html-renderer.js"))});
       const card = renderHtmlBlock({ path: '/ws/out/card.html', html: '<p>卡片</p>', title: 'card.html' });
       document.body.appendChild(card);
+      const inlineFrame = Boolean(card.querySelector('iframe'));
       const buttons = [...card.querySelectorAll('button')];
-      const openRight = buttons.find((b) => /右侧|right/i.test(b.textContent));
+      const openRight = card.querySelector('.assistant-preview-open');
+      // Icon-only: no printed label; the label is the accessible name and the tooltip.
+      const cardIcons = buttons.map((b) => ({ text: b.textContent.trim(), aria: b.getAttribute('aria-label') || '', tip: getComputedStyle(b, '::after').content, svg: Boolean(b.querySelector('svg')) }));
       openRight?.click();
       await settle();
       const state = pane.previewPaneState();
       card.remove();
       pane.closePreviewPane();
-      return { found: Boolean(openRight), state };
+      const barIcons = [...root.querySelectorAll('.preview-pane-bar button')].map((b) => ({ text: b.textContent.trim(), aria: b.getAttribute('aria-label') || '', tip: getComputedStyle(b, '::after').content, svg: Boolean(b.querySelector('svg')) }));
+      return { found: Boolean(openRight), state, inlineFrame, cardIcons, barIcons };
     `);
     assert.equal(cards.error, undefined, cards.error);
     assert.equal(cards.found, true, "the HTML card has an open-on-the-right action");
+    assert.equal(cards.inlineFrame, false, "the chat shows a card, the content is in the pane");
+    for (const [where, icons] of [["card", cards.cardIcons], ["pane bar", cards.barIcons]]) {
+      assert.ok(icons.length >= 2, `${where}: has icon buttons`);
+      for (const icon of icons) {
+        assert.equal(icon.text, "", `${where}: an icon button prints no label (${icon.aria})`);
+        assert.equal(icon.svg, true, `${where}: an icon button draws its icon (${icon.aria})`);
+        assert.ok(icon.aria, `${where}: an icon button has an accessible name`);
+        assert.equal(icon.tip, JSON.stringify(icon.aria), `${where}: the tooltip shows the label (${icon.aria})`);
+      }
+    }
     assert.deepEqual(cards.state.tabs, ["html:/ws/out/card.html"]);
+
+    // 7b. With the pane open the chat narrows; artifact cards re-flow by the
+    //     chat's width, so a file's name is never cut to a few letters.
+    const flow = await run(`
+      const { renderResultBlocks } = await import(${JSON.stringify(moduleUrl("turn-block-renderers.js"))});
+      viewer.openImageViewer(${JSON.stringify(IMG)}, 'open.svg');
+      const host = document.createElement('div');
+      host.className = 'assistant-turn-artifacts';
+      document.getElementById('sessionMessagesStack').appendChild(host);
+      renderResultBlocks(host, [
+        { id: 'a', type: 'artifact', artifactType: 'html', path: '/ws/output/qa/diagram-preview.html', relativePath: 'output/qa/diagram-preview.html', bytes: 18432, source: 'tool_write' },
+        { id: 'b', type: 'artifact', artifactType: 'markdown', path: '/ws/output/CAPABILITY-REPORT.md', relativePath: 'output/CAPABILITY-REPORT.md', bytes: 5120, source: 'tool_write' },
+        { id: 'c', type: 'artifact', artifactType: 'html', path: '/ws/output/app/index.html', relativePath: 'output/app/index.html', bytes: 40960, source: 'tool_write' },
+      ]);
+      await settle(200);
+      const names = [...host.querySelectorAll('.assistant-preview-card-name')].map((n) => ({ text: n.textContent, cut: n.scrollWidth > n.clientWidth + 1 }));
+      host.remove();
+      pane.closePreviewPane();
+      return { names, paneOpen: true };
+    `);
+    assert.equal(flow.error, undefined, flow.error);
+    assert.deepEqual(flow.names.map((n) => n.text), ["diagram-preview.html", "CAPABILITY-REPORT.md", "index.html"], "cards lead with the file's own name");
+    assert.deepEqual(flow.names.filter((n) => n.cut).map((n) => n.text), [], "no card name is truncated beside the open pane");
 
     // 8. No pane (the standalone collaboration window): the old modals open.
     await win.loadURL(pathToFileURL(path.join(ROOT, "src/renderer/index.html")).href + "?view=collaboration");

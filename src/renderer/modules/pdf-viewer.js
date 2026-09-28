@@ -2,6 +2,7 @@ import { t } from "../i18n/index.js";
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { loadPdfjs, pdfResourceOptions, pdfSourceFromBlock } from "./pdf-core.js";
 import { tryOpenInPreviewPane } from "./preview-pane.js";
+import { ICONS } from "./ui-icons.js";
 
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 2.4;
@@ -25,8 +26,8 @@ function makeButton(label, className, disabled = false, title = "") {
   button.textContent = label;
   button.disabled = Boolean(disabled);
   if (title) {
-    button.title = title;
     button.setAttribute("aria-label", title);
+    button.dataset.tip = title;
   }
   return button;
 }
@@ -75,15 +76,20 @@ export function openPdfViewer(block = {}, { container = null, modal = false } = 
   search.autocomplete = "off";
   const matchLabel = document.createElement("span");
   matchLabel.textContent = "";
-  const prevMatch = makeButton("↑", "pdf-viewer-icon-button", true, tr("renderer.pdfPreviousMatch", "Previous match"));
-  const nextMatch = makeButton("↓", "pdf-viewer-icon-button", true, tr("renderer.pdfNextMatch", "Next match"));
+  const prevMatch = makeButton("", "pdf-viewer-icon-button", true, tr("renderer.pdfPreviousMatch", "Previous match"));
+  prevMatch.innerHTML = ICONS.chevronUp;
+  const nextMatch = makeButton("", "pdf-viewer-icon-button", true, tr("renderer.pdfNextMatch", "Next match"));
+  nextMatch.innerHTML = ICONS.chevronDown;
   searchWrap.append(search, matchLabel, prevMatch, nextMatch);
 
   const zoomWrap = document.createElement("div");
   zoomWrap.className = "pdf-viewer-actions";
-  const zoomOut = makeButton("−", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomOut", "Zoom out"));
-  const fit = makeButton(tr("renderer.pdfFitWidth", "Fit"), "pdf-viewer-button", true, tr("renderer.pdfFitWidth", "Fit"));
-  const zoomIn = makeButton("+", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomIn", "Zoom in"));
+  const zoomOut = makeButton("", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomOut", "Zoom out"));
+  zoomOut.innerHTML = ICONS.zoomOut;
+  const fit = makeButton("", "pdf-viewer-icon-button", true, tr("renderer.pdfFitWidth", "Fit"));
+  fit.innerHTML = ICONS.fitWidth;
+  const zoomIn = makeButton("", "pdf-viewer-icon-button", true, tr("renderer.pdfZoomIn", "Zoom in"));
+  zoomIn.innerHTML = ICONS.zoomIn;
   const open = makeButton(tr("file.open", "Open"), "pdf-viewer-button", !block.path);
   const reveal = makeButton(t("file.reveal"), "pdf-viewer-button", !block.path);
   const close = makeButton("×", "pdf-viewer-close");

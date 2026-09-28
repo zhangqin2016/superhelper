@@ -1,13 +1,12 @@
 import { html, render } from "../../../node_modules/lit-html/lit-html.js";
 import { renderMarkdownContent } from "./content-blocks.js";
 import { t } from "../i18n/index.js";
-import { revealLocalFileInFolder } from "./file-reveal.js";
 import { showToast } from "./toast.js";
 import { isEChartsBlock, renderEChartsBlock } from "./chart-renderer.js";
 import { renderDataTableBlock } from "./data-table-renderer.js";
 import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
-import { tryOpenInPreviewPane } from "./preview-pane.js";
+import { renderPreviewCard, revealButton } from "./preview-card.js";
 import {
   artifactBlocksFromArtifacts,
   inferArtifactType,
@@ -40,25 +39,6 @@ function el(template) {
   return host.firstElementChild || host;
 }
 
-function revealButton(block = {}) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "assistant-reveal-btn";
-  button.title = t("file.reveal");
-  button.setAttribute("aria-label", t("file.reveal"));
-  button.disabled = !block.path;
-  button.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M3 6.75A2.75 2.75 0 0 1 5.75 4h4.47c.73 0 1.43.29 1.94.8l1.04 1.04c.23.23.54.36.86.36h4.19A2.75 2.75 0 0 1 21 8.95v8.3A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Z"></path>
-      <path d="M14.25 12.25h3.5v3.5"></path>
-      <path d="m17.75 12.25-4.5 4.5"></path>
-    </svg>
-  `;
-  button.addEventListener("click", () => {
-    if (block.path) void revealLocalFileInFolder(block.path);
-  });
-  return button;
-}
 
 function copyButton(textProvider) {
   const button = document.createElement("button");
@@ -178,32 +158,7 @@ function renderCompactArtifact(block) {
   `);
 }
 
-function renderMarkdownArtifact(block) {
-  const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
-  const size = bytesText(block.bytes);
-  const node = el(html`
-    <section class="assistant-renderer-block assistant-renderer-markdown-artifact">
-      <header class="assistant-renderer-artifact-header">
-        <div class="assistant-renderer-artifact-title">
-          <code class="assistant-generated-file-path">${name}</code>
-          ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
-        </div>
-        <div class="assistant-renderer-chart-actions">
-          ${block.path ? html`<button type="button" class="assistant-renderer-action" @click=${() => tryOpenInPreviewPane({ kind: "markdown", path: block.path, title: name, block })}>${tr("preview.openInPane", "Open on the right")}</button>` : ""}
-          ${revealButton(block)}
-        </div>
-      </header>
-      <div class="assistant-renderer-markdown-preview assistant-turn-final markdown-body">
-        ${tr("renderer.markdownPreviewLoading", "Loading Markdown preview...")}
-      </div>
-    </section>
-  `);
-  const preview = node.querySelector(".assistant-renderer-markdown-preview");
-  void loadMarkdownPreview(preview, block);
-  return node;
-}
-
-/** Read a Markdown artifact and render it into `preview`; shared by the chat card and the preview pane. */
+/** Read a Markdown artifact and render it into `preview` (the preview pane). */
 export async function loadMarkdownPreview(preview, block = {}) {
   const key = `${block.path || ""}:${block.updatedAt || ""}:${block.bytes || ""}`;
   preview.dataset.markdownPreviewKey = key;
@@ -283,7 +238,7 @@ const RENDERERS = new Map([
   ["compact-artifact", renderCompactArtifact],
   ["image", renderArtifact],
   ["file", renderArtifact],
-  ["markdown-artifact", renderMarkdownArtifact],
+  ["markdown-artifact", (block) => renderPreviewCard(block, "markdown")],
   ["pdf", renderPdfBlock],
   ["html", renderHtmlBlock],
   ["video", renderArtifact],
@@ -297,11 +252,13 @@ function rendererForBlock(block = {}) {
   const type = String(block.type || "").toLowerCase();
   const artifactType = type === "artifact" ? inferArtifactType(block) : String(block.artifactType || "").toLowerCase();
   if (type === "artifact" && artifactType === "chart") return RENDERERS.get("chart");
+  // HTML and Markdown are read in the preview pane: always a card here, which
+  // a mere reference and a delivered file share (both can be opened).
+  if (type === "artifact" && artifactType === "html") return RENDERERS.get("html");
+  if (type === "artifact" && artifactType === "markdown") return RENDERERS.get("markdown-artifact");
   const displayMode = type === "artifact" ? artifactDisplayMode(block) : "primary";
   if (displayMode === "compact") return RENDERERS.get("compact-artifact");
   if (type === "artifact" && artifactType === "pdf") return RENDERERS.get("pdf");
-  if (type === "artifact" && artifactType === "html") return RENDERERS.get("html");
-  if (type === "artifact" && artifactType === "markdown") return RENDERERS.get("markdown-artifact");
   return RENDERERS.get(type) || RENDERERS.get(artifactType);
 }
 

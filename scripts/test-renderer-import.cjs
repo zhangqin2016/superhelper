@@ -2340,8 +2340,8 @@ app.whenReady().then(async () => {
         if (!host.querySelector(".assistant-renderer-pdf .assistant-pdf-pages")) {
           throw new Error("pdf result block should render as a continuous page stack");
         }
-        if (!host.textContent.includes("Fit") && !host.textContent.includes("适宽")) {
-          throw new Error("pdf result block should expose fit-width controls");
+        if (host.querySelectorAll(".assistant-renderer-pdf .assistant-pdf-controls [data-tip]").length !== 3) {
+          throw new Error("pdf result block should expose zoom and fit-width icon controls");
         }
         const pdfViewerButton = host.querySelector(".assistant-pdf-open-viewer");
         if (!pdfViewerButton) {
@@ -2354,8 +2354,13 @@ app.whenReady().then(async () => {
           throw new Error("pdf reader action should open the in-app PDF viewer");
         }
         pdfViewer.querySelector(".pdf-viewer-close")?.click();
-        if (!host.querySelector(".assistant-renderer-html iframe")) {
-          throw new Error("html result block did not render a sandboxed iframe");
+        (await import("./modules/preview-pane.js")).closePreviewPane();
+        // HTML and Markdown are cards in the chat; their content opens in the preview pane.
+        if (host.querySelector("iframe")) {
+          throw new Error("html should be a card in the chat, not an inline iframe");
+        }
+        if (!host.querySelector('.assistant-renderer-artifact.is-previewable[data-preview-kind="html"] .assistant-preview-open')) {
+          throw new Error("html result block should render a card that opens in the preview pane");
         }
         const videoArtifact = host.querySelector(".assistant-renderer-artifact.is-video video");
         if (!videoArtifact || !String(videoArtifact.getAttribute("src") || "").startsWith("app-file://media/")) {
@@ -2368,57 +2373,57 @@ app.whenReady().then(async () => {
         if (host.querySelectorAll(".assistant-renderer-artifact.is-video .assistant-reveal-btn").length !== 1) {
           throw new Error("video artifact should keep a reveal action: " + host.innerHTML);
         }
-        const markdownArtifact = host.querySelector(".assistant-renderer-markdown-artifact");
-        if (!markdownArtifact || !markdownArtifact.textContent.includes("output/report.md")) {
-          throw new Error("markdown artifact should render a top-level preview card with its file path");
+        const markdownArtifact = Array.from(host.querySelectorAll('.assistant-renderer-artifact.is-previewable[data-preview-kind="markdown"]'))
+          .find((node) => node.querySelector(".assistant-preview-card-name")?.dataset.path === "output/report.md");
+        if (!markdownArtifact) {
+          throw new Error("markdown artifact should render a card with its file path");
         }
         if (!markdownArtifact.querySelector(".assistant-reveal-btn")) {
           throw new Error("markdown artifact should keep a reveal action");
         }
-        await new Promise((resolve) => setTimeout(resolve, 80));
-        if (markdownArtifact.querySelector(".assistant-renderer-markdown-details")) {
-          throw new Error("markdown artifact preview should be top-level, not hidden in collapsible details");
+        if (host.querySelector(".markdown-body h1") && host.textContent.includes("Markdown Report")) {
+          throw new Error("markdown artifact content should not be expanded in the chat");
         }
-        if (!markdownArtifact.querySelector(".assistant-renderer-markdown-preview h1") || !markdownArtifact.textContent.includes("Markdown Report")) {
-          throw new Error("markdown artifact should auto-load a top-level markdown preview");
+        markdownArtifact.querySelector(".assistant-preview-open").click();
+        const paneRoot = document.getElementById("previewPane");
+        let paneMarkdown = null;
+        for (let i = 0; i < 60 && !paneMarkdown; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          paneMarkdown = paneRoot.querySelector(".preview-pane-markdown h1") ? paneRoot.querySelector(".preview-pane-markdown") : null;
         }
-        const markdownPreview = markdownArtifact.querySelector(".assistant-renderer-markdown-preview");
-        if (!markdownPreview.classList.contains("assistant-turn-final")) {
-          throw new Error("markdown artifact preview should use the same rich reading style as final answers");
+        if (!paneMarkdown || !paneMarkdown.textContent.includes("Markdown Report")) {
+          throw new Error("opening the markdown card should render it in the preview pane");
         }
-        if (!markdownPreview.querySelector("table") || !markdownPreview.querySelector("code") || !markdownPreview.querySelector("hr")) {
-          throw new Error("markdown artifact preview should render rich markdown structures");
+        if (!paneMarkdown.classList.contains("assistant-turn-final")) {
+          throw new Error("the pane's markdown should use the same rich reading style as final answers");
         }
-        const relativeMarkdownImage = markdownPreview.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/report-assets.png']");
+        if (!paneMarkdown.querySelector("table") || !paneMarkdown.querySelector("code") || !paneMarkdown.querySelector("hr")) {
+          throw new Error("the pane's markdown should render rich markdown structures");
+        }
+        const relativeMarkdownImage = paneMarkdown.querySelector("img.markdown-local-file-image[data-local-file-path='/tmp/report-assets.png']");
         if (!relativeMarkdownImage) {
-          throw new Error("markdown artifact relative images should resolve against the markdown file path: " + markdownPreview.innerHTML);
+          throw new Error("markdown relative images should resolve against the markdown file path: " + paneMarkdown.innerHTML);
         }
         if (!String(relativeMarkdownImage.getAttribute("src") || "").startsWith("app-file://media/")) {
-          throw new Error("markdown artifact relative images should render via app-file:// media: " + relativeMarkdownImage.getAttribute("src"));
+          throw new Error("markdown relative images should render via app-file:// media: " + relativeMarkdownImage.getAttribute("src"));
         }
-        const markdownPreviewStyle = getComputedStyle(markdownArtifact.querySelector(".assistant-renderer-markdown-preview"));
-        if (markdownPreviewStyle.overflowY !== "visible" || markdownPreviewStyle.maxHeight !== "none") {
-          throw new Error("markdown artifact preview should flow with the card instead of using an inner scroller");
-        }
-        if (markdownPreviewStyle.borderTopWidth !== "0px") {
-          throw new Error("markdown artifact preview should not have a nested preview border");
-        }
+        (await import("./modules/preview-pane.js")).closePreviewPane();
+        // A card names its file; a preview card keeps the full path in data-path.
+        const cardPath = (node) => node.querySelector(".assistant-preview-card-name")?.dataset.path || node.textContent;
         const mentionOnly = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-file"))
-          .find((node) => node.textContent.includes("docs/referenced-only.md"));
+          .find((node) => cardPath(node).includes("docs/referenced-only.md"));
         if (!mentionOnly) {
           throw new Error("assistant-text-only markdown references should render as compact file artifacts");
         }
-        if (Array.from(host.querySelectorAll(".assistant-renderer-markdown-artifact"))
-          .some((node) => node.textContent.includes("docs/referenced-only.md"))) {
-          throw new Error("assistant-text-only markdown references should not auto-expand into previews");
+        if (document.getElementById("previewPane").querySelector(".preview-pane-markdown")) {
+          throw new Error("assistant-text-only markdown references should not open on their own");
         }
         for (const referencedPath of ["docs/referenced-only.html", "docs/referenced-only.pdf", "docs/referenced-only.svg"]) {
           const compact = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-compact"))
-            .find((node) => node.textContent.includes(referencedPath));
+            .find((node) => cardPath(node).includes(referencedPath));
           if (!compact) throw new Error("referenced preview artifact should render compact: " + referencedPath);
         }
-        if (Array.from(host.querySelectorAll(".assistant-renderer-html"))
-          .some((node) => node.textContent.includes("docs/referenced-only.html"))) {
+        if (host.querySelector("iframe")) {
           throw new Error("referenced html should not render an iframe preview");
         }
         if (Array.from(host.querySelectorAll(".assistant-renderer-pdf"))
@@ -2426,7 +2431,7 @@ app.whenReady().then(async () => {
           throw new Error("referenced pdf should not render a PDF preview");
         }
         const compactImage = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-compact"))
-          .find((node) => node.textContent.includes("docs/referenced-only.svg"));
+          .find((node) => cardPath(node).includes("docs/referenced-only.svg"));
         if (compactImage?.querySelector("img")) {
           throw new Error("referenced image should not render an image preview");
         }

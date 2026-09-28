@@ -244,3 +244,55 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* =========================================================================
+   Icon buttons and their tooltip (modules/ui-icons.js)
+   The label is the button's accessible name and appears on hover or keyboard
+   focus; icon-only controls never print their label beside the glyph.
+   ========================================================================= */
+
+.ui-icon-btn { position: relative; }
+
+.ui-icon-btn svg,
+.pdf-viewer-icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-tip] { position: relative; }
+
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: var(--z-topbar-popover);
+  inset-block-start: calc(100% + 6px);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  color: var(--bg-body);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+[dir="rtl"] [data-tip]::after { translate: 50% 0; }
+[data-tip][data-tip-align="end"]::after { inset-inline-start: auto; inset-inline-end: 0; translate: none; }
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transition-delay: 350ms;
+}
+
+[data-tip]:disabled::after { display: none; }

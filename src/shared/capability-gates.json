@@ -2782,11 +2782,12 @@
     },
     {
       "id": "preview-pane",
-      "protects": "The app's existing previews (image, PDF reader, HTML and Markdown artifacts) open beside the chat in a right-hand pane with one tab per file, instead of covering the conversation; the pane shares the right column with the collaboration panel, floats over the workbench below 1120px, and keeps every control inside its edge.",
-      "baseline": "2026-09-28: the image lightbox and PDF reader covered the whole window, so reading a generated report hid the conversation that produced it; HTML and Markdown could only be read inline in a chat bubble.",
-      "failureFallback": "Where there is no pane (the standalone collaboration window) or opening it fails (logged), the previous full-screen image viewer and PDF reader open, as before; images inside the collaboration panel keep the modal. HTML keeps the script-free sandbox. Mutation-verified: the old image viewer, the old PDF reader, the collaboration panel without the shared-column event, the pane under the topbar, and the grid track without minmax(0) each fail by name.",
+      "protects": "The app's existing previews (image, PDF reader, HTML and Markdown) open beside the chat in a right-hand pane with one tab per file, instead of covering the conversation. In the chat, HTML and Markdown are cards led by the file's own name (type and size below, full path on hover) whose content opens in the pane, never embedded in the message; the cards flow by the chat's width, so no name is truncated beside the open pane. Icon-only controls carry their label as accessible name and hover tooltip. The pane shares the right column with the collaboration panel, floats over the workbench below 1120px, and keeps every control inside its edge.",
+      "baseline": "2026-09-28: the image lightbox and PDF reader covered the whole window; HTML and Markdown files were embedded in the chat bubble in full (a turn stacked several, QA scratch pages included, once OpenCode writes were recognised as this turn's files); a fixed three-column card grid cut every name to 'ou…' beside the pane; controls were text buttons.",
+      "failureFallback": "Where there is no pane (the standalone collaboration window) or opening it fails (logged), the previous full-screen image viewer and PDF reader open, as before; images inside the collaboration panel keep the modal. HTML keeps the script-free sandbox. Mutation-verified: the inline HTML frame, the inline Markdown preview, a text label on an icon button, the fixed three-column grid, the old image viewer, the old PDF reader, the collaboration panel without the shared-column event, the pane under the topbar, and the grid track without minmax(0) each fail by name.",
       "tests": [
-        "scripts/test-preview-pane.cjs"
+        "scripts/test-preview-pane.cjs",
+        "scripts/test-renderer-import.cjs"
       ]
     },
     {

@@ -1856,9 +1856,12 @@
   align-items: center;
 }
 
+/* Columns follow the chat's own width, not the window's: with the preview pane
+   open the chat narrows while the window does not, and a fixed three columns
+   cut every card name to a few letters. */
 .assistant-turn-artifacts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
   gap: 10px;
   margin-top: 14px;
   max-width: min(100%, 980px);
@@ -1880,9 +1883,7 @@
 .assistant-renderer-action-result,
 .assistant-renderer-code,
 .assistant-renderer-pdf,
-.assistant-renderer-html,
 .assistant-renderer-artifact,
-.assistant-renderer-markdown-artifact,
 .assistant-renderer-unknown {
   color: var(--text-primary);
 }
@@ -1891,8 +1892,6 @@
 .assistant-renderer-form,
 .assistant-renderer-action-result,
 .assistant-renderer-echarts,
-.assistant-renderer-html,
-.assistant-renderer-markdown-artifact,
 .assistant-renderer-unknown {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
@@ -2087,10 +2086,6 @@
   box-shadow: var(--top-highlight);
 }
 
-.assistant-html-note {
-  margin-top: 8px;
-}
-
 .assistant-renderer-table-scroll {
   overflow-x: auto;
   border: 1px solid var(--border-light);
@@ -2251,6 +2246,45 @@
   padding: 6px 6px 6px 10px;
 }
 
+/* HTML / Markdown: a card whose content opens in the preview pane. */
+.assistant-renderer-artifact.is-previewable figcaption {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 48px;
+}
+
+.assistant-preview-card-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.assistant-preview-card-text > * {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-preview-card-name {
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assistant-preview-card-name:hover { color: var(--accent); }
+
+/* The name's tooltip is its full path: long, so it may wrap within the card. */
+.assistant-preview-card-text[data-tip]::after {
+  inset-inline-start: 0;
+  translate: none;
+  inline-size: max-content;
+  max-inline-size: 420px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .assistant-renderer-artifact.is-compact .assistant-generated-file-path {
   overflow: hidden;
   min-width: 0;
@@ -2258,37 +2292,6 @@
   white-space: nowrap;
 }
 
-@media (max-width: 980px) {
-  .assistant-turn-artifacts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .assistant-turn-artifacts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.assistant-renderer-markdown-preview {
-  max-height: min(62vh, 720px);
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-surface) 96%, var(--bg-surface-raised) 4%), var(--bg-surface));
-  box-shadow: var(--top-highlight);
-}
-
-.assistant-renderer-markdown-artifact .assistant-renderer-markdown-preview {
-  max-height: none;
-  overflow: visible;
-  padding: 4px 0 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
 
 .assistant-renderer-meta {
   color: var(--text-muted);

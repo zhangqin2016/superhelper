@@ -12,6 +12,7 @@
 
 import { t } from "../i18n/index.js";
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
+import { iconButton } from "./ui-icons.js";
 
 export const RIGHT_PANEL_EVENT = "lily:right-panel-open";
 const OWNER = "preview";
@@ -35,16 +36,6 @@ function tabKey(item) {
 function tabTitle(item) {
   const raw = item.title || item.path || item.src || "";
   return String(raw).split(/[\\/]/).pop() || tr("artifact.untitled", "Artifact");
-}
-
-function button(className, label, onClick) {
-  const node = document.createElement("button");
-  node.type = "button";
-  node.className = className;
-  node.title = label;
-  node.setAttribute("aria-label", label);
-  node.addEventListener("click", onClick);
-  return node;
 }
 
 // Each kind renders into `body` with the renderer the chat already uses, and
@@ -98,12 +89,9 @@ function createPane(shell, root) {
   tabList.setAttribute("role", "tablist");
   const actions = document.createElement("div");
   actions.className = "preview-pane-actions";
-  const openBtn = button("preview-pane-action", tr("file.open", "Open"), () => { const tab = tabs.get(activeKey); if (tab?.item.path) void openLocalFile(tab.item.path); });
-  openBtn.textContent = tr("file.open", "Open");
-  const revealBtn = button("preview-pane-action", t("file.reveal"), () => { const tab = tabs.get(activeKey); if (tab?.item.path) void revealLocalFileInFolder(tab.item.path); });
-  revealBtn.textContent = t("file.reveal");
-  const closeBtn = button("preview-pane-close", tr("preview.close", "Close preview"), () => closePane());
-  closeBtn.textContent = "×";
+  const openBtn = iconButton("preview-pane-action", "openExternal", tr("file.open", "Open"), { onClick: () => { const tab = tabs.get(activeKey); if (tab?.item.path) void openLocalFile(tab.item.path); } });
+  const revealBtn = iconButton("preview-pane-action", "reveal", t("file.reveal"), { onClick: () => { const tab = tabs.get(activeKey); if (tab?.item.path) void revealLocalFileInFolder(tab.item.path); } });
+  const closeBtn = iconButton("preview-pane-action preview-pane-close", "close", tr("preview.close", "Close preview"), { align: "end", onClick: () => closePane() });
   actions.append(openBtn, revealBtn, closeBtn);
   bar.append(tabList, actions);
   const bodies = document.createElement("div");
@@ -188,8 +176,7 @@ function createPane(shell, root) {
       label.textContent = tabTitle(item);
       label.addEventListener("click", () => select(key));
       label.addEventListener("auxclick", (event) => { if (event.button === 1) closeTab(key); });
-      const x = button("preview-pane-tab-close", tr("preview.closeTab", "Close tab"), (event) => { event.stopPropagation(); closeTab(key); });
-      x.textContent = "×";
+      const x = iconButton("preview-pane-tab-close", "close", tr("preview.closeTab", "Close tab"), { onClick: (event) => { event.stopPropagation(); closeTab(key); } });
       head.append(label, x);
       tabList.appendChild(head);
       const body = document.createElement("div");
