@@ -5,11 +5,11 @@ tracked project source. It should match the OpenCode engine and SDK versions tha
 Lily ships against.
 
 - Upstream: `anomalyco/opencode`
-- Source tag: `v1.18.30`
+- Source tag: `v1.18.33`
 - Source commit: not pinned locally; the shippable engine/SDK versions are the
   npm packages below.
-- NPM engine package: `opencode-ai@1.18.30`
-- NPM SDK package: `@opencode-ai/sdk@1.18.30`
+- NPM engine package: `opencode-ai@1.18.33`
+- NPM SDK package: `@opencode-ai/sdk@1.18.33`
 
 `opencode/` remains ignored because it is large with dependencies. The shippable
 engine is the prebuilt binary fetched by `scripts/fetch-opencode-engine.mjs`.
@@ -20,11 +20,29 @@ When changing OpenCode versions, update this file together with
 ## Local Development Copy
 
 As of this update, the shippable OpenCode engine and SDK are pinned to
-`v1.18.30`. The ignored local `opencode/` source copy is development reference
+`v1.18.33`. The ignored local `opencode/` source copy is development reference
 only; the shippable path does not depend on that copy:
 
 - `npm run engine:opencode:all` fetches the prebuilt Win/Mac engine binaries.
 - `scripts/smoke-opencode-session.mjs` verifies Lily's real shared-serve path.
+
+## 1.18.33 upgrade contract
+
+The forward `1.18.30` → `1.18.33` transition is compatible with an existing
+resume binding. It was earned by `scripts/test-opencode-upgrade-native.mjs`
+with the real retained 1.18.30 binary and the fetched 1.18.33 binary on
+darwin-arm64 (2026-09-28): same session and message ids, original context,
+streaming, no duplicate turns, Lily prompt, abort and new work, OpenAI
+Responses. Validated pairs live in `VALIDATED_ENGINE_UPGRADES`
+(`src/main/resume-binding.js`); there are no transitive hops, so a binding made
+by 1.18.29 starts a fresh engine session under 1.18.33, and downgrades remain
+unvalidated. The native test reads the pair from the binaries themselves, so the
+next upgrade runs the same proof and registers its pair only after it passes.
+
+Upstream 1.18.30 → 1.18.33 changed no plugin or SDK types (the published type
+definitions differ only in version) and no session, compaction, tool or event
+code; the changes are provider SDK updates, MCP/Windows robustness, Gemini
+thinking defaults and debug-config redaction.
 
 ## 1.18.30 upgrade contract
 

@@ -95,10 +95,14 @@ try {
     };
 
     const expected = buildResumeBinding({ session, project:executionProject, activeSkillIds: ["lily-media-generation"], sessionManager: ctx.sessionManager });
-    assert.equal(expected.opencodeVersion, "1.18.30", "this integration guard targets the pinned upgrade runtime");
+    // The historical binding comes from the validated upgrade INTO the pinned
+    // release, so this guard follows every engine upgrade without a new edit.
+    const { VALIDATED_ENGINE_UPGRADES } = require("../src/main/resume-binding.js");
+    const upgradeFrom = VALIDATED_ENGINE_UPGRADES.find(([, to]) => to === expected.opencodeVersion)?.[0];
+    assert.ok(upgradeFrom, `the pinned runtime ${expected.opencodeVersion} has a validated upgrade into it`);
     const historicalBinding = Object.freeze({
       ...expected,
-      opencodeVersion: scenario === "unknown-version" ? "1.18.28" : "1.18.29",
+      opencodeVersion: scenario === "unknown-version" ? "1.18.28" : upgradeFrom,
       ...(scenario === "polluted" ? { lilySessionId: "stock-session" } : {}),
     });
     if (scenario !== "legacy-unbound") session.agentResumeBinding = historicalBinding;

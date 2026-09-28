@@ -12,14 +12,19 @@ import { once } from "node:events";
 const require = createRequire(import.meta.url);
 const oldBinary = process.env.LILY_TEST_OLD_OPENCODE_BIN;
 if (!oldBinary) {
-  console.log("SKIP native upgrade: set LILY_TEST_OLD_OPENCODE_BIN to a retained 1.18.29 binary");
+  console.log("SKIP native upgrade: set LILY_TEST_OLD_OPENCODE_BIN to a retained binary of the previous pinned release");
   process.exit(0);
 }
 const root = path.resolve(import.meta.dirname, "..");
 const binary = path.join(root, "bundles", `${process.platform}-${process.arch}`, "opencode/bin",
   process.platform === "win32" ? "opencode.exe" : "opencode");
-assert.equal(execFileSync(oldBinary, ["--version"], { encoding: "utf8", timeout: 15000 }).trim(), "1.18.29");
-assert.equal(execFileSync(binary, ["--version"], { encoding: "utf8", timeout: 15000 }).trim(), "1.18.30");
+// The pair under test is read from the binaries themselves, so every engine
+// upgrade runs this same proof; the new one must be the pinned release.
+const OLD_VERSION = execFileSync(oldBinary, ["--version"], { encoding: "utf8", timeout: 15000 }).trim();
+const NEW_VERSION = execFileSync(binary, ["--version"], { encoding: "utf8", timeout: 15000 }).trim();
+const PINNED = /\|\| "(\d+\.\d+\.\d+)"/.exec(fs.readFileSync(path.join(root, "scripts/fetch-opencode-engine.mjs"), "utf8"))?.[1];
+assert.equal(NEW_VERSION, PINNED, "the bundled binary is the pinned release");
+assert.notEqual(OLD_VERSION, NEW_VERSION, "an upgrade needs two different releases");
 const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lily-native-upgrade-")));
 process.env.LILY_USER_DATA_DIR = path.join(temp, "lily");
 const { OpencodeServerManager } = require("../src/main/runtime/opencode-server-manager.js");
@@ -156,9 +161,10 @@ try {
   await stop();
 
   const binding = { resumeId: sessionID, lilySessionId: "upgrade-fixture", projectId: "isolated", workspacePathHash: temp,
-    enabledSkillIdsHash: "none", firstUserMessageHash: "67193", opencodeVersion: "1.18.29" };
-  assert.equal(verifyResumeBinding({ agentResumeId: sessionID, agentResumeBinding: binding },
-    { ...binding, opencodeVersion: "1.18.30" }).ok, true, "host must allow the validated forward upgrade");
+    enabledSkillIdsHash: "none", firstUserMessageHash: "67193", opencodeVersion: OLD_VERSION };
+  // Checked after the native proof below: the proof is what earns the registration.
+  const hostAllowsUpgrade = verifyResumeBinding({ agentResumeId: sessionID, agentResumeBinding: binding },
+    { ...binding, opencodeVersion: NEW_VERSION }).ok;
   assert.equal(await start(binary, JSON.stringify(config), sessionID), sessionID, "new native engine resumes exact row");
   assert.equal(server.wasResumed, true);
   const restored = (await server._sdkSession.messages(sessionID)).data;
@@ -201,7 +207,8 @@ try {
   const responseHistory = (await server._sdkSession.messages(sessionID)).data;
   assert.ok(JSON.stringify(responseHistory).includes("Responses verified."));
   assert.equal(apiErrors.length, 0);
-  console.log("native-upgrade: PASS 1.18.29 -> 1.18.30; same session/message IDs; original context; streaming; no duplicate turns; Lily prompt; abort and new work; OpenAI Responses");
+  assert.equal(hostAllowsUpgrade, true, `native proof passed for ${OLD_VERSION} -> ${NEW_VERSION}; register the pair in resume-binding.js VALIDATED_ENGINE_UPGRADES`);
+  console.log(`native-upgrade: PASS ${OLD_VERSION} -> ${NEW_VERSION}; same session/message IDs; original context; streaming; no duplicate turns; Lily prompt; abort and new work; OpenAI Responses`);
 } finally {
   holdResponse?.end();
   await stop();

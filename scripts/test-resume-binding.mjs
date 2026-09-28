@@ -63,7 +63,17 @@ assert.notEqual(binding.enabledSkillIdsHash, emptySkillsBinding.enabledSkillIdsH
   }
 }
 
+{
+  const { VALIDATED_ENGINE_UPGRADES } = require("../src/main/resume-binding.js");
+  for (const [from, to] of VALIDATED_ENGINE_UPGRADES) {
+    assert.equal(verifyResumeBinding({ ...session, agentResumeBinding: { ...binding, opencodeVersion: from } },
+      { ...binding, opencodeVersion: to }).ok, true, `validated upgrade ${from} -> ${to} keeps the resume`);
+  }
+}
+
 for (const [actualVersion, expectedVersion] of [
+  ["1.18.29", "1.18.33"], // not validated directly: no transitive hops
+  ["1.18.33", "1.18.30"], // downgrade
   ["1.18.30", "1.18.29"],
   ["1.18.28", "1.18.30"],
   ["1.18.29", "1.18.31"],

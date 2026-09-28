@@ -58,10 +58,19 @@ function buildResumeBinding({ session, project, activeSkillIds, sessionManager, 
   };
 }
 
+// Engine upgrades a resumed session may cross. Each pair is registered only after
+// scripts/test-opencode-upgrade-native.mjs passed with the REAL old and new
+// binaries (same session and message ids, original context, streaming, no
+// duplicate turns). Anything else — an unvalidated pair, a downgrade, a
+// transitive hop — starts a fresh engine session instead of risking the resume.
+const VALIDATED_ENGINE_UPGRADES = Object.freeze([
+  ["1.18.29", "1.18.30"],
+  ["1.18.30", "1.18.33"], // native proof passed 2026-09-28 (darwin-arm64)
+]);
+
 function compatibleOpencodeVersion(actual, expected) {
-  // Only this validated forward upgrade may reuse a differently versioned
-  // binding. Future upgrades and downgrades require separate validation.
-  return actual === expected || (actual === "1.18.29" && expected === "1.18.30");
+  return actual === expected
+    || VALIDATED_ENGINE_UPGRADES.some(([from, to]) => actual === from && expected === to);
 }
 
 function verifyResumeBinding(session, expected = {}) {
@@ -93,6 +102,7 @@ function verifyResumeBinding(session, expected = {}) {
 }
 
 module.exports = {
+  VALIDATED_ENGINE_UPGRADES,
   buildResumeBinding,
   skillSetHash,
   stableHash,
