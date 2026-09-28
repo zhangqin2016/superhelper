@@ -1,3 +1,5 @@
+import { RIGHT_PANEL_EVENT } from "./preview-pane.js";
+
 const MIN_WIDTH = 360;
 const DEFAULT_WIDTH = 420;
 /** Below this the panel holds one column at a time; at or above it the list and
@@ -113,7 +115,8 @@ export function initCollaborationPanelShell({
   // panel itself, not its first button: that button is "detach", and a focus
   // ring on it was the first thing you saw every time the panel opened.
   // A task dialog may already have handed focus to an input before this frame.
-  const openPanel = () => { open = true; apply(); if (panel.tabIndex == null || panel.tabIndex < 0) panel.tabIndex = -1; requestAnimationFrame(() => { if (open && !panel.contains(document.activeElement)) panel.focus?.({ preventScroll: true }); }); };
+  // The right column is shared with the preview pane: opening one closes the other.
+  const openPanel = () => { if (!open && typeof CustomEvent === "function") window.dispatchEvent?.(new CustomEvent(RIGHT_PANEL_EVENT, { detail: { owner: "collaboration" } })); open = true; apply(); if (panel.tabIndex == null || panel.tabIndex < 0) panel.tabIndex = -1; requestAnimationFrame(() => { if (open && !panel.contains(document.activeElement)) panel.focus?.({ preventScroll: true }); }); };
   const closePanel = () => { if (!open) return; open = false; apply(); toggle.focus?.(); };
   const setConversationOpen = (value) => {
     conversationOpen = Boolean(value);
@@ -122,6 +125,7 @@ export function initCollaborationPanelShell({
     if (conversationOpen && panes() === "one") requestAnimationFrame(() => { if (open && conversationOpen && !conversation?.contains(document.activeElement)) backButton?.focus?.(); });
   };
   const togglePanel = () => open ? closePanel() : openPanel();
+  const rightPanelOpened = (event) => { if (open && event?.detail?.owner !== "collaboration") { open = false; apply(); } };
   const keydown = (event) => { if (open && event.key === "Escape") { event.preventDefault(); closePanel(); } };
   const resize = () => apply();
   const pointerMove = (event) => {
@@ -140,10 +144,11 @@ export function initCollaborationPanelShell({
   window.addEventListener("pointerup", pointerUp);
   window.addEventListener("resize", resize);
   document.addEventListener("keydown", keydown);
+  window.addEventListener?.(RIGHT_PANEL_EVENT, rightPanelOpened);
   apply();
   setConversationOpen(false);
   return { openPanel, closePanel, setConversationOpen, isOpen: () => open, destroy() {
     toggle.removeEventListener("click", togglePanel); closeButton?.removeEventListener("click", closePanel); scrim?.removeEventListener("click", closePanel);
-    resizeHandle?.removeEventListener("pointerdown", pointerDown); window.removeEventListener("pointermove", pointerMove); window.removeEventListener("pointerup", pointerUp); window.removeEventListener("resize", resize); document.removeEventListener("keydown", keydown);
+    resizeHandle?.removeEventListener("pointerdown", pointerDown); window.removeEventListener("pointermove", pointerMove); window.removeEventListener("pointerup", pointerUp); window.removeEventListener("resize", resize); document.removeEventListener("keydown", keydown); window.removeEventListener?.(RIGHT_PANEL_EVENT, rightPanelOpened);
   } };
 }

@@ -7,6 +7,7 @@
 @import "./styles/messages.css";
 @import "./styles/image-viewer.css";
 @import "./styles/pdf-viewer.css";
+@import "./styles/preview-pane.css";
 @import "./styles/diff-panel.css";
 @import "./styles/skills-tree.css";
 @import "./styles/composer.css?v=20260804-composer-polish";

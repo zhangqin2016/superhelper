@@ -2779,6 +2779,15 @@
         "scripts/test-media-result-tracker.mjs",
         "scripts/test-media-generation-skills.mjs"
       ]
+    },
+    {
+      "id": "preview-pane",
+      "protects": "The app's existing previews (image, PDF reader, HTML and Markdown artifacts) open beside the chat in a right-hand pane with one tab per file, instead of covering the conversation; the pane shares the right column with the collaboration panel, floats over the workbench below 1120px, and keeps every control inside its edge.",
+      "baseline": "2026-09-28: the image lightbox and PDF reader covered the whole window, so reading a generated report hid the conversation that produced it; HTML and Markdown could only be read inline in a chat bubble.",
+      "failureFallback": "Where there is no pane (the standalone collaboration window) or opening it fails (logged), the previous full-screen image viewer and PDF reader open, as before; images inside the collaboration panel keep the modal. HTML keeps the script-free sandbox. Mutation-verified: the old image viewer, the old PDF reader, the collaboration panel without the shared-column event, the pane under the topbar, and the grid track without minmax(0) each fail by name.",
+      "tests": [
+        "scripts/test-preview-pane.cjs"
+      ]
     }
   ]
 }

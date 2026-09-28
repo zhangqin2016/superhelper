@@ -1,6 +1,7 @@
 import { t } from "../i18n/index.js";
 import { revealLocalFileInFolder } from "./file-reveal.js";
 import { showToast } from "./toast.js";
+import { tryOpenInPreviewPane } from "./preview-pane.js";
 
 function tr(key, fallback, params) {
   const value = t(key, params);
@@ -55,29 +56,8 @@ function makeRevealAction(disabled, handler) {
   return button;
 }
 
-export function renderHtmlBlock(block = {}) {
-  const section = document.createElement("section");
-  section.className = "assistant-renderer-block assistant-renderer-html";
-
-  const header = document.createElement("div");
-  header.className = "assistant-renderer-artifact-header";
-  const title = document.createElement("strong");
-  title.className = "assistant-renderer-artifact-title";
-  title.textContent = displayName(block);
-
-  const actions = document.createElement("div");
-  actions.className = "assistant-renderer-chart-actions";
-  actions.appendChild(makeRevealAction(!block.path, () => void revealLocalFileInFolder(block.path)));
-  actions.appendChild(makeAction(t("common.copy"), false, async () => {
-    try {
-      await navigator.clipboard.writeText(String(block.path || block.relativePath || block.fileName || ""));
-      showToast(t("common.copied"), "success");
-    } catch {
-      showToast(t("common.copyFailed"), "warning");
-    }
-  }));
-  header.append(title, actions);
-
+/** The sandboxed, script-free HTML preview frame; shared by the chat card and the preview pane. */
+export function createHtmlPreviewFrame(block = {}) {
   const frame = document.createElement("iframe");
   frame.className = "assistant-html-preview";
   frame.title = displayName(block);
@@ -92,6 +72,36 @@ export function renderHtmlBlock(block = {}) {
   } else {
     frame.srcdoc = `<p>${tr("renderer.htmlPreviewEmpty", "HTML preview is empty.")}</p>`;
   }
+  return frame;
+}
+
+export function renderHtmlBlock(block = {}) {
+  const section = document.createElement("section");
+  section.className = "assistant-renderer-block assistant-renderer-html";
+
+  const header = document.createElement("div");
+  header.className = "assistant-renderer-artifact-header";
+  const title = document.createElement("strong");
+  title.className = "assistant-renderer-artifact-title";
+  title.textContent = displayName(block);
+
+  const actions = document.createElement("div");
+  actions.className = "assistant-renderer-chart-actions";
+  actions.appendChild(makeAction(tr("preview.openInPane", "Open on the right"), !(block.path || block.html || block.text || block.data), () => {
+    tryOpenInPreviewPane({ kind: "html", path: block.path || block.url || "", title: displayName(block), block });
+  }));
+  actions.appendChild(makeRevealAction(!block.path, () => void revealLocalFileInFolder(block.path)));
+  actions.appendChild(makeAction(t("common.copy"), false, async () => {
+    try {
+      await navigator.clipboard.writeText(String(block.path || block.relativePath || block.fileName || ""));
+      showToast(t("common.copied"), "success");
+    } catch {
+      showToast(t("common.copyFailed"), "warning");
+    }
+  }));
+  header.append(title, actions);
+
+  const frame = createHtmlPreviewFrame(block);
 
   const note = document.createElement("div");
   note.className = "assistant-renderer-meta assistant-html-note";

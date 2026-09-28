@@ -1,6 +1,7 @@
 import { t } from "../i18n/index.js";
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { loadPdfjs, pdfResourceOptions, pdfSourceFromBlock } from "./pdf-core.js";
+import { tryOpenInPreviewPane } from "./preview-pane.js";
 
 const MIN_SCALE = 0.55;
 const MAX_SCALE = 2.4;
@@ -37,13 +38,20 @@ function scaleForPage(page, container, zoom) {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, fit * zoom));
 }
 
-export function openPdfViewer(block = {}) {
-  activeViewer?.close?.();
+/**
+ * Open the PDF reader: in the right-hand preview pane when this window has one,
+ * otherwise (or with `modal: true`) full screen. `container` embeds the reader
+ * there (the pane's own use); the pane then owns closing and Escape.
+ */
+export function openPdfViewer(block = {}, { container = null, modal = false } = {}) {
+  if (!container && !modal && tryOpenInPreviewPane({ kind: "pdf", path: block.path, title: displayName(block), block })) return null;
+  const embedded = Boolean(container);
+  if (!embedded) activeViewer?.close?.();
 
   const overlay = document.createElement("section");
-  overlay.className = "pdf-viewer";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
+  overlay.className = embedded ? "pdf-viewer is-embedded" : "pdf-viewer";
+  overlay.setAttribute("role", embedded ? "region" : "dialog");
+  if (!embedded) overlay.setAttribute("aria-modal", "true");
 
   const shell = document.createElement("div");
   shell.className = "pdf-viewer-shell";
@@ -80,7 +88,9 @@ export function openPdfViewer(block = {}) {
   const reveal = makeButton(t("file.reveal"), "pdf-viewer-button", !block.path);
   const close = makeButton("×", "pdf-viewer-close");
   close.setAttribute("aria-label", tr("common.close", "Close"));
-  zoomWrap.append(zoomOut, fit, zoomIn, open, reveal, close);
+  // Embedded, the pane's bar carries open / reveal / close.
+  if (embedded) zoomWrap.append(zoomOut, fit, zoomIn);
+  else zoomWrap.append(zoomOut, fit, zoomIn, open, reveal, close);
 
   toolbar.append(titleWrap, searchWrap, zoomWrap);
 
@@ -97,7 +107,7 @@ export function openPdfViewer(block = {}) {
   body.append(thumbs, scroll);
   shell.append(toolbar, body);
   overlay.appendChild(shell);
-  document.body.appendChild(overlay);
+  (container || document.body).appendChild(overlay);
 
   let loadingTask = null;
   let pdf = null;
@@ -274,11 +284,11 @@ export function openPdfViewer(block = {}) {
     void loadingTask?.destroy?.();
     overlay.remove();
     if (activeViewer?.overlay === overlay) activeViewer = null;
-    document.removeEventListener("keydown", onKeyDown);
+    keyTarget.removeEventListener("keydown", onKeyDown);
   }
 
   function onKeyDown(event) {
-    if (event.key === "Escape") closeViewer();
+    if (event.key === "Escape" && !embedded) closeViewer();
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
       event.preventDefault();
       search.focus();
@@ -309,9 +319,12 @@ export function openPdfViewer(block = {}) {
   reveal.addEventListener("click", () => void revealLocalFileInFolder(block.path));
   close.addEventListener("click", closeViewer);
   scroll.addEventListener("scroll", updateCurrentPage, { passive: true });
-  document.addEventListener("keydown", onKeyDown);
+  // Full screen owns the keyboard; embedded, only while focus is in the reader.
+  const keyTarget = embedded ? overlay : document;
+  keyTarget.addEventListener("keydown", onKeyDown);
 
-  activeViewer = { overlay, close: closeViewer };
+  const handle = { overlay, close: closeViewer };
+  if (!embedded) activeViewer = handle;
 
   queueMicrotask(async () => {
     try {
@@ -365,5 +378,5 @@ export function openPdfViewer(block = {}) {
     }
   });
 
-  return activeViewer;
+  return handle;
 }

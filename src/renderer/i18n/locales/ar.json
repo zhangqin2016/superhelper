@@ -2486,5 +2486,10 @@
   "settings.modelContextWindowSource.learned_overflow": "مُتعلَّم من خطأ تجاوز",
   "settings.modelContextWindowSource.learned_ceiling": "أكبر طلب مقبول",
   "settings.modelContextWindowSource.catalog": "دليل النماذج",
-  "settings.modelContextWindowSource.unknown": "غير معروف"
+  "settings.modelContextWindowSource.unknown": "غير معروف",
+  "preview.pane": "معاينة",
+  "preview.close": "إغلاق المعاينة",
+  "preview.closeTab": "إغلاق التبويب",
+  "preview.openInPane": "فتح على الجانب",
+  "preview.failed": "المعاينة غير متاحة. افتح الملف لعرضه."
 }

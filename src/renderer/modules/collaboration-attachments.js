@@ -83,7 +83,8 @@ export function initCollaborationAttachments({ root, attachButton, api = window.
     if (!mime.startsWith("image/")) return;
     const viewer = await import("./image-viewer.js");
     if (!current(generation) || !policy.attachments) return;
-    viewer.openImageViewer?.(resolved.url, resolved.originalName || t("collaboration.transfer.preview"));
+    // Modal: the preview pane shares the right column with this panel.
+    viewer.openImageViewer?.(resolved.url, resolved.originalName || t("collaboration.transfer.preview"), { modal: true });
   }
   function render() {
     const focused = document.activeElement;

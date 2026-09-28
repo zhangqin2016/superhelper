@@ -2486,5 +2486,10 @@
   "settings.modelContextWindowSource.learned_overflow": "learned from an overflow error",
   "settings.modelContextWindowSource.learned_ceiling": "largest accepted request",
   "settings.modelContextWindowSource.catalog": "model catalog",
-  "settings.modelContextWindowSource.unknown": "unknown"
+  "settings.modelContextWindowSource.unknown": "unknown",
+  "preview.pane": "Preview",
+  "preview.close": "Close preview",
+  "preview.closeTab": "Close tab",
+  "preview.openInPane": "Open on the right",
+  "preview.failed": "This preview is unavailable. Open the file to view it."
 }

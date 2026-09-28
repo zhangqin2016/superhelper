@@ -2486,5 +2486,10 @@
   "settings.modelContextWindowSource.learned_overflow": "从超限报错学到",
   "settings.modelContextWindowSource.learned_ceiling": "按已成功的最大请求推断",
   "settings.modelContextWindowSource.catalog": "模型目录",
-  "settings.modelContextWindowSource.unknown": "未知"
+  "settings.modelContextWindowSource.unknown": "未知",
+  "preview.pane": "预览",
+  "preview.close": "关闭预览",
+  "preview.closeTab": "关闭标签",
+  "preview.openInPane": "在右侧打开",
+  "preview.failed": "无法预览，请用系统应用打开。"
 }

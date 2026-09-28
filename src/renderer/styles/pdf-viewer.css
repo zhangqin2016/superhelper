@@ -250,3 +250,27 @@
     padding: 16px 10px 48px;
   }
 }
+
+/* Embedded in the preview pane: fill the tab instead of the window. */
+.pdf-viewer.is-embedded {
+  position: absolute;
+  inset: 0;
+  z-index: auto;
+}
+
+.pdf-viewer.is-embedded .pdf-viewer-shell {
+  width: 100%;
+  height: 100%;
+}
+
+/* The tab already names the file: keep the page counter, drop the title and
+   the thumbnail column the pane is too narrow for. */
+.pdf-viewer.is-embedded .pdf-viewer-toolbar {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.pdf-viewer.is-embedded .pdf-viewer-title strong { display: none; }
+
+.pdf-viewer.is-embedded .pdf-viewer-body { grid-template-columns: minmax(0, 1fr); }
+
+.pdf-viewer.is-embedded .pdf-viewer-thumbs { display: none; }

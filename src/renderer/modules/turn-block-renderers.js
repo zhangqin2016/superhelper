@@ -7,6 +7,7 @@ import { isEChartsBlock, renderEChartsBlock } from "./chart-renderer.js";
 import { renderDataTableBlock } from "./data-table-renderer.js";
 import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
+import { tryOpenInPreviewPane } from "./preview-pane.js";
 import {
   artifactBlocksFromArtifacts,
   inferArtifactType,
@@ -188,6 +189,7 @@ function renderMarkdownArtifact(block) {
           ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
         </div>
         <div class="assistant-renderer-chart-actions">
+          ${block.path ? html`<button type="button" class="assistant-renderer-action" @click=${() => tryOpenInPreviewPane({ kind: "markdown", path: block.path, title: name, block })}>${tr("preview.openInPane", "Open on the right")}</button>` : ""}
           ${revealButton(block)}
         </div>
       </header>
@@ -197,29 +199,31 @@ function renderMarkdownArtifact(block) {
     </section>
   `);
   const preview = node.querySelector(".assistant-renderer-markdown-preview");
-  const key = `${block.path || ""}:${block.updatedAt || ""}:${block.bytes || ""}`;
-  node.dataset.markdownPreviewKey = key;
-
-  void (async () => {
-    try {
-      const result = await window.assistantClient?.readTextFile?.(block.path, { maxBytes: 1024 * 1024 });
-      if (node.dataset.markdownPreviewKey !== key) return;
-      if (!result?.ok) {
-        preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
-        return;
-      }
-      const suffix = result.truncated
-        ? `\n\n${tr("renderer.markdownPreviewTruncated", "Preview truncated. Open the file to view the full content.")}`
-        : "";
-      renderMarkdownContent(preview, `${result.text || ""}${suffix}`, { basePath: block.path || "" });
-    } catch (error) {
-      if (node.dataset.markdownPreviewKey !== key) return;
-      preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
-      console.warn("[turn-block-renderers] markdown preview failed", error);
-    }
-  })();
-
+  void loadMarkdownPreview(preview, block);
   return node;
+}
+
+/** Read a Markdown artifact and render it into `preview`; shared by the chat card and the preview pane. */
+export async function loadMarkdownPreview(preview, block = {}) {
+  const key = `${block.path || ""}:${block.updatedAt || ""}:${block.bytes || ""}`;
+  preview.dataset.markdownPreviewKey = key;
+  if (!preview.textContent.trim()) preview.textContent = tr("renderer.markdownPreviewLoading", "Loading Markdown preview...");
+  try {
+    const result = await window.assistantClient?.readTextFile?.(block.path, { maxBytes: 1024 * 1024 });
+    if (preview.dataset.markdownPreviewKey !== key) return;
+    if (!result?.ok) {
+      preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
+      return;
+    }
+    const suffix = result.truncated
+      ? `\n\n${tr("renderer.markdownPreviewTruncated", "Preview truncated. Open the file to view the full content.")}`
+      : "";
+    renderMarkdownContent(preview, `${result.text || ""}${suffix}`, { basePath: block.path || "" });
+  } catch (error) {
+    if (preview.dataset.markdownPreviewKey !== key) return;
+    preview.textContent = tr("renderer.markdownPreviewFailed", "Markdown preview is unavailable. Open the file to view it.");
+    console.warn("[turn-block-renderers] markdown preview failed", error);
+  }
 }
 
 function sourceList(block = {}) {

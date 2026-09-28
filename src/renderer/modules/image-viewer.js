@@ -1,15 +1,28 @@
 /**
- * Full-screen image preview modal.
+ * Image preview: in the right-hand preview pane when this window has one,
+ * otherwise (or with `modal: true`) the full-screen modal.
  */
 
 import { t } from "../i18n/index.js";
+import { tryOpenInPreviewPane } from "./preview-pane.js";
+
+const APP_FILE_PREFIX = "app-file://media/";
+
+function localPathFromSource(src = "") {
+  const value = String(src || "");
+  if (!value.startsWith(APP_FILE_PREFIX)) return "";
+  try { return decodeURIComponent(value.slice(APP_FILE_PREFIX.length).split(/[?#]/)[0]); } catch { return ""; }
+}
 
 /**
- * Open a full-screen image preview.
+ * Open an image preview.
  * @param {string} src   Image URL (data URL or path).
  * @param {string} alt   Alt text for the image.
+ * @param {{modal?: boolean}} [options]  modal: always the full-screen view.
  */
-export function openImageViewer(src, alt) {
+export function openImageViewer(src, alt, { modal = false } = {}) {
+  if (!src) return;
+  if (!modal && tryOpenInPreviewPane({ kind: "image", src, path: localPathFromSource(src), title: alt || localPathFromSource(src) })) return;
   const overlay = document.createElement("div");
   overlay.className = "image-viewer";
 

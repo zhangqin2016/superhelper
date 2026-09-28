@@ -16,6 +16,7 @@
 #leftResizeHandle { grid-column: 2; }
 .center-panel { grid-column: 3; }
 .collaboration-center { grid-column: 4; }
+.preview-pane { grid-column: 4; }
 
 .app-shell.left-collapsed { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
 .app-shell.collaboration-panel-open[data-collaboration-mode="docked"] {
@@ -23,6 +24,13 @@
 }
 .app-shell.left-collapsed.collaboration-panel-open[data-collaboration-mode="docked"] {
   grid-template-columns: 0 0 minmax(560px, 1fr) var(--collaboration-panel-w, 420px);
+}
+/* The preview pane shares column 4 with the collaboration panel; only one is open at a time. */
+.app-shell.preview-pane-open[data-preview-mode="docked"] {
+  grid-template-columns: var(--left-w) 4px minmax(480px, 1fr) var(--preview-pane-w, 45vw);
+}
+.app-shell.left-collapsed.preview-pane-open[data-preview-mode="docked"] {
+  grid-template-columns: 0 0 minmax(480px, 1fr) var(--preview-pane-w, 45vw);
 }
 
 /* =========================================================================
