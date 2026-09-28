@@ -118,7 +118,8 @@ const rankingHistory = [
   { role: "user", content: noSearchRanking.intentContract.currentInstruction },
   archivedAssistant(noSearchRanking, noSearchRanking.intentContract.currentInstruction),
 ];
-const rankingRefinement = buildTaskContract({ text: "按综合体验排", messages: rankingHistory });
+// An explicit refinement verb; a bare "按…" opens new requests as often.
+const rankingRefinement = buildTaskContract({ text: "改成按综合体验排", messages: rankingHistory });
 assert.equal(rankingRefinement.taskType, "external_fact");
 assert.equal(rankingRefinement.externalFactPolicy.researchProhibited, true, "a terse refinement must preserve no-search");
 assert.equal(rankingRefinement.externalFactPolicy.scopeClarificationRecommended, false);
@@ -133,7 +134,9 @@ const malformedFallback = buildTaskContract({
   messages: [{ role: "assistant", record: { meta: { taskContract: { intentContract: "bad" } } } }],
 });
 assert.equal(malformedFallback.active, true, "malformed history must fail open to current baseline classification");
-assert.equal(malformedFallback.intentContract.relation, "new");
+// Earlier work exists (an assistant turn), so the baseline relation is the
+// model's call, not an asserted "new".
+assert.equal(malformedFallback.intentContract.relation, "unspecified");
 
 const modelRefined = applyModelIntentCandidate(first.intentContract, {
   taskType: "general",

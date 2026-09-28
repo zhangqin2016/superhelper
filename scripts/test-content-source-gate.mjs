@@ -90,6 +90,39 @@ check("a tool-grounded folder answer survives the gate; an unread ATTACHMENT is 
   });
   assert.equal(refused.assessment.reason, "missing_required_evidence:source_content");
   assert.match(refused.assistant, CANNED, "an attachment that was never read still must not be guessed at");
+
+  // 2026-09-28 audit: replacement needs PROOF nothing was read. The model read
+  // the attachment itself after pre-extraction failed (a script naming the
+  // file): its answer is real work and stands with a note, never the template.
+  const selfRead = evaluateAnswerEvidence({
+    ...folderTurn,
+    assistant: "这份文档写明了三条违约条款：逾期交付、质量不符、擅自转包。",
+    userText: "分析这个文档的内容",
+    taskContract: attachedContract,
+    inputFiles: [{ name: "case.docx", path: "/tmp/ws/case.docx" }],
+    tools: [{ name: "bash", status: "done", input: { command: "python3 -c \"import docx;print(docx.Document('/tmp/ws/case.docx'))\"" } }],
+    evidenceSummary: { ...readEvidence, counts: { ...readEvidence.counts, sourceContentSources: 1 }, sourceContentCoverage: { status: "unavailable", sourceCount: 1, observedCount: 0 } },
+  });
+  assert.match(selfRead.assistant, /逾期交付、质量不符、擅自转包/, "an answer from the model's own read of the attachment is kept");
+  assert.doesNotMatch(selfRead.assistant, CANNED, "and is never replaced by the not-read template");
+
+  // A fully read quote: its numbers are grounded in what the model was SHOWN
+  // (pre-extracted text), not only in tool output.
+  const quoteContract = { active: true, taskType: "content_extraction", contentIntent: { attachmentKinds: ["document"] } };
+  quoteContract.evidencePolicy = { ...buildEvidencePolicy(quoteContract), externalFact: true };
+  const quote = evaluateAnswerEvidence({
+    assistant: "报价单：单价 52,800 元/台，3 台合计 158,400 元。",
+    userText: "这份报价单总价多少",
+    taskContract: quoteContract,
+    turnPolicy: { rigor: "grounded", taskType: "content_extraction" },
+    evidenceSummary: { hasSourceContentEvidence: true, counts: { sourceContentSources: 1 }, sourceContentCoverage: { status: "complete", sourceCount: 1, observedCount: 1 } },
+    observedText: "报价单\n设备 A 单价 52800 元/台 数量 3 合计 158400 元",
+    tools: [],
+    inputFiles: [{ name: "quote.pdf" }],
+  });
+  assert.match(quote.assistant, /52,800 元\/台，3 台合计 158,400 元/, "numbers from the extracted document are grounded; the answer stands");
+  assert.doesNotMatch(quote.assistant, CANNED);
+  assert.doesNotMatch(quote.assistant, /未能通过本轮逐项核实/, "grounded numbers draw no unverified note either");
 });
 
 check("an operation refused by the permission mode says so instead of reaching the model as an unexplained failure", () => {

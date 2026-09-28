@@ -1115,7 +1115,7 @@ class TurnOrchestrator {
 
     // Routing replaces the user text; preflight extraction is re-applied on top.
     const routedText = typeof opts.engineText === "string" && opts.engineText.trim() ? opts.engineText.trim() : "";
-    let engineText = routedText ? applyPreflightContexts(routedText, preflightContexts) : text;
+    let engineText = routedText ? applyPreflightContexts(routedText, preflightContexts) : text; state.observedSourceText = preflightContexts.map((context) => context.content).join("\n");
     const preRehydrateText = engineText;
     let rehydrated = false;
     let shortFollowupContext = false;
@@ -1182,7 +1182,7 @@ class TurnOrchestrator {
         shortFollowup: shortFollowupContext,
       });
       if (!isCurrentStart()) return staleStartResult();
-      contextMemory.contextEpoch = Number(summary?.contextEpoch || 0);
+      contextMemory.contextEpoch = Number(summary?.contextEpoch || 0); state.handoffInContext = require("./status-scaffold").handoffInContext({ summary, rehydrated, shortFollowupContext, recovery: opts.recovery, legacyContextHydrated: state.legacyContextHydrated });
       contextMemory.deduped = Boolean(
         contextMemory.fingerprint &&
         summary?.lastContextMemoryFingerprint === contextMemory.fingerprint &&

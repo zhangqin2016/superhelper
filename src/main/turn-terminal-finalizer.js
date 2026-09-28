@@ -283,7 +283,7 @@ function createTurnTerminalFinalizer(options = {}) {
     let statusScaffoldAction = "";
     try {
       const { stripStatusScaffoldPrefix, statusScaffoldNote } = require("./status-scaffold");
-      const strip = stripStatusScaffoldPrefix(assistant);
+      const strip = state.handoffInContext === false ? { stripped: false } : stripStatusScaffoldPrefix(assistant);
       if (strip.stripped) {
         statusScaffoldAction = strip.pure ? "replaced-pure" : "stripped-prefix";
         assistant = strip.pure
@@ -309,6 +309,7 @@ function createTurnTerminalFinalizer(options = {}) {
     let effectiveEvidenceSummary = evidenceSummary;
     let record = turnArchive?.buildRecord?.(state, type, { ...payload, assistant }) || null;
     if (type === "turn.completed") record = attachDraftReceipts({ record, ctx, sessionId, turnId: completedTurnId, evidence: state.requiredToolResults, log });
+    if (record && state.handoffInContext === false) record.meta = { ...(record.meta || {}), handoffInContext: false };
     if (record && statusScaffoldAction) {
       record.meta = { ...(record.meta || {}), statusScaffold: statusScaffoldAction };
     }
@@ -333,6 +334,7 @@ function createTurnTerminalFinalizer(options = {}) {
         tools: evidenceTools,
         fileChangeCount: record?.fileChanges?.length || 0,
         userText: finalizerUserText,
+        observedText: state.observedSourceText || "",
         inputFiles: require("./turn-user-context").effectiveInputFiles(state),
         artifacts: record?.artifacts || [],
         recoveryAttempt: Boolean(state.wasRescueAttempt),

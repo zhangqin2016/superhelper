@@ -236,7 +236,7 @@ async function newSession() {
   assert(orch.calls.done.length === 0, "idle with unfinished todos keeps the turn open");
   assert(fake.prompts.length === 2, "unfinished todo gate sends one internal continuation prompt");
   assert(/unfinished todo/i.test(fake.prompts[1].text), "continuation prompt names unfinished todos");
-  assert(/Continuation attempt: 1\/2/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
+  assert(/Continuation attempt: 1\/1/.test(fake.prompts[1].text), "unfinished todo gate must be bounded");
 
   fake.emitEvent({
     type: "todo.updated",
@@ -255,6 +255,39 @@ async function newSession() {
   await tick();
   assert(orch.calls.done.length === 1, "idle settles once todos are completed");
   assert(/Done and verified/.test(orch.calls.done[0].output), "final output is preserved after todo continuation");
+  session.terminate();
+}
+
+// --- the answer given before a todo continuation survives it (2026-09-28 audit):
+// the official history's latest assistant for the continuation prompt holds only
+// the continuation reply, which used to become the whole answer.
+{
+  const { fake, session, orch } = await newSession();
+  session.sendUserMessage({ text: "写完整的迁移方案" });
+  await tick();
+  const t0 = Date.now() + 1_000;
+  const hist = (userText, answer, at) => [
+    { info: { id: `u_${at}`, role: "user", sessionID: "ses_test", time: { created: at } }, parts: [{ type: "text", text: userText }] },
+    { info: { id: `a_${at}`, role: "assistant", sessionID: "ses_test", time: { created: at + 1, completed: at + 2 } }, parts: [{ type: "text", text: answer }] },
+  ];
+  const todos = (done) => ({ type: "todo.updated", properties: { sessionID: "s", todos: [
+    { content: "写方案", status: "completed" }, { content: "标记检查", status: done ? "completed" : "pending" },
+  ] } });
+  fake.emitEvent(todos(false));
+  fake.historyMessages = hist(fake.lastPromptText, "完整迁移方案：第一步备份，第二步切流，第三步回滚预案。", t0);
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "完整迁移方案：第一步备份，第二步切流，第三步回滚预案。" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(fake.prompts.length === 2 && /unfinished todo/i.test(fake.prompts[1].text), "one todo continuation is sent");
+  fake.emitEvent(todos(true));
+  fake.historyMessages = [...hist("写完整的迁移方案", "完整迁移方案：第一步备份，第二步切流，第三步回滚预案。", t0), ...hist(fake.lastPromptText, "已全部标记完成。", t0 + 10)];
+  fake.emitEvent({ type: "message.part.delta", properties: { field: "text", delta: "已全部标记完成。" } });
+  fake.emitEvent({ type: "session.idle", properties: { sessionID: "s" } });
+  await waitIdleSettle();
+  await tick();
+  assert(orch.calls.done.length === 1, "the continued turn settles");
+  assert(/第一步备份，第二步切流，第三步回滚预案/.test(orch.calls.done[0].output), "the answer given before the continuation is kept");
   session.terminate();
 }
 
@@ -279,7 +312,9 @@ async function newSession() {
     await waitIdleSettle();
     await tick();
   }
-  assert(fake.prompts.length === 3, `re-planning must not refill the nudge budget (sent ${fake.prompts.length} prompts)`);
+  // 2026-09-28: nudged once, the model stopped again with no tool call and no
+  // todo change — it is waiting on the user, so it is not pushed a second time.
+  assert(fake.prompts.length === 2, `a model that stops again after one nudge is left alone (sent ${fake.prompts.length} prompts)`);
   assert(orch.calls.done.length === 1, "the gate settles the turn instead of nudging forever");
   const settled = orch.calls.done[0];
   assert(!settled.stalled, "a turn that produced a real answer must never be marked stalled");
@@ -1095,6 +1130,55 @@ async function newSession() {
     assert(made[0].server.aborted === true, "prestarted poisoned engine is aborted");
     assert(!made[1].opts.resumeSessionID, "fresh prestarted recovery does not reuse poisoned resume id");
     assert(made[1].server.prompts.length === 1 && made[1].server.prompts[0].text === "继续", "current prompt is replayed");
+    session.terminate();
+  } finally {
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
+    OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = savedWindow;
+  }
+}
+
+// --- a resumed session whose side-effecting tools all COMPLETED keeps its
+// --- conversation on a gateway error (2026-09-28 audit: 50 edits, one 504,
+// --- the whole engine context replaced by a 12K local rebuild).
+{
+  const savedPoll = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS;
+  const savedWindow = OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = 20;
+  OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_MS = 90;
+  try {
+    const made = [];
+    const invalidated = [];
+    const session = new OpencodeAgentSession("resumed_completed_tools_failure", {
+      createServer: (opts = {}) => {
+        const server = new FakeServer();
+        server.wasResumed = Boolean(opts.resumeSessionID);
+        server.historyMessages = [];
+        made.push({ server, opts });
+        return server;
+      },
+    });
+    const orch = makeOrchestrator();
+    session.bindOrchestrator(orch);
+    session.on("engine-session-invalidated", (payload) => invalidated.push(payload));
+    session.ensureProcess(process.cwd(), { agentCommand: "/bin/true", resumeSessionId: "ses_resumed_ok" }, { lazy: true });
+    session.sendUserMessage({ text: "继续处理文件" });
+    await tick();
+    made[0].server.idleState = true;
+    for (const status of ["running", "completed"]) {
+      made[0].server.emitEvent({
+        type: "message.part.updated",
+        properties: { sessionID: "ses_test", part: { id: "part_bash_done", type: "tool", tool: "bash", callID: "call_bash_done",
+          state: { status, input: { command: "python3 parse_doc.py" }, ...(status === "completed" ? { output: "ok" } : {}) } } },
+      });
+    }
+    made[0].server.emitEvent({
+      type: "message.error",
+      properties: { sessionID: "ses_test", messageID: "msg_after_done",
+        error: { message: "Connection to the model service was interrupted. Please check your network and API settings, then retry." } },
+    });
+    await sleep(160);
+    assert(invalidated.length === 0, "completed side-effecting tools do not make a resumed session unaccountable");
+    assert(orch.calls.error.length === 1, "the failure still settles the turn");
     session.terminate();
   } finally {
     OpencodeAgentSession.TRANSIENT_FAILURE_RECOVERY_POLL_MS = savedPoll;
@@ -2529,8 +2613,11 @@ const writeTool = (fake, filePath, status = "completed") => fake.emitEvent({
   assert(orch.calls.done[0].failureCode === "CHARACTER_DRAFT_PERSISTENCE_FAILED", "terminal failure has a stable workflow code");
   assert(orch.calls.done[0].stalled !== true, "persistence failure is not misclassified as a watchdog stall");
   const failedOutput = String(orch.calls.done[0].output || "");
-  assert(!/已创建成功|已经保存到角色库/.test(failedOutput), "terminal failure must not retain an unverified success claim");
-  assert(/没有保存到角色库/.test(failedOutput), "terminal failure explains that persistence did not succeed");
+  // 2026-09-28: the failure LEADS, so an unverified "saved" claim below it
+  // cannot be read as the outcome — and the model's content is kept, never
+  // erased (removing only the false sentence would mean judging prose).
+  assert(/^角色没有保存到角色库/.test(failedOutput), "terminal failure opens with the honest outcome");
+  assert(/角色已创建成功/.test(failedOutput), "the model's delivered text is kept below it");
   session.terminate();
 }
 

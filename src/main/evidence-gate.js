@@ -225,6 +225,24 @@ function collectPolicyAdvisoryReasons(text, { turnPolicy = null, evidenceSummary
 // (not made dumber); a weak model's invented counts are caught deterministically.
 const SIGNIFICANT_NUMBER_RE = /\d{1,3}(?:,\d{3})+|\d{4,}|\d+(?:\.\d+)?%|\bv?\d+\.\d+(?:\.\d+)?\b|\d+(?:\.\d+)?\s*(?:ms\b|毫秒)/gi;
 
+/** Is `raw` one arithmetic step from two numbers present in the evidence? */
+function derivableFromEvidence(raw, haystack) {
+  const target = Number(String(raw).replace(/[,\s%]/g, "").replace(/^v/i, ""));
+  if (!Number.isFinite(target)) return false;
+  const decimals = (String(raw).replace(/[,%\s]/g, "").split(".")[1] || "").length;
+  const tolerance = Math.max(0.5 * 10 ** -decimals, Math.abs(target) * 1e-4);
+  const pool = [...new Set((haystack.match(/\d+(?:\.\d+)?/g) || []).map(Number))]
+    .filter((n) => Number.isFinite(n) && n !== 0).slice(0, 300);
+  const close = (value) => Number.isFinite(value) && Math.abs(value - target) <= tolerance;
+  for (let i = 0; i < pool.length; i += 1) {
+    for (let j = 0; j < pool.length; j += 1) {
+      const a = pool[i], b = pool[j];
+      if (close(a + b) || close(a - b) || close(a * b) || close(a / b) || close((a / b) * 100) || close(((a - b) / b) * 100)) return true;
+    }
+  }
+  return false;
+}
+
 function ungroundedSignificantNumbers(answer, evidenceText, userText, forceEnabled = false) {
   // Default-on only for external facts; other tasks remain opt-in through
   // LILY_NUMERIC_GROUNDING=1. Computed/file/image numbers often do not appear in
@@ -241,6 +259,10 @@ function ungroundedSignificantNumbers(answer, evidenceText, userText, forceEnabl
     if (!norm || seen.has(norm)) continue;
     seen.add(norm);
     if (haystack.includes(norm)) continue; // the digits appear in evidence / prompt → grounded
+    // A difference, sum, product, ratio or percentage of grounded numbers is
+    // grounded too: "¥2,000 / 33.3%" computed from two fetched prices is
+    // arithmetic, not invention (2026-09-28 audit).
+    if (derivableFromEvidence(raw, haystack)) continue;
     ungrounded.push(raw.trim());
     if (ungrounded.length >= 8) break;
   }
@@ -356,6 +378,8 @@ function assessFinalAnswerEvidence({
     evidenceText,
     userText,
     externalFact: evidencePolicy?.externalFact,
+    acceptedClaimLabels,
+    judgedUnsupportedClaims,
   });
   if (claimCoverage?.ok === false) {
     return {
@@ -363,9 +387,12 @@ function assessFinalAnswerEvidence({
       required,
       strongClaim: true,
       hasEvidence: Boolean(evidenceSummary?.hasFreshEvidence),
-      reason: "external_claim_not_in_evidence",
+      // Only judge-pending entries (an abbreviation of a name the evidence
+      // spells out) go to the same semantic ruling as entity claims.
+      reason: claimCoverage.unsupportedClaims.length ? "external_claim_not_in_evidence" : "semantic_support_unverified",
       claimCoverage,
       unsupportedClaims: claimCoverage.unsupportedClaims,
+      pendingClaims: claimCoverage.pendingClaims,
     };
   }
   const advisoryReasons = collectPolicyAdvisoryReasons(text, { turnPolicy, evidenceSummary, fileChangeCount });

@@ -50,7 +50,7 @@ function stripInternalContinuationTurns(conversation = []) {
     // — never a valid answer. A scaffold PREFIX followed by a real reply is
     // salvaged (rewritten to the reply); anything else scaffold is hidden,
     // whatever triggered it (resume rehydrate, auto-continue, etc.).
-    if (m?.role === "assistant" && analyzeStatusScaffold(messageText(m)).isScaffold) {
+    if (m?.role === "assistant" && m?.record?.meta?.handoffInContext !== false && analyzeStatusScaffold(messageText(m)).isScaffold) {
       const strip = stripStatusScaffoldPrefix(messageText(m));
       if (strip.stripped && !strip.pure) {
         rewrites.set(m, {

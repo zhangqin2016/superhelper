@@ -266,4 +266,45 @@ assert.equal(
   "fresh research is retried only for evidence gaps that a better search can plausibly repair",
 );
 
+// 2026-09-28 audit: a number one arithmetic step from grounded numbers is
+// grounded — a price difference and its percentage computed from two fetched
+// prices were flagged as invented and replayed.
+{
+  const { assessFinalAnswerEvidence } = require("../src/main/evidence-gate.js");
+  const policy = { required: true, externalFact: true, requireSourceLinks: false };
+  const base = { evidencePolicy: policy, toolCount: 1, evidenceSummary: { hasFreshEvidence: true, counts: { webSources: 1 } }, userText: "两款的官网价差多少" };
+  const evidenceText = "官网标价：A 款 6000 元，B 款 8000 元。";
+  const derived = assessFinalAnswerEvidence({ ...base, evidenceText, assistant: "B 款比 A 款贵 ¥2,000，高出 33.3%。" });
+  assert.notEqual(derived.reason, "numeric_claim_not_in_evidence", "a difference and a percentage of grounded prices are grounded");
+  const invented = assessFinalAnswerEvidence({ ...base, evidenceText, assistant: "B 款比 A 款贵 ¥2,750，高出 41.7%。" });
+  assert.equal(invented.reason, "numeric_claim_not_in_evidence", "a number no arithmetic on the evidence yields is still flagged");
+}
+
+// A time word does not turn a question about the user's own attachment into
+// an external fact: the answer's source is the attachment.
+{
+  const { buildTaskContract } = require("../src/main/task-contract.js");
+  const withAttachment = buildTaskContract({ text: "目前这个合同里违约金是多少？", files: [{ name: "contract.pdf", path: "/tmp/contract.pdf" }] });
+  assert.notEqual(withAttachment.externalFactPolicy?.required, true, "a time word about an attached source is not an external fact");
+  const worldFact = buildTaskContract({ text: "目前国内的法定贷款利率是多少？" });
+  assert.equal(worldFact.externalFactPolicy?.required, true, "the same time word about the world still is");
+}
+
+// 2026-09-28 audit: a ranked list is checked against the WHOLE evidence, and
+// an abbreviation of a name the evidence spells out goes to the semantic
+// judge instead of being called fabricated ("上海交大" vs "上海交通大学").
+{
+  const { assessClaimEvidenceCoverage } = require("../src/main/claim-evidence-map.js");
+  const filler = "无关段落。".repeat(200);
+  const evidenceText = `${filler}2026 软科中国大学排名：1. 清华大学 2. 北京大学 3. 上海交通大学`;
+  const answer = "排名如下：\n1. 清华大学\n2. 北京大学\n3. 上海交大";
+  const first = assessClaimEvidenceCoverage({ assistant: answer, evidenceText, userText: "2026 软科排名前三", externalFact: true });
+  assert.deepEqual(first.unsupportedClaims, [], "entries past the first 500 chars of evidence are found; the abbreviation is not called fabricated");
+  assert.deepEqual(first.pendingClaims, ["上海交大"], "the abbreviation is handed to the semantic judge");
+  const judged = assessClaimEvidenceCoverage({ assistant: answer, evidenceText, userText: "2026 软科排名前三", externalFact: true, acceptedClaimLabels: ["上海交大"] });
+  assert.equal(judged.ok, true, "a judge-accepted abbreviation passes");
+  const invented = assessClaimEvidenceCoverage({ assistant: "排名：\n1. 清华大学\n2. 北京大学\n3. 星海理工大学", evidenceText, userText: "排名前三", externalFact: true });
+  assert.deepEqual(invented.unsupportedClaims.map((c) => c.label), ["星海理工大学"], "an entry the evidence never names stays unsupported");
+}
+
 console.log("external-fact-grounding: ok");

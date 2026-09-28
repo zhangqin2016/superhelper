@@ -6,8 +6,11 @@ const { markInternalPrompt } = require("./internal-prompt-marker");
 // Max CONSECUTIVE continuation nudges that produced no progress. The caller only
 // resets its counter on unique completed execution or a shrinking todo set, bounding
 // confirmed no-progress rather than effort: a model that keeps completing items
-// keeps earning nudges, a blocked one is asked twice and then left alone.
-const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 2;
+// keeps earning nudges. A model that was nudged once and then stopped again with
+// no tool call and no todo change has DECIDED to stop — typically waiting on the
+// user — and is left alone: pushing it a second time overrode that decision and
+// made it guess on the user's behalf (2026-09-28 audit).
+const TODO_COMPLETION_GATE_MAX_ATTEMPTS = 1;
 // Absolute per-turn ceiling on continuation nudges. Real progress refills the
 // budget above, so without this cap a model that keeps re-planning its todo list
 // can be pushed back into the same turn indefinitely (a field turn burned 7
@@ -99,6 +102,7 @@ function buildTodoContinuationPrompt(snapshot = {}, attempt = 1, maxAttempts = T
     "Task continuity check: the native todo list still has unfinished todo items.",
     `Progress: ${snapshot.completed || 0}/${snapshot.total || 0} completed. Continue from the current unfinished item and do not stop after a partial todo update.`,
     "Use tools as needed. When the requested work is genuinely complete, update every todo item to completed, then provide the final answer.",
+    "If an item needs the user's decision or input, stop and ask them plainly instead of guessing.",
     `Continuation attempt: ${attempt}/${maxAttempts}.`,
     "Unfinished todo items:",
     ...listed,

@@ -964,7 +964,11 @@ function buildTaskContract({
   const historySnapshot = findLatestTaskContractSnapshot(history);
   const historyHasAssistantTurn = history.some((message) => message?.role === "assistant");
   const previousSnapshot = historySnapshot || (!historyHasAssistantTurn ? snapshotFromSummary(previousIntentContract) : null);
-  const relation = relationForText(text, Boolean(previousSnapshot));
+  // Earlier work exists whenever the conversation has an assistant turn — a
+  // missing stored contract snapshot (older messages, a lost record) made the
+  // relation "new" and isolated the turn from the answer it had just given.
+  const hasEarlierWork = Boolean(previousSnapshot) || historyHasAssistantTurn;
+  const relation = relationForText(text, hasEarlierWork);
   let classification = classifyTask({ text, files, registry });
   if (!classification.active && previousSnapshot?.active && isInheritedRelation(relation)) {
     classification = {
@@ -1008,6 +1012,7 @@ function buildTaskContract({
     operation: classification.semanticIntent?.operation || "",
     negativeConstraints,
     previousSnapshot,
+    hasEarlierWork,
   });
   if (!classification.active) {
     return {

@@ -44,6 +44,15 @@ assert.equal(relationForText('好的，新任务：写报告', true), 'new');
 // the conversation (a regex default of "new" isolated "用 Python 实现第二个方案").
 assert.equal(relationForText('可以介绍下天气吗', true), 'unspecified');
 assert.equal(relationForText('用 Python 实现第二个方案', true), 'unspecified');
+// 2026-09-28 audit: modality and generic openers are not a relation. These
+// inherited the previous code task (and its 8K checklist) from 必须/不要/按/不是…而是.
+for (const text of ['必须今天交的周报帮我写一下', '不要用表格，直接写一段话介绍公司', '按时间排序整理下载目录', '这不是 bug 而是需求', '现在可以帮我写个周报吗']) {
+  assert.equal(relationForText(text, true), 'unspecified', text);
+}
+// Verbs that act on the previous result, and lifting its constraint, still are.
+for (const text of ['改成中文', 'Also add a regression test.', '再详细点', '现在可以联网搜索，按综合体验排行']) {
+  assert.equal(relationForText(text, true), 'refine', text);
+}
 assert.equal(relationForText('Please continue', false), 'new');
 const refined = applyModelIntentCandidate(second.taskContract.intentContract, {
   objective: 'Model summary', requestSource: { turnIds: ['foreign'] },

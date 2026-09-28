@@ -192,6 +192,11 @@ function shouldActivateExternalFact(intent = inactiveIntent(), categories = []) 
     LOCAL_ONLY_CATEGORIES.has(category),
   );
   if (categorySet.has("release") && intent.operationalRequest) return false;
+  // "目前这个合同里违约金是多少" with the contract attached asks about the
+  // SOURCE; the time word describes the document, not the world. When a time
+  // word is the only trigger, a source-content task is not an external fact.
+  const reasons = Array.isArray(intent.reasonCodes) ? intent.reasonCodes : [];
+  if (categorySet.has("content_extraction") && reasons.length && reasons.every((code) => code === "freshness")) return false;
   if (hasLocalOnlyTask && intent.operationalRequest) return Boolean(intent.explicitResearch);
   return true;
 }

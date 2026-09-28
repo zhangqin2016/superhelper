@@ -13,6 +13,16 @@ assert.deepEqual(normalizeRequiredTools(["bash", "lily_character_draft", "lily_c
   "lily_character_draft",
 ]);
 
+// A requirement the host only GUESSED binds once the model calls the tool.
+{
+  const guessed = createRequiredToolCompletionState([{ name: "lily_character_draft", when: "attempted" }]);
+  assert.deepEqual(missingRequiredTools(guessed), [], "an untried guessed requirement never blocks a plain answer");
+  noteRequiredToolDraft(guessed, { type: "tool.started", payload: { id: "g1", name: "lily_character_draft", input: { action: "create", kind: "character" } } });
+  assert.deepEqual(missingRequiredTools(guessed), ["lily_character_draft"], "once the model starts the draft it must really persist");
+  noteRequiredToolDraft(guessed, { type: "tool.done", payload: { id: "g1", name: "lily_character_draft", content: JSON.stringify({ ok: true, entityId: "e1", revisionId: "r1", revisionNumber: 1 }) } });
+  assert.deepEqual(missingRequiredTools(guessed), [], "and a confirmed save satisfies it");
+}
+
 const state = createRequiredToolCompletionState(["lily_character_draft"]);
 assert.deepEqual(missingRequiredTools(state), ["lily_character_draft"]);
 

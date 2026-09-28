@@ -34,10 +34,15 @@ await check("engineering and management uses of 'agent' are not library requests
   assert.equal(inferCharacterAuthoringIntent("这个智能体怎么用").active, false, "no create verb → no routing");
 });
 
-await check("routing requires lily_agent_draft and wraps the agent workflow", async () => {
+// 2026-09-28 audit: wording alone cannot tell "save an agent to my library"
+// from "an agent script" — the guess gives the model the full workflow as a
+// possibility and binds only once the model starts the draft itself.
+await check("a GUESSED agent request offers the full workflow conditionally and binds only if attempted", async () => {
   const routing = resolveEngineRouting("做一个审合同的智能体", [], undefined);
-  assert.deepEqual(routing.requiredSuccessfulTools, ["lily_agent_draft"]);
+  assert.deepEqual(routing.requiredSuccessfulTools, [{ name: "lily_agent_draft", when: "attempted" }]);
   assert.match(routing.engineText, /^\[LILY AGENT AUTHORING WORKFLOW\]/);
+  assert.match(routing.engineText, /may only want content[\s\S]*answer directly and ignore this workflow/, "the model decides");
+  assert.doesNotMatch(routing.engineText, /This is a persistent|You must call/, "the host does not assert what it only guessed");
   assert.match(routing.engineText, /lily_agent_draft with action=create/);
   assert.match(routing.engineText, /activation is human-only/);
   assert.ok(routing.engineText.endsWith("做一个审合同的智能体"));

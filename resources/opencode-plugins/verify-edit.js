@@ -40,7 +40,10 @@ function checkSyntax(file) {
     try { JSON.parse(fs.readFileSync(file, "utf8")); return ""; }
     catch (e) { return `Invalid JSON in ${file}: ${e.message}`; }
   }
-  if (/\.(c|m)?jsx?$|\.(c|m)?tsx?$/.test(lower)) {
+  // node --check parses plain JavaScript only: on TypeScript and JSX it reports
+  // valid code as a syntax error and pushes the model to "fix" it (2026-09-28
+  // audit). Those files get real diagnostics from the engine's own LSP.
+  if (/\.(c|m)?js$/.test(lower)) {
     const err = runCheck(which("node"), ["--check", file]);
     return err ? `Syntax error in ${file}:\n${err}` : "";
   }

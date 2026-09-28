@@ -1534,7 +1534,7 @@ class OpencodeAgentSession extends EventEmitter {
     // Settling is this gate's graceful exit, so exhausting the SHARED turn
     // re-entry budget takes exactly the same path as exhausting its own.
     if (decision === "settle" || !claimContinuation(this._turnGates, "todo")) {
-      const settlePayload = buildTodoGiveUpPayload(payload, snapshot, this.collectedOutput, { gate, decision });
+      const settlePayload = withPreGateAnswer(this._turnGates, buildTodoGiveUpPayload(payload, snapshot, this.collectedOutput, { gate, decision }));
       log.warn("unfinished todo completion gate giving up", {
         sessionId: this.sessionId,
         unfinished: snapshot.unfinished.length,
@@ -1548,6 +1548,7 @@ class OpencodeAgentSession extends EventEmitter {
     }
     gate.attempts += 1;
     gate.total += 1;
+    if (!this._turnGates.preGateOutput) this._turnGates.preGateOutput = String(payload.output || this.collectedOutput || "");
     this._armResponseTimer();
     this._armProgressNoticeTimer();
     const note = buildTodoContinuationPrompt(snapshot, gate.attempts, TODO_COMPLETION_GATE_MAX_ATTEMPTS);
@@ -1697,10 +1698,10 @@ class OpencodeAgentSession extends EventEmitter {
       raw,
       payload: this._pendingPromptPayload || {},
       wasResumed: Boolean(this._engineSessionWasResumed || this._server?.wasResumed),
-      // The same evidence that gates a transient replay: a side-effecting tool
-      // may have run without reporting back, so the session's state is no
-      // longer accountable and the resume id cannot be trusted.
-      sessionStateIndeterminate: Boolean(this._sawUnsafeToolActivity || this._pendingPermissions.size || this._pendingQuestions.size),
+      // Only a side-effecting tool STILL IN FLIGHT when the failure hit leaves the
+      // session unaccountable; completed tools are recorded in its history, so a
+      // gateway error after 50 edits keeps the conversation (2026-09-28 audit).
+      sessionStateIndeterminate: Boolean([...this._activeTools.values()].some((tool) => this._toolReplaySafe.get(tool.id) === false || (!this._toolReplaySafe.has(tool.id) && !isReplaySafeToolName(tool.name))) || this._pendingPermissions.size || this._pendingQuestions.size),
       keepConversationAfterOverflow: overflow.keepConversation,
     });
     if (!recoverable && !dropResume) return false;

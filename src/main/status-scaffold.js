@@ -265,7 +265,22 @@ function statusScaffoldNote(userText = "") {
   }[language];
 }
 
+/**
+ * Could this turn's reply ECHO an internal handoff? Only if one was in its
+ * context: the session was compacted, the context was rebuilt or carried a
+ * short-followup / recovery / legacy handoff. Without one, a reply in the
+ * handoff template is content the user asked for (a "Goal / Progress /
+ * Relevant Files" handoff document) and is never hidden (2026-09-28 audit).
+ */
+function handoffInContext({ summary = null, rehydrated = false, shortFollowupContext = false, recovery = null, legacyContextHydrated = false } = {}) {
+  return Boolean(
+    rehydrated || shortFollowupContext || recovery || legacyContextHydrated
+    || Number(summary?.compactionCount || 0) > 0 || Number(summary?.contextEpoch || 0) > 0,
+  );
+}
+
 module.exports = {
+  handoffInContext,
   analyzeStatusScaffold,
   stripStatusScaffoldPrefix,
   scaffoldStreamGate,

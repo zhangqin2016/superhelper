@@ -1,9 +1,23 @@
 "use strict";
 
+const PERSISTENCE_TOOLS = new Set(["lily_character_draft"]);
+
+/**
+ * A plain name must succeed before the turn may finish (the user explicitly
+ * chose to create a library entity). { name, when: "attempted" } binds only
+ * once the model itself calls the tool — a request the host merely GUESSED to
+ * be library authoring ("设计一个游戏角色的背景故事") leaves the model free to
+ * just answer, while a draft it does start must really persist.
+ */
 function normalizeRequiredTools(requiredTools = []) {
-  return Array.isArray(requiredTools)
-    ? [...new Set(requiredTools.filter((name) => name === "lily_character_draft"))].slice(0, 1)
-    : [];
+  if (!Array.isArray(requiredTools)) return [];
+  const out = [];
+  for (const entry of requiredTools) {
+    const name = typeof entry === "string" ? entry : entry?.name;
+    if (!PERSISTENCE_TOOLS.has(name) || out.some((kept) => (typeof kept === "string" ? kept : kept.name) === name)) continue;
+    out.push(entry && typeof entry === "object" && entry.when === "attempted" ? { name, when: "attempted" } : name);
+  }
+  return out.slice(0, 1);
 }
 
 // OpenCode exposes MCP tools with the server key prefixed to the tool name
@@ -21,8 +35,10 @@ function canonicalToolName(name) {
 }
 
 function createRequiredToolCompletionState(requiredTools = []) {
-  const required = new Set(normalizeRequiredTools(requiredTools));
-  return { required, successful: new Set(), successfulResults: new Map(), activeById: new Map() };
+  const entries = normalizeRequiredTools(requiredTools);
+  const required = new Set(entries.filter((entry) => typeof entry === "string"));
+  const ifAttempted = new Set(entries.filter((entry) => typeof entry === "object").map((entry) => entry.name));
+  return { required, ifAttempted, successful: new Set(), successfulResults: new Map(), activeById: new Map() };
 }
 
 function parseResult(value, depth = 0) {
@@ -57,11 +73,12 @@ function validPersistenceResult(result) {
 }
 
 function noteRequiredToolDraft(state, draft = {}) {
-  if (!state?.required?.size) return;
+  if (!state?.required?.size && !state?.ifAttempted?.size) return;
   const payload = draft.payload || {};
   const id = String(payload.id || "");
   if (draft.type === "tool.started") {
     const name = canonicalToolName(payload.name);
+    if (state.ifAttempted?.has(name)) state.required.add(name);
     if (id && state.required.has(name)) {
       const input = payload.input && typeof payload.input === "object" && !Array.isArray(payload.input)
         ? {

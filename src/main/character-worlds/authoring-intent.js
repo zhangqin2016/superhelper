@@ -29,11 +29,17 @@ function inferCharacterAuthoringIntent(text) {
   return { active: false, kind: null };
 }
 
-function buildAgentAuthoringEngineText(text) {
+// `conditional`: the host only GUESSED a library request from wording, so the
+// workflow applies if the user wants the entity saved, and the model decides.
+function buildAgentAuthoringEngineText(text, { conditional = false } = {}) {
   return [
     "[LILY AGENT AUTHORING WORKFLOW]",
-    "This is a persistent 智能体 (agent bundle) library creation request.",
-    "You must call lily_agent_draft with action=create and a complete definition:",
+    conditional
+      ? "The user may want a 智能体 (agent bundle) saved in the library, or may only want content (a script, a document, advice). Decide from the request and the conversation; if they only want content, answer directly and ignore this workflow."
+      : "This is a persistent 智能体 (agent bundle) library creation request.",
+    conditional
+      ? "If they want it saved, call lily_agent_draft with action=create and a complete definition:"
+      : "You must call lily_agent_draft with action=create and a complete definition:",
     "name, description, 3-5 starters in the user's language, skills (real installed skill ids only),",
     "knowledge.guidance as concrete working rules, knowledge.packs only from the known pack ids,",
     "tools.mcpAllow for tools it should prefer, autonomy.permissionModeId, and a role —",
@@ -50,20 +56,24 @@ function buildAgentAuthoringEngineText(text) {
   ].join("\n");
 }
 
-function buildCharacterAuthoringEngineText(text, intent) {
+function buildCharacterAuthoringEngineText(text, intent, { conditional = false } = {}) {
   const kind = intent?.active ? intent.kind : null;
   if (!kind) return String(text || "");
-  if (kind === "agent") return buildAgentAuthoringEngineText(text);
+  if (kind === "agent") return buildAgentAuthoringEngineText(text, { conditional });
   const revise = intent.action === "revise" && typeof intent.targetReceiptId === "string";
   return [
     "[LILY CHARACTER AUTHORING WORKFLOW]",
     `kind=${kind}`,
-    revise
-      ? "This is a persistent Character Worlds library refinement request."
-      : "This is a persistent Character Worlds library creation request.",
+    conditional
+      ? `The user may want this ${kind} saved in the Character Worlds library, or may only want the content itself (a story, a description, a design). Decide from the request and the conversation; if they only want content, answer directly and ignore this workflow.`
+      : revise
+        ? "This is a persistent Character Worlds library refinement request."
+        : "This is a persistent Character Worlds library creation request.",
     revise
       ? `You must call lily_character_draft with action=revise, kind=${kind}, and targetReceiptId=${intent.targetReceiptId}.`
-      : "You must call lily_character_draft with action=create and the exact kind above.",
+      : conditional
+        ? "If they want it saved, call lily_character_draft with action=create and the exact kind above."
+        : "You must call lily_character_draft with action=create and the exact kind above.",
     "Design a complete, coherent canonical from the user's natural-language intent.",
     "Do not create a Markdown, text, JSON, or workspace file as a substitute for the library entity.",
     "Do not claim that creation or saving succeeded unless lily_character_draft returns ok:true.",

@@ -2522,12 +2522,15 @@
     },
     {
       "id": "intent-relation-honest",
-      "protects": "The host never asserts that a turn is a new task on wording it did not recognise. With earlier work and no explicit relation the intent relation is `unspecified`: the model judges it from the conversation, no isolation instruction is injected, and no memory (session summary, evidence gaps, compaction state) is withheld. Only an explicit new-task phrase yields `new`, which keeps the isolation instruction and memory withholding. Either way separate work may not overwrite or repurpose an earlier task's deliverables.",
+      "protects": "The host never asserts that a turn is a new task on wording it did not recognise. With earlier work and no explicit relation the intent relation is `unspecified`: the model judges it from the conversation, no isolation instruction is injected, and no memory (session summary, evidence gaps, compaction state) is withheld. Only an explicit new-task phrase yields `new`, which keeps the isolation instruction and memory withholding. Either way separate work may not overwrite or repurpose an earlier task's deliverables. Refinement is only a verb acting on the previous result or lifting its constraint (改成/换成/再加/加上/去掉/再详细/also add/change it, 现在可以联网搜索); modality and generic openers (不要/必须/只要/重点/按/补充, a bare 现在可以, 不是…而是) are not a relation, and earlier work is any assistant turn in the conversation, not only a stored contract snapshot.",
       "baseline": "2026-09-28 integration audit: any phrasing the continuation regexes missed (e.g. 用 Python 实现第二个方案) defaulted to `new`, which told the model prior conversation was background only and dropped compaction state, so a compacted session lost its own history on an ordinary follow-up. The 2026-08-13 protection (a new request must not modify an earlier task's output directory) is preserved.",
       "failureFallback": "`unspecified` is not inherited, exactly like the old default, so the deliverable gate never demands an earlier task's files; source-resolution guidance and procedure cards treat it as not inherited (unchanged). Mutation-verified 2026-09-28: fallback back to `new`, withholding memory for `unspecified`, and isolating `unspecified` each fail by name.",
       "tests": [
         "scripts/test-task-contract.mjs",
-        "scripts/test-task-request-continuity.mjs"
+        "scripts/test-task-request-continuity.mjs",
+        "scripts/test-intent-contract.mjs",
+        "scripts/test-platform-intent-eval.mjs",
+        "scripts/test-procedure-cards.mjs"
       ]
     },
     {
@@ -2607,6 +2610,56 @@
       "tests": [
         "scripts/test-turn-error-classify.mjs",
         "scripts/test-tool-call-rescue.mjs"
+      ]
+    },
+    {
+      "id": "answer-never-erased",
+      "protects": "A delivered answer is never replaced by a template when anything was read. Evidence is everything the model was shown this turn (tool output plus pre-extracted document and image text), and the source-content fallback replaces an answer only on proof nothing was read: no source-content observation and no tool call whose input names the attachment. Every other gate failure keeps the answer and appends a note. A library request the host only GUESSED from wording gets the full authoring workflow worded conditionally and binds the persistence tool only once the model calls it; an explicit UI choice still requires it. A persistence failure leads the output and keeps the model's content below it.",
+      "baseline": "2026-09-28 audit: a fully read quote was replaced over an 'ungrounded' 52,800 元 because numeric grounding ignored pre-extracted text; an answer the model read with its own script after pre-extraction failed was replaced as 'not read'; '设计一个游戏角色的背景故事' and '做一个自动回复邮件的 agent 脚本' were forced into the Character Worlds / agent workflows and the answer replaced by '角色没有保存到角色库'.",
+      "failureFallback": "An attachment nothing touched is still replaced (fabrication by construction); an explicit authoring choice is still enforced. Mutation-verified: replacing on any failure, ignoring observed text, erasing on persistence failure, and a guessed intent binding unconditionally each fail by name.",
+      "tests": [
+        "scripts/test-content-source-gate.mjs",
+        "scripts/test-required-tool-completion.mjs",
+        "scripts/test-agent-routing.mjs",
+        "scripts/test-opencode-agent-session.mjs"
+      ]
+    },
+    {
+      "id": "verify-edit-plain-js",
+      "protects": "The post-edit syntax check runs node --check only on plain JavaScript; valid TypeScript and JSX are never reported as syntax errors (the engine's LSP diagnoses those).",
+      "baseline": "2026-09-28 audit: every edit of a valid .ts/.tsx/.jsx file returned '[verify] Syntax error … Fix this before continuing', pushing the model to 'fix' correct code.",
+      "failureFallback": "A real JS syntax error is still caught; JSON and Python checks unchanged. Mutation-verified: checking TS again fails by name.",
+      "tests": [
+        "scripts/test-verify-edit-plugin.mjs"
+      ]
+    },
+    {
+      "id": "handoff-echo-provenance",
+      "protects": "A reply is stripped as an echoed internal handoff only when a handoff was in its context (compaction, context rebuild, short-follow-up, recovery or legacy hydration). A reply in the handoff template with no handoff in context is content the user asked for and is never held, stripped or dropped from a rebuilt conversation.",
+      "baseline": "2026-09-28 audit: a user-requested handoff document in the 'Goal / Constraints & Preferences / Progress / Relevant Files' shape was replaced by '该轮回复只输出了内部状态摘要…已隐藏' because detection read headers only.",
+      "failureFallback": "Unknown provenance keeps the previous behaviour; the recorded field echoes (after compaction/resume/short follow-up) are still stripped. Mutation-verified: treating every turn as carrying a handoff fails by name.",
+      "tests": [
+        "scripts/test-status-scaffold.mjs"
+      ]
+    },
+    {
+      "id": "todo-continuation-respects-stop",
+      "protects": "The unfinished-todo continuation never overrides a model that decided to stop: nudged once, a model that stops again with no tool call and no todo change (typically waiting on the user) is left alone; the prompt tells it to ask instead of guessing. The answer given before the continuation survives it, whichever way the turn settles.",
+      "baseline": "2026-09-28 audit: a model that asked the user '用哪个模板？' was pushed back up to twice more, guessing on the user's behalf; the continuation reply ('已全部标记完成') could replace the real answer given before it.",
+      "failureFallback": "A model making progress still earns nudges; the shared continuation budget and LILY_DISABLE_TODO_COMPLETION_GATE=1 are unchanged. Mutation-verified: no pre-gate capture and a second push each fail by name.",
+      "tests": [
+        "scripts/test-opencode-agent-session.mjs",
+        "scripts/test-opencode-session-policies.mjs"
+      ]
+    },
+    {
+      "id": "external-fact-false-positives",
+      "protects": "The external-fact gate does not fail correct answers on form: a time word alone does not make a question about the user's attached source an external fact; a number one arithmetic step from grounded numbers (difference, sum, product, ratio, percentage) is grounded; a ranked list is checked against the whole evidence, and an abbreviation of a name the evidence spells out goes to the semantic judge instead of being called fabricated.",
+      "baseline": "2026-09-28 audit: '目前这个合同里违约金是多少？' with the contract attached was replayed for missing web links; '¥2,000 / 33.3%' computed from two fetched prices was flagged invented; '上海交大' against '上海交通大学' failed the ranking and never reached the judge; rankings were matched against the first 500 chars of evidence only.",
+      "failureFallback": "A number no arithmetic on the evidence yields and an entry the evidence never names are still flagged; the same time word about the world still activates the gate; abbreviation windows only feed the judge (no judge = the previous fail-open delivery). Deferred, not changed: proactive research on a general question still requires a link before a first-pass repair, because repairing first would attach sources to a wrong answer. Mutation-verified: removing the attachment exemption, the derivation, the whole-evidence corpus and the abbreviation windows each fail by name.",
+      "tests": [
+        "scripts/test-external-fact-grounding.mjs",
+        "scripts/test-evidence-entailment-judge.mjs"
       ]
     },
     {

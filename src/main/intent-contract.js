@@ -12,8 +12,16 @@ const MAX_ITEM_CHARS = 500;
 // recognise, e.g. "用 Python 实现第二个方案".
 const RELATIONS = new Set(["new", "unspecified", "continue", "refine", "correct", "cancel"]);
 const CONTINUATION_RE = /^(?:继续(?:$|[，,。.!！?？\s]|刚才|之前|上面|按|把|做|完成|推进|优化|实现|修复)|接着(?:$|[，,。.!！?？\s]|做|刚才)|往下(?:$|[，,。.!！?？\s]|做)|按刚才|按照刚才|基于刚才|沿着刚才|continue(?:\s|$)|go on(?:\s|$)|keep going(?:\s|$)|proceed(?:\s|$))/i;
-const CORRECTION_RE = /(?:不是这个意思|理解错了|搞错了|答错了|方向错了|纠正一下|我的意思是|不是.+而是|not what i mean|you misunderstood|correction\s*:)/i;
-const REFINEMENT_RE = /^(?:改成|换成|调整为|调整成|再加|再详细|更详细|详细一点|再具体|具体一点|深入一点|加上|补上|补充|去掉|删掉|不要|必须|重点|只要|只算|改为|按(?:照)?|现在(?:可以|允许)|make it|change it|also add|remove|instead)/i;
+// Verbs that act ON the previous result ("改成中文", "also add a regression
+// test"), and lifting a constraint the previous request set ("现在可以联网搜索")
+// — relations the user states, like 继续. Modality and generic words
+// (不要/必须/只要/重点/只算/按/按照/补充, a bare 现在可以) are NOT here: they open
+// new requests as often as refinements, and "必须今天交的周报帮我写一下"
+// inherited a code task's 8K checklist from them (2026-09-28 audit).
+const REFINEMENT_RE = /^(?:改成|换成|调整为|调整成|改为|再加|加上|补上|去掉|删掉|再详细|更详细|详细一点|再具体|具体一点|深入一点|现在(?:可以|允许)(?:联网|上网|搜索|检索|查)|make it|change it|also add|remove|instead)/i;
+// Only phrases a user says TO correct the previous answer. "不是…而是" was here
+// and matched ordinary statements ("这不是 bug 而是需求").
+const CORRECTION_RE = /(?:不是这个意思|理解错了|搞错了|答错了|方向错了|纠正一下|我的意思是|not what i mean|you misunderstood|correction\s*:)/i;
 const CANCELLATION_RE = /^(?:算了|不用了|先停|停止|取消|别做了|不要继续|cancel|stop|never mind)(?:\s|$|[，,。.!！?？])/i;
 const NEW_TASK_RE = /^(?:(?:新任务|另一个任务|另外一个任务|换个任务|接下来新做)(?:\s|$|[:：,，。.!！?？])|(?:new task|another task)\b)/i;
 
@@ -231,9 +239,10 @@ function buildIntentContract({
   verificationStrategy = [],
   negativeConstraints = [],
   previousSnapshot = null,
+  hasEarlierWork = false,
 } = {}) {
   const previous = normalizeIntentContract(previousSnapshot?.intentContract);
-  const relation = relationForText(text, Boolean(previous));
+  const relation = relationForText(text, Boolean(previous) || hasEarlierWork);
   const inherited = Boolean(previous && isInheritedRelation(relation));
   const currentInstruction = safeText(text, 1_000);
   const resolvedTaskType = safeText(taskType, 80) || (inherited ? previous.taskType : "general");

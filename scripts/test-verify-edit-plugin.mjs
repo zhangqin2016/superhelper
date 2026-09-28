@@ -69,6 +69,17 @@ try {
   const plainJs = write("plain.js", "const z = 2;\n");
   assert.equal((await verify(plainJs)).trim(), "", "valid JS with no project linter is not flagged");
 
+  // 2026-09-28 audit: node --check parses plain JavaScript only; valid
+  // TypeScript and JSX were reported as syntax errors after every edit.
+  for (const [name, body] of [
+    ["types.ts", "const x: number = 1;\nexport default x;\n"],
+    ["view.tsx", "export const V = (): JSX.Element => <div>hi</div>;\n"],
+    ["view.jsx", "export const A = () => <div>hi</div>;\n"],
+  ]) {
+    assert.doesNotMatch(await verify(write(name, body)), /Syntax error/, `valid ${name} is not reported as a syntax error`);
+  }
+  assert.match(await verify(write("broken.js", "const = ;\n")), /Syntax error/, "a real JS syntax error is still caught");
+
   console.log("verify-edit-plugin: ok");
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

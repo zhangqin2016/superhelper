@@ -10,13 +10,23 @@ const LIBRARY_KINDS = ["character", "persona", "worldBook", "agent"];
 
 function resolveEngineRouting(text, files, explicitKind, adjustment = null) {
   const allowedKind = LIBRARY_KINDS.includes(explicitKind) ? explicitKind : null;
-  const characterAuthoring = adjustment?.active
-    ? adjustment
-    : allowedKind ? { active: true, kind: allowedKind } : inferCharacterAuthoringIntent(text);
-  if (characterAuthoring.active) {
+  const chosen = adjustment?.active ? adjustment : allowedKind ? { active: true, kind: allowedKind } : null;
+  if (chosen) {
     return {
-      engineText: buildCharacterAuthoringEngineText(text, characterAuthoring),
-      requiredSuccessfulTools: [characterAuthoring.kind === "agent" ? "lily_agent_draft" : "lily_character_draft"],
+      engineText: buildCharacterAuthoringEngineText(text, chosen),
+      requiredSuccessfulTools: [chosen.kind === "agent" ? "lily_agent_draft" : "lily_character_draft"],
+      webLearningIntent: false,
+    };
+  }
+  // Wording alone cannot tell "save a role to my library" from "write me a
+  // role's backstory" or "an agent script": the guess is offered to the model
+  // as a possibility, and binds only if the model starts the draft itself.
+  const guessed = inferCharacterAuthoringIntent(text);
+  if (guessed.active) {
+    const tool = guessed.kind === "agent" ? "lily_agent_draft" : "lily_character_draft";
+    return {
+      engineText: buildCharacterAuthoringEngineText(text, guessed, { conditional: true }),
+      requiredSuccessfulTools: [{ name: tool, when: "attempted" }],
       webLearningIntent: false,
     };
   }

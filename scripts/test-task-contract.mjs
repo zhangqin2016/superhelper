@@ -330,18 +330,26 @@ const isolatedNewTask = buildTaskContract({
     { role: "assistant", text: "已在 output/ev-charging-test 生成数据与仪表盘。" },
   ],
 });
-assert.equal(isolatedNewTask.intentContract.relation, "new");
+// History without a stored contract snapshot is still earlier work: the
+// relation is the model's call, and the 2026-08-13 protection (never repurpose
+// the earlier task's output directory) rides the prompt.
+assert.equal(isolatedNewTask.intentContract.relation, "unspecified");
 const isolatedNewTaskPrompt = withTaskContractPrefix("做个复杂的前端展示系统", isolatedNewTask);
+assert.doesNotMatch(isolatedNewTaskPrompt, /Prior conversation is background only/, "the conversation is not declared background");
 assert.match(
   isolatedNewTaskPrompt,
-  /New-task isolation boundary:/,
-  "a new task must be explicitly isolated from completed work in the engine prompt",
+  /do not overwrite or repurpose an earlier task's deliverables or output directory/,
+  "separate work must not silently repurpose an earlier task's files or output directory",
 );
-assert.match(
-  isolatedNewTaskPrompt,
-  /Do not reuse or modify prior task-specific artifacts/,
-  "a new task must not silently repurpose an earlier task's files or output directory",
-);
+{
+  const explicit = buildTaskContract({ text: "新任务：做个复杂的前端展示系统", messages: [
+    { role: "user", text: "设计一个充电桩运营能力测试任务" },
+    { role: "assistant", text: "已在 output/ev-charging-test 生成数据与仪表盘。" },
+  ] });
+  assert.equal(explicit.intentContract.relation, "new");
+  assert.match(withTaskContractPrefix("新任务：做个复杂的前端展示系统", explicit), /Do not reuse or modify prior task-specific artifacts/,
+    "an explicit new task is still isolated from completed work");
+}
 
 // With earlier work in the conversation, wording the host does not recognise is
 // NOT asserted to be a new task: "用 Python 实现第二个方案" was told "prior

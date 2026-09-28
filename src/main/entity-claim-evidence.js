@@ -115,6 +115,36 @@ function evidenceWindows(evidenceText, label, radius = 240) {
     windows.push(source.slice(Math.max(0, index - radius), index + label.length + radius));
     offset = index + label.length;
   }
+  return windows.length ? windows : abbreviationWindows(source, label, radius);
+}
+
+/**
+ * Where the evidence may name the same entity in FULL: an abbreviation keeps
+ * its full name's characters in order ("上海交大" ← "上海交通大学", "中科大" ←
+ * "中国科学技术大学"). These windows only put evidence in front of the semantic
+ * judge, which decides; they never mark a claim supported by themselves. A
+ * label with no literal and no such window stays unsupported — the
+ * fabrication floor is unchanged (2026-09-28 audit).
+ */
+function abbreviationWindows(source, label, radius = 240) {
+  const chars = [...String(label || "").replace(/\s+/g, "")];
+  if (chars.length < 2 || chars.length > 24) return [];
+  const maxSpan = chars.length * 4 + 8;
+  const windows = [];
+  let from = 0;
+  while (windows.length < 4) {
+    const start = source.indexOf(chars[0], from);
+    if (start < 0) break;
+    let at = start + chars[0].length;
+    let matched = 1;
+    for (; matched < chars.length && at - start <= maxSpan; matched += 1) {
+      const next = source.indexOf(chars[matched], at);
+      if (next < 0 || next - start > maxSpan) break;
+      at = next + chars[matched].length;
+    }
+    if (matched === chars.length) windows.push(source.slice(Math.max(0, start - radius), at + radius));
+    from = start + chars[0].length;
+  }
   return windows;
 }
 

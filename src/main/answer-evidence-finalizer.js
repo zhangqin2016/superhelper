@@ -1,5 +1,6 @@
 "use strict";
 
+const { toolEvidenceText, toolTouchedInputFile } = require("./turn-evidence-scope");
 const { assessFinalAnswerEvidence } = require("./evidence-gate");
 const {
   answerLanguage,
@@ -77,23 +78,6 @@ function safeSourceContentFallback({ evidenceSummary = null, userText = "" } = {
     ar: "لم أتمكن بعد من قراءة المحتوى الفعلي للصورة أو المستند، لذلك لا أستطيع الإجابة بشكل موثوق عما يحتويه. لن أخمن من اسم الملف أو السياق، ويجب إعادة قراءة المرفق أولا.",
     en: "I could not read the actual image or document content, so I cannot reliably say what it contains. I will not guess from the filename or surrounding context; the attachment needs to be read again first.",
   }[language];
-}
-
-function toolEvidenceText(tools = []) {
-  const chunks = [];
-  for (const tool of tools) {
-    const result = tool?.result;
-    if (typeof result === "string") chunks.push(result);
-    else if (result && typeof result.output === "string") chunks.push(result.output);
-    else if (Array.isArray(result?.content)) {
-      chunks.push(result.content.map((item) => (item && typeof item.text === "string" ? item.text : "")).join(" "));
-    } else if (typeof tool?.content === "string") chunks.push(tool.content);
-    else if (typeof tool?.output === "string") chunks.push(tool.output);
-    else {
-      try { chunks.push(JSON.stringify(result ?? tool?.content ?? tool?.output ?? "")); } catch { /* ignore */ }
-    }
-  }
-  return chunks.filter(Boolean).join("\n").slice(0, 40_000);
 }
 
 function hasImageInput(files = []) {
@@ -178,13 +162,17 @@ function evaluateAnswerEvidence({
   judgedUnsupportedClaims = [],
   judgedConflictingClaims = [],
   semanticVerdict = null,
+  // What the model was SHOWN outside tools this turn (pre-extracted document
+  // text, image recognition). It is evidence exactly like a tool output: a
+  // fully read quote's "52,800 元" is grounded in it.
+  observedText = "",
 } = {}) {
   const original = String(assistant || "").trim();
   const externalFact = isExternalFactContract(taskContract);
   const sourceContent = isSourceContentContract(taskContract);
   const documentDeliveryRequired = requiresDocumentDelivery(taskContract, artifacts);
   try {
-    const evidenceText = toolEvidenceText(tools);
+    const evidenceText = [toolEvidenceText(tools), String(observedText || "")].filter(Boolean).join("\n");
     const documentDelivery = assessDocumentDelivery({
       taskContract,
       artifacts,
@@ -342,9 +330,21 @@ function evaluateAnswerEvidence({
       sourceCoverageRetry = require("./source-coverage-recovery").shouldReadRemainingSources({
         taskContract, evidenceSummary, assistant: original, recoveryAttempt,
       });
-      finalAssistant = partial && original
-        ? `${original}${partialSourceScopeNote(evidenceSummary, userText)}`
-        : safeSourceContentFallback({ evidenceSummary, userText });
+      // Replacement needs PROOF that nothing was read: no source-content
+      // observation and no tool call that touched the attachment (its path or
+      // file name in the call's input), so any content claim is fabricated
+      // by construction. Anything else read something — pre-extraction, or the
+      // model's own read/extract calls after it failed — and a gate that fails
+      // on it (an ungrounded number, a missing disclosure) is judging text, so
+      // the answer stands with a note (2026-09-28 audit: a fully read quote was
+      // replaced over "52,800 元"; a script-extracted answer was replaced as
+      // "not read").
+      const nothingRead = !evidenceSummary?.hasSourceContentEvidence && !toolTouchedInputFile(tools, inputFiles);
+      finalAssistant = !original || nothingRead
+        ? safeSourceContentFallback({ evidenceSummary, userText })
+        : partial
+          ? `${original}${partialSourceScopeNote(evidenceSummary, userText)}`
+          : `${original}${unverifiedHonestyNote(userText)}`;
     } else if (externalFact && riskTier !== "advisory" && !(externalFactRetry && !recoveryAttempt)) {
       finalAssistant = `${original}${unverifiedHonestyNote(userText)}`;
       finalAssessment = { ...assessment, deliveredUnverifiedWithNote: true };
@@ -433,7 +433,10 @@ async function evaluateAnswerEvidenceWithJudge(params = {}, { judge, pendingDocu
     let citationRepairMeta = null;
     // Round 1: citation repair (deterministic) — a citation-DISCIPLINE failure
     // must not destroy real research. Final-state only: while an auto-verify
-    // retry is available it runs first.
+    // retry is available it runs first. Repairing first would attach the
+    // ledger's links to a WRONG answer ("现任 CEO 是某某" beside a source naming
+    // someone else) and make it look sourced; the retry lets the model answer
+    // again from the evidence (kept deliberately, 2026-09-28 audit review).
     if (
       assessment && assessment.ok === false &&
       ["external_fact_without_source_link", "source_link_not_in_evidence"].includes(String(assessment.reason || "")) &&

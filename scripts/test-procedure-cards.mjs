@@ -239,8 +239,12 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   const enginePayload = JSON.stringify(runner.sentPayloads.at(-1));
   assert.doesNotMatch(enginePayload, /previously successful procedure/,
     "a new task must not receive an old task's procedure card");
-  assert.doesNotMatch(enginePayload, /Last user intent: 把用户反馈日志汇总成一份周报文档/,
-    "a new task must not receive the previous task's session summary");
+  // 2026-09-28: with earlier work in the conversation the relation is the
+  // model's call (not a regex default of "new"), so the conversation's context
+  // stays; what the 2026-08-13 case needed — never repurposing the previous
+  // task's output — rides the prompt instead.
+  assert.match(enginePayload, /do not overwrite or repurpose an earlier task's deliverables or output directory/,
+    "separate work may not repurpose the previous task's output");
   runner.busy = false;
   runner.emit("done", { code: 0, output: "前端展示系统已完成。" });
   await settle();

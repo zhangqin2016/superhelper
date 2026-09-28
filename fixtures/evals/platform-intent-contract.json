@@ -106,7 +106,7 @@
           }
         },
         {
-          "user": "按综合体验排",
+          "user": "改成按综合体验排",
           "expect": {
             "active": true,
             "taskType": "external_fact",

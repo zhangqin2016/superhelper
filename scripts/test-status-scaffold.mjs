@@ -260,4 +260,27 @@ const FIELD_SCAFFOLD = [
   assert.equal(stripStatusScaffoldPrefix(scaffold).pure, true, "a pure quoted file list is still scaffold");
 }
 
+// 2026-09-28 audit: a reply can only ECHO a handoff that was in its context.
+// Without one, the handoff template is content the user asked for.
+{
+  const { handoffInContext } = require("../src/main/status-scaffold.js");
+  assert.equal(handoffInContext({}), false, "a fresh session with no compaction or rebuild carries no handoff");
+  assert.equal(handoffInContext({ summary: { compactionCount: 0, contextEpoch: 0 } }), false);
+  for (const [label, input] of [
+    ["compacted", { summary: { compactionCount: 1 } }],
+    ["new context epoch", { summary: { contextEpoch: 2 } }],
+    ["rebuilt context", { rehydrated: true }],
+    ["short follow-up context", { shortFollowupContext: true }],
+    ["recovery turn", { recovery: { kind: "rescue" } }],
+    ["legacy hydration", { legacyContextHydrated: true }],
+  ]) {
+    assert.equal(handoffInContext(input), true, `${label} can carry a handoff to echo`);
+  }
+  const fs = require("node:fs");
+  const read = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8");
+  assert.match(read("../src/main/turn-runtime-event-router.js"), /state\.handoffInContext === false \? "open"/, "the stream is not held when no echo is possible");
+  assert.match(read("../src/main/turn-terminal-finalizer.js"), /state\.handoffInContext === false \? \{ stripped: false \}/, "the final reply is not stripped when no echo is possible");
+  assert.match(read("../src/main/opencode-conversation-source.js"), /record\?\.meta\?\.handoffInContext !== false/, "a rebuilt conversation keeps a handoff document the user asked for");
+}
+
 console.log("status-scaffold: ok");

@@ -39,9 +39,10 @@ function continueBeforeCompletion(session, payload) {
   // exhausting the correction attempts.
   if (state.attempts >= 2 || !claimContinuation(session._turnGates, "requiredTool")) {
     const message = "\n\n角色没有保存到角色库：持久化工具未成功执行，因此 Lily 没有把 Markdown 或普通文件当作角色。请重试创建；若问题持续，请检查 Character Worlds 与工具服务。";
-    // Replace unverified assistant prose instead of appending a contradictory
-    // failure notice after a claim that the entity was already saved.
-    session.collectedOutput = message.trim();
+    // The failure leads, so a "saved" claim below it cannot be read as the
+    // outcome; the content the user asked for is kept, never erased.
+    const delivered = String(session.collectedOutput || "").trim();
+    session.collectedOutput = delivered ? `${message.trim()}\n\n${delivered}` : message.trim();
     session._ingest([{ type: "assistant.delta", payload: { text: message } }]);
     session._settleTurn({
       ...payload,

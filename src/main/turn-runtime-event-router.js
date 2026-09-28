@@ -106,7 +106,7 @@ function createTurnRuntimeEventRouter(options = {}) {
           // echoed compaction/handoff summary; a proven scaffold prefix is
           // stripped so the user only ever sees the real reply (fail-open past
           // the hold limit). Once open, the gate stays open for the turn.
-          if (state.scaffoldStreamGate == null) state.scaffoldStreamGate = "pending";
+          if (state.scaffoldStreamGate == null) state.scaffoldStreamGate = state.handoffInContext === false ? "open" : "pending";
           if (state.scaffoldStreamGate === "pending") {
             const gate = scaffoldStreamGate(state.assistantText);
             out = gate.action === "flush" ? gate.text : "";
