@@ -20,7 +20,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { OpencodeServerManager } = require("./runtime/opencode-server-manager");
 const {
-  createOpencodeRuntimeState, hasActiveCompaction,
+  createOpencodeRuntimeState, hasActiveCompaction, engineRetryNextAt,
   reduceOpencodeRuntimeEvent,
   resetOpencodeRuntimeState,
 } = require("./runtime/opencode-runtime-reducer");
@@ -188,7 +188,7 @@ class OpencodeAgentSession extends EventEmitter {
         healthMaxFails: OpencodeAgentSession.HEALTH_MAX_FAILS,
       }),
       getServer: () => this._server,
-      hasKnownSubagents: () => this._subagentRuntime.hasKnownSubagents(), hasActiveCompaction: () => hasActiveCompaction(this._eventState),
+      hasKnownSubagents: () => this._subagentRuntime.hasKnownSubagents(), hasActiveCompaction: () => hasActiveCompaction(this._eventState), engineRetryNextAt: () => engineRetryNextAt(this._eventState),
       ingest: (drafts) => this._ingest(drafts),
       recoverStalledFinal: () => this._recoverStalledFinalFromOfficialState(),
       completeTurn: (payload) => this._completeTurn(payload), onNoFirstResponse: (info) => require("./opencode-first-response").handleNoFirstResponse(this, info),

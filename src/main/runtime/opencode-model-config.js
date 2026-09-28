@@ -239,8 +239,12 @@ function resolveOpencodeModelConfig(lilyEnv = {}, runtimeOptions = {}) {
   // a stream usage-only chunk without `choices`. OpenCode defaults
   // includeUsage=true for @ai-sdk/openai-compatible, and the AI SDK rejects that
   // non-standard chunk before the completed assistant text can settle. Disabling
-  // streaming usage keeps the model URL/body otherwise unchanged.
-  if (protocol === "openai" && !useResponses) options.includeUsage = false;
+  // streaming usage keeps the model URL/body otherwise unchanged — but it also
+  // blinds the engine's overflow check and Lily's pressure measurements, so it
+  // is kept only where it has not been VERIFIED safe: the compatibility probe
+  // records `streamUsage: "include"` for an endpoint that accepted the option
+  // and kept every chunk well-formed.
+  if (protocol === "openai" && !useResponses && learnedShape.streamUsage !== "include") options.includeUsage = false;
   if (token) {
     options.apiKey = token;
     options.headers = { Authorization: `Bearer ${token}` };

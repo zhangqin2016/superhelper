@@ -21,6 +21,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { PROJECT_ROOT } = require("../config");
 
+const { COMPACTION_WINDOW_MAX_MS, hasActiveCompaction, engineRetryNextAt, noteSessionStatus } = require("./opencode-engine-busy");
+
 const SILENT_EVENTS = new Set([
   "server.connected",
   "server.heartbeat",
@@ -55,6 +57,7 @@ function createOpencodeRuntimeState() {
     pendingTextSnapshots: new Map(),
     toolOutputs: new Map(),
     toolProgressNotices: new Map(),
+    engineRetryNextAt: 0, // see opencode-engine-busy.js
   };
 }
 
@@ -66,18 +69,7 @@ function sessionScopedId(prefix, payload = {}) {
   return `${prefix}_${payload.sessionID || payload.sessionId || "current"}`;
 }
 
-// A compaction that never reported completion must not disable the watchdog
-// forever; past this it is treated as gone (the no-progress and turn watchdogs
-// remain the backstop either way).
-const COMPACTION_WINDOW_MAX_MS = 5 * 60_000;
-
 /** True while this session is generating a compaction summary. */
-function hasActiveCompaction(state, now = Date.now()) {
-  const started = state?.activeCompactions;
-  if (!started?.size) return false;
-  for (const at of started.values()) if (now - at < COMPACTION_WINDOW_MAX_MS) return true;
-  return false;
-}
 
 function resetOpencodeRuntimeState(state) {
   state?.tools?.clear?.();
@@ -94,6 +86,7 @@ function resetOpencodeRuntimeState(state) {
   state?.pendingTextSnapshots?.clear?.();
   state?.toolOutputs?.clear?.();
   state?.toolProgressNotices?.clear?.();
+  if (state) state.engineRetryNextAt = 0;
 }
 
 function runtimeDraft(type, payload = {}) {
@@ -702,6 +695,7 @@ function reduceOpencodeRuntimeEvent(ev, state = createOpencodeRuntimeState()) {
       });
 
     case "session.status":
+      noteSessionStatus(state, p);
       // Status is a snapshot, not a turn boundary. On the shared async server it
       // can arrive before the final message deltas have drained; only the real
       // session.idle event is allowed to close the turn.
@@ -829,6 +823,7 @@ module.exports = {
   createOpencodeRuntimeState,
   resetOpencodeRuntimeState,
   hasActiveCompaction,
+  engineRetryNextAt,
   COMPACTION_WINDOW_MAX_MS,
   reduceOpencodeRuntimeEvent,
   stringifyToolOutput,

@@ -37,7 +37,7 @@ function fakeTimers() {
   };
 }
 
-function makeLiveness({ firstResponseTimeoutMs = 90_000, state = {}, activeTools = new Map(), compaction = { active: false } } = {}) {
+function makeLiveness({ firstResponseTimeoutMs = 90_000, state = {}, activeTools = new Map(), compaction = { active: false }, retry = { nextAt: 0 } } = {}) {
   const timers = fakeTimers();
   const events = { noFirstResponse: [], completed: [], notices: [] };
   const shared = { busy: true, turnSettled: false, sawActivity: false, collectedOutput: "", pendingUserInput: false, ...state };
@@ -47,6 +47,7 @@ function makeLiveness({ firstResponseTimeoutMs = 90_000, state = {}, activeTools
     getState: () => shared,
     getConfig: () => ({ responseTimeoutMs: 600_000, firstResponseTimeoutMs, progressNoticeMs: 45_000, activeToolLeaseMs: 1_200_000 }),
     hasActiveCompaction: () => compaction.active === true,
+    engineRetryNextAt: () => retry.nextAt,
     ingest: (drafts) => events.notices.push(...drafts),
     completeTurn: (payload) => events.completed.push(payload),
     onNoFirstResponse: (info) => events.noFirstResponse.push(info),
@@ -54,7 +55,7 @@ function makeLiveness({ firstResponseTimeoutMs = 90_000, state = {}, activeTools
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
   });
-  return { liveness, timers, events, shared, compaction };
+  return { liveness, timers, events, shared, compaction, retry };
 }
 
 check("zero activity for the whole window fires onNoFirstResponse once, long before the 10-minute stall", () => {
@@ -90,6 +91,34 @@ check("a compaction in flight extends the fuse instead of killing the turn", () 
   assert.equal(events.noFirstResponse.length, 0, "a fresh full window after compaction");
   timers.advance(1_000);
   assert.equal(events.noFirstResponse.length, 1, "a genuinely silent model still ends the turn");
+});
+
+// 2026-09-28 integration audit: a provider that answers 429/5xx is not silent —
+// the engine retries with backoff (or the provider's retry-after) and says when.
+// The fuse used to read those minutes as a dead model, end the turn as
+// MODEL_NO_RESPONSE and mark the model silent, steering auto mode away from it.
+check("an engine retry moves the fuse to after the scheduled attempt; silence after it still ends the turn", () => {
+  const { liveness, timers, events, retry } = makeLiveness();
+  liveness.armResponseTimer();
+  timers.advance(10_000);
+  retry.nextAt = timers.now() + 180_000; // provider said retry-after: 180s
+  timers.advance(80_000); // the ordinary 90s window is over
+  assert.equal(events.noFirstResponse.length, 0, "a scheduled retry is not a silent model");
+  timers.advance(189_000); // t=279s: the retry went out at t=190s, 89s of silence since
+  assert.equal(events.noFirstResponse.length, 0, "the window is measured from the retry itself");
+  timers.advance(1_000); // t=280s: a full window of silence after the retry
+  assert.equal(events.noFirstResponse.length, 1, "silence for a full window AFTER the retry ends the turn");
+});
+
+check("the reducer records the engine's scheduled retry and clears it on any other status", () => {
+  const { createOpencodeRuntimeState, reduceOpencodeRuntimeEvent, engineRetryNextAt } = require("../src/main/runtime/opencode-runtime-reducer.js");
+  const state = createOpencodeRuntimeState();
+  reduceOpencodeRuntimeEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "retry", attempt: 2, message: "rate limited", next: 1_700_000_000_000 } } }, state);
+  assert.equal(engineRetryNextAt(state), 1_700_000_000_000, "retry.next is kept");
+  reduceOpencodeRuntimeEvent({ type: "session.status", properties: { sessionID: "s", status: { type: "busy" } } }, state);
+  assert.equal(engineRetryNextAt(state), 0, "a busy status clears it");
+  const src = require("node:fs").readFileSync(new URL("../src/main/opencode-agent-session.js", import.meta.url), "utf8");
+  assert.match(src, /engineRetryNextAt: \(\) => engineRetryNextAt\(this\._eventState\)/, "the session hands the retry schedule to the fuse");
 });
 
 check("the first progress action clears the fuse; later silence is the ordinary no-progress window's job", () => {

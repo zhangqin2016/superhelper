@@ -84,6 +84,14 @@ function finishReason(json) {
   return typeof reason === "string" ? reason : "";
 }
 
+/**
+ * A streamed chunk with no `choices` array (and no error): the usage-only
+ * chunk some vLLM deployments send, which the engine's AI SDK rejects mid-turn.
+ */
+function isChoicelessChunk(chunk) {
+  return Boolean(chunk && typeof chunk === "object" && !chunk.error && !Array.isArray(chunk.choices));
+}
+
 /** One SSE chunk of a streamed completion, read the same way. */
 function streamDelta(chunk) {
   const choice = firstChoice(chunk);
@@ -100,6 +108,7 @@ function streamDelta(chunk) {
 module.exports = {
   finishReason,
   isChatCompletion,
+  isChoicelessChunk,
   normalizeContent,
   replyReasoning,
   replyText,

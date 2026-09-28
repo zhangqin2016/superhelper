@@ -19,35 +19,6 @@ function messageShape(json) {
   };
 }
 
-function streamShape(text) {
-  let hasContent = false;
-  let hasReasoning = false;
-  let hasToolCalls = false;
-  let finishReason = "";
-  for (const line of String(text || "").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("data:")) continue;
-    const data = trimmed.slice(5).trim();
-    if (!data || data === "[DONE]") continue;
-    try {
-      const json = JSON.parse(data);
-      if (typeof json?.type === "string" && json.type.startsWith("response.")) { // Responses-surface event
-        const evt = require("./model-probe-responses").streamEventSignals(json);
-        hasContent ||= evt.hasContent; hasToolCalls ||= evt.hasToolCalls; hasReasoning ||= evt.hasReasoning; if (evt.finishReason) finishReason = evt.finishReason;
-        continue;
-      }
-      const delta = require("./chat-completion-reply").streamDelta(json);
-      if (delta.content.trim()) hasContent = true;
-      if (delta.reasoning.trim()) hasReasoning = true;
-      if (delta.toolCalls.length) hasToolCalls = true;
-      if (delta.finishReason) finishReason = delta.finishReason;
-    } catch {
-      // Ignore malformed chunks; the caller handles no-content as failure.
-    }
-  }
-  return { hasContent, hasReasoning, hasToolCalls, finishReason };
-}
-
 // Decoys mirroring Lily's real agent toolset: MCP tool names run long
 // (lily_file_intelligence_extract_file_range = 41 chars) and several schemas
 // nest an object property. Some gateways (e.g. OICM+) accept one short flat
@@ -62,7 +33,7 @@ function streamShape(text) {
 // tool_call across the non-stream + stream + decoy passes (confirmed:
 // deepseek-v4-pro uses ~20-50 reasoning tokens then answers/tool-calls). Real
 // turns pass explicit larger budgets; the max_tokens ceiling walk sets its own.
-async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, tools = false, extraTools = [], toolChoice = null, systemText = "", userText = "", maxTokens = 512, timeoutMs = 10_000 }) {
+async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = false, includeUsage = false, tools = false, extraTools = [], toolChoice = null, systemText = "", userText = "", maxTokens = 512, timeoutMs = 10_000 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("MODEL_PROBE_TIMEOUT")), Math.max(500, timeoutMs));
   const messages = [];
@@ -77,6 +48,7 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
     model,
     messages,
     ...(tools ? toolProbeFields(extraTools, toolChoice) : {}),
+    ...(stream && includeUsage ? { stream_options: { include_usage: true } } : {}),
   }, overlay);
   const overlayLimit = overlay ? requestShape.OUTPUT_LIMIT_FIELDS.find((field) => Object.prototype.hasOwnProperty.call(overlay, field)) : null;
   try {
@@ -98,7 +70,7 @@ async function postChat({ baseUrl, apiKey, model, bodyOverlay = null, stream = f
     }
     if (stream) {
       const text = await sent.response.text();
-      return { ok: true, status: sent.response.status, shape: streamShape(text) };
+      return { ok: true, status: sent.response.status, shape: require("./model-probe-stream-shape").streamShape(text) };
     }
     return { ok: true, status: sent.response.status, json: sent.json, shape: messageShape(sent.json) };
   } catch (err) {
@@ -175,7 +147,7 @@ async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, time
     if (small.ok) { nonStream = small; maxTokens = 16; }
     else return { ok: false, error: nonStream.error || `HTTP_${nonStream.status || 0}`, detail: nonStream.detail || null };
   }
-  const stream = await postChat({ baseUrl, apiKey, model, bodyOverlay, maxTokens, stream: true, timeoutMs });
+  const stream = await probeStreamWithUsage({ baseUrl, apiKey, model, bodyOverlay, maxTokens, timeoutMs });
   if (!stream.ok) return { ok: false, error: stream.error || `HTTP_${stream.status || 0}`, detail: stream.detail || null, nonStreamShape: nonStream.shape };
   return {
     ok: true,
@@ -183,6 +155,28 @@ async function probeCandidate({ baseUrl, apiKey, model, bodyOverlay = null, time
     streamShape: stream.shape,
     hasContent: Boolean(nonStream.shape?.hasContent && stream.shape?.hasContent),
   };
+}
+
+/**
+ * The content stream, asked for streaming usage too. Usage is what the engine
+ * measures overflow and compaction pressure with, but it was switched off for
+ * every OpenAI-compatible endpoint because some vLLM deployments send a usage
+ * chunk without `choices`, which the engine's AI SDK rejects mid-turn. Whether
+ * an endpoint can carry it is a fact about that endpoint, so it is verified here
+ * and remembered in the request shape: "include" only when the option was
+ * accepted, usage came back and every chunk kept `choices`; otherwise the
+ * stream is re-sent exactly as before and nothing is remembered. This step can
+ * never fail a model the plain stream would pass. LILY_PROBE_STREAM_USAGE=0 skips it.
+ */
+async function probeStreamWithUsage(args) {
+  const onChat = requestShape.recallShape(args.baseUrl, args.model).api !== "responses";
+  if (!onChat || process.env.LILY_PROBE_STREAM_USAGE === "0") return postChat({ ...args, stream: true });
+  const withUsage = await postChat({ ...args, stream: true, includeUsage: true });
+  if (withUsage.ok && withUsage.shape?.hasContent && withUsage.shape.hasUsage && !withUsage.shape.choiceless) {
+    requestShape.rememberShape(args.baseUrl, args.model, { ...requestShape.recallShape(args.baseUrl, args.model), streamUsage: "include" });
+    return withUsage;
+  }
+  return postChat({ ...args, stream: true });
 }
 
 async function validateAgentConformance({ baseUrl, apiKey, model, bodyOverlay = null, timeoutMs }) {

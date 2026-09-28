@@ -47,13 +47,18 @@ function normalizeRequestShape(value) {
     rename: mapOf(source.rename),
     stripSchemaKeywords: listOf(source.stripSchemaKeywords),
     toolChoice: source.toolChoice === "auto" ? "auto" : null,
+    // Streaming usage (`stream_options.include_usage`), VERIFIED per endpoint by
+    // the probe: "include" = it accepted the option, returned usage and every
+    // chunk kept `choices`. Anything else (refused, a usage chunk without
+    // `choices` that the AI SDK rejects mid-turn, never checked) is null: off.
+    streamUsage: source.streamUsage === "include" ? "include" : null,
   };
 }
 
 function isDefaultShape(shape) {
   const s = normalizeRequestShape(shape);
   return s.outputLimitField === DEFAULT_SHAPE.outputLimitField && s.temperature === DEFAULT_SHAPE.temperature && s.api === DEFAULT_SHAPE.api
-    && !s.omit.length && !Object.keys(s.rename).length && !s.stripSchemaKeywords.length && !s.toolChoice;
+    && !s.omit.length && !Object.keys(s.rename).length && !s.stripSchemaKeywords.length && !s.toolChoice && !s.streamUsage;
 }
 
 /** Only a non-default shape is worth persisting or sending to the runtime. */
@@ -65,6 +70,7 @@ function compactRequestShape(shape) {
   if (Object.keys(s.rename).length) out.rename = s.rename;
   if (s.stripSchemaKeywords.length) out.stripSchemaKeywords = s.stripSchemaKeywords;
   if (s.toolChoice) out.toolChoice = s.toolChoice;
+  if (s.streamUsage) out.streamUsage = s.streamUsage;
   return out;
 }
 

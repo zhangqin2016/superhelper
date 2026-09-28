@@ -225,7 +225,14 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.agent.build.prompt === persona, "basePrompt -> build agent prompt set (default.txt suppressed)");
   assert(cfg.agent.plan.prompt === persona, "basePrompt -> plan agent prompt set (default.txt suppressed)");
   assert(cfg.agent.general.prompt === subagentPersona, "subagent general uses Lily subtask prompt");
-  assert(cfg.agent.explore.prompt === subagentPersona, "subagent explore uses Lily subtask prompt");
+  // explore keeps the engine's specialist prompt (search routing, thoroughness,
+  // "never modify the user's system"); Lily's subtask rules and lily_* hints do
+  // not apply to a read-only searcher whose "*": deny excludes those tools.
+  assert(cfg.agent.explore.prompt === undefined, "explore keeps the engine's own specialist prompt");
+  // And stays read-only: the shared edit/write "ask" merges after the engine's
+  // explore rules and overrode their deny; agent-level permission merges last.
+  assert(cfg.agent.explore.permission?.edit === "deny", "explore edits are denied in every mode");
+  assert(cfg.agent.explore.model === "lily/deepseek-chat" && cfg.agent.explore.steps > 0, "explore keeps its model pin and step budget");
 }
 
 // --- agentPrompt makes Lily's guide the AUTHORITATIVE agent prompt -----------
@@ -239,7 +246,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   const cfg = JSON.parse(r.configContent);
   assert(cfg.agent.build.prompt.includes("莉莉") && cfg.agent.plan.prompt.includes("莉莉"), "agentPrompt -> build + plan agent prompts (prepended, authoritative)");
   assert(cfg.agent.general.prompt.includes("subtask agent"), "subagentPrompt -> general subagent prompt");
-  assert(cfg.agent.explore.prompt.includes("subtask agent"), "subagentPrompt -> explore subagent prompt");
+  assert(cfg.agent.explore.prompt === undefined && cfg.agent.explore.permission?.edit === "deny", "explore: engine prompt, read-only");
   assert(!cfg.instructions, "instructions NOT also set when agentPrompt given (no dup of the 100KB guide)");
 }
 

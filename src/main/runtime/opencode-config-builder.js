@@ -81,6 +81,28 @@ const DEFAULT_COMPACTION = Object.freeze({
   tail_turns: 2,
 });
 
+/**
+ * Subagents. Only "general" carries Lily's subtask prompt: it has no prompt of
+ * its own, so what that replaces is OpenCode's coding-CLI identity. "explore"
+ * keeps the engine's specialist prompt (glob/grep/read routing, thoroughness
+ * levels, "never modify the user's system") — Lily's subtask rules and lily_*
+ * tool hints do not apply to it (its "*": deny excludes those tools and task).
+ * And its read-only permission is restored: the shared edit/write "ask" is
+ * merged after the engine's explore rules and overrode their deny, so the host
+ * could approve an explore subagent's edits. Agent-level permission merges
+ * last, so this deny holds in every mode.
+ */
+const PROMPTED_SUBAGENTS = ["general"];
+function applySubagentAgents(config, subagentPrompt) {
+  config.agent = config.agent || {};
+  const prompt = typeof subagentPrompt === "string" ? subagentPrompt.trim() : "";
+  if (prompt) {
+    for (const name of PROMPTED_SUBAGENTS) config.agent[name] = { ...(config.agent[name] || {}), prompt };
+  }
+  const explore = config.agent.explore || {};
+  config.agent.explore = { ...explore, permission: { ...(explore.permission || {}), edit: "deny" } };
+}
+
 function applySkillPaths(config, skillPaths) {
   const paths = (skillPaths || []).filter(Boolean);
   if (!paths.length) return;
@@ -252,13 +274,7 @@ function buildOpencodeConfig(opts = {}) {
     const instructions = (opts.instructionsPaths || []).filter(Boolean);
     if (instructions.length) config.instructions = instructions;
   }
-  const subagentPrompt = typeof opts.subagentPrompt === "string" ? opts.subagentPrompt.trim() : "";
-  if (subagentPrompt) {
-    config.agent = config.agent || {};
-    for (const name of SUBAGENT_AGENTS) {
-      config.agent[name] = { ...(config.agent[name] || {}), prompt: subagentPrompt };
-    }
-  }
+  applySubagentAgents(config, opts.subagentPrompt);
 
   // Local plugin files (e.g. the post-edit verification hook). Absolute paths
   // are loaded as "file" plugins by OpenCode (no npm install).
@@ -343,13 +359,7 @@ function buildSharedBaseConfig(opts = {}) {
       config.agent[name] = { ...(config.agent[name] || {}), prompt: basePrompt };
     }
   }
-  const subagentPrompt = typeof opts.subagentPrompt === "string" ? opts.subagentPrompt.trim() : "";
-  if (subagentPrompt) {
-    config.agent = config.agent || {};
-    for (const name of SUBAGENT_AGENTS) {
-      config.agent[name] = { ...(config.agent[name] || {}), prompt: subagentPrompt };
-    }
-  }
+  applySubagentAgents(config, opts.subagentPrompt);
 
   config.compaction = { ...DEFAULT_COMPACTION, ...(config.compaction || {}) };
   applyStepBudget(config, opts.lilyEnv || {});

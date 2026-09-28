@@ -2570,6 +2570,36 @@
       ]
     },
     {
+      "id": "stream-usage-verified",
+      "protects": "Streaming usage — what the engine measures overflow and compaction pressure with — is on for every OpenAI-compatible endpoint the compatibility probe VERIFIED: it accepted stream_options.include_usage, returned usage and kept every chunk's choices. It is off only where that was not verified.",
+      "baseline": "2026-09-28 integration audit: includeUsage was false for every OpenAI-compatible endpoint because some vLLM deployments send a usage chunk without choices, which the engine's AI SDK (2.0.41 still requires choices) rejects mid-turn; that blinded overflow detection and every pressure measurement on every such model.",
+      "failureFallback": "The probe's usage step can never fail a model the plain stream passes: anything short of verification re-sends the stream exactly as before and records nothing. Unverified and pre-existing presets keep usage off (the previous behaviour); LILY_PROBE_STREAM_USAGE=0 skips the step. Mutation-verified: ignoring choiceless chunks, turning usage on unconditionally and keeping it off unconditionally each fail by name.",
+      "tests": [
+        "scripts/test-probe-stream-usage.mjs",
+        "scripts/test-opencode-model-config.mjs",
+        "scripts/test-model-probe-request-shape.mjs"
+      ]
+    },
+    {
+      "id": "engine-retry-not-silence",
+      "protects": "A provider that answers 429/5xx is not a silent model: while the engine has scheduled a retry, the first-response window is measured from that scheduled attempt, so only silence after it ends the turn as MODEL_NO_RESPONSE and marks the model silent.",
+      "baseline": "2026-09-28 integration audit: the engine's session.status retry (with the provider's retry-after or its own backoff) was reduced as no progress, so 90s into a rate-limited turn the fuse ended it as MODEL_NO_RESPONSE and marked the model silent, steering auto mode away from a model that was only rate-limited.",
+      "failureFallback": "Unchanged for a model that is genuinely silent (no retry scheduled), for compaction, pending cards and tool leases; a stale retry status cannot defer forever because the window runs from the scheduled attempt; an engine that gives up ends the turn itself with the provider's real error. LILY_OPENCODE_FIRST_RESPONSE_TIMEOUT_MS still tunes or disables the fuse. Mutation-verified: ignoring the retry fails by name.",
+      "tests": [
+        "scripts/test-first-response-watchdog.mjs",
+        "scripts/test-compaction-summary-not-answer.mjs"
+      ]
+    },
+    {
+      "id": "explore-subagent-native",
+      "protects": "The explore subagent keeps the engine's specialist prompt (glob/grep/read routing, thoroughness levels, never modify the user's system) and its read-only permission in every mode; only the general subagent carries Lily's subtask prompt, replacing OpenCode's coding-CLI identity.",
+      "baseline": "2026-09-28 integration audit: Lily's subtask prompt replaced explore's specialist prompt (whose lily_* tool hints do not even apply to it), and the shared edit/write ask — merged after the engine's explore rules — overrode their deny, so the host could approve an explore subagent's edits with nothing but a prompt line left to stop it, and that line had been replaced.",
+      "failureFallback": "Agent-level permission merges last in the engine, so the deny holds whatever the shared config says; explore's model pin and step budget are unchanged; general is unchanged. Mutation-verified: making explore editable again and giving it Lily's prompt each fail by name.",
+      "tests": [
+        "scripts/test-opencode-config-builder.mjs"
+      ]
+    },
+    {
       "id": "node-shim-argv-compatible",
       "protects": "Lily's node shim (Electron running as Node) gives scripts Node's argv layout: it preloads node-argv-compat.cjs, which sets process.defaultApp when unset, so yargs' hideBin and commander stop treating the script path as an argument; without the file the shim still runs; a shim written for the same binary by an older Lily is rewritten; release preflight checks the node on PATH with electron-builder's own parser before anything is built.",
       "baseline": "2026-09-27: every yargs/commander CLI run from Lily's shell misread its arguments; release 0.1.189 attempt 3 failed after building the runtime bundle with 'Unknown argument: …/.bin/electron-builder'.",

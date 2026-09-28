@@ -37,6 +37,8 @@ function createOpencodeTurnLiveness(options = {}) {
   // True while the engine is generating a pre-turn compaction summary in this
   // session: real model work that produces no TURN output.
   const hasActiveCompaction = options.hasActiveCompaction || (() => false);
+  // When the engine next retries the provider (epoch ms, 0 = not retrying).
+  const engineRetryNextAt = options.engineRetryNextAt || (() => 0);
   const ingest = options.ingest || (() => {});
   const recoverStalledFinal = options.recoverStalledFinal || (() => Promise.resolve(null));
   const completeTurn = options.completeTurn || (() => {});
@@ -89,7 +91,7 @@ function createOpencodeTurnLiveness(options = {}) {
   // (default 90s, LILY_OPENCODE_FIRST_RESPONSE_TIMEOUT_MS, 0 disables). It
   // arms only while the turn has seen no activity and is cleared by the first
   // progress action; a pending user card pauses it like the other timers.
-  function armFirstResponseTimer() {
+  function armFirstResponseTimer(delayMs) {
     clearFirstResponseTimer();
     if (!isRunning()) return;
     const timeoutMs = Number(getConfig().firstResponseTimeoutMs || 0);
@@ -110,9 +112,21 @@ function createOpencodeTurnLiveness(options = {}) {
         armFirstResponseTimer();
         return;
       }
+      // Silence while the ENGINE is retrying is not a silent model either: the
+      // provider answered with a 429/5xx and the engine said when it asks again.
+      // The window is measured from that scheduled retry, so only silence AFTER
+      // it ends the turn — a rate-limited model used to be read as dead at 90s
+      // and marked silent, which sent auto mode away from it. A retry the engine
+      // gives up on ends the turn itself, with the provider's real error.
+      const remaining = engineRetryNextAt() + timeoutMs - now();
+      if (remaining > 0) {
+        log.info("opencode first-response window follows an engine retry (%dms left)", remaining, { sessionId });
+        armFirstResponseTimer(remaining);
+        return;
+      }
       log.warn("opencode turn got no first response within %dms", timeoutMs, { sessionId });
       onNoFirstResponse({ timeoutMs });
-    }, timeoutMs);
+    }, Number(delayMs) > 0 ? Number(delayMs) : timeoutMs);
     firstResponseTimer?.unref?.();
   }
 
