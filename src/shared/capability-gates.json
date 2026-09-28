@@ -2510,6 +2510,28 @@
       ]
     },
     {
+      "id": "compaction-pressure-only",
+      "protects": "Lossy context operations happen only under MEASURED pressure, as in the engine, Claude Code and Codex CLI: background and pre-turn compaction fire when a known window is crossed or the provider reported an overflow, never on turn count; an unknown window is left to the engine's own overflow compaction. Tool-output prune stays at the engine default (off) — trimming under pressure belongs to context-window-guard, which bounds a per-request copy and never rewrites history.",
+      "baseline": "2026-09-28 integration audit: background compaction fired on 24 turns alone (89 times in one field log), summarizing a 1M-window session at 5% use down to its last two turns every 20 minutes; Lily enabled prune (engine default off), which after every turn permanently erased tool outputs older than two turns beyond the newest 40k tokens whatever the window — including skill guides read through `read`, since the only tool prune protects (native skill) is denied.",
+      "failureFallback": "LILY_OPENCODE_PRUNE=1 restores prune. Real pressure and provider overflow still compact natively (DeepSeek, compactBoundary and failure rate-limit paths are driven by real pressure in the tests). Legacy sessions already pruned keep being restored by compaction-continuity. Mutation-verified 2026-09-28: re-adding the turn-count branch fails three tests by name; re-enabling prune fails the config test.",
+      "tests": [
+        "scripts/test-context-budget-manager.mjs",
+        "scripts/test-model-context-window.mjs",
+        "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-opencode-config-builder.mjs"
+      ]
+    },
+    {
+      "id": "intent-relation-honest",
+      "protects": "The host never asserts that a turn is a new task on wording it did not recognise. With earlier work and no explicit relation the intent relation is `unspecified`: the model judges it from the conversation, no isolation instruction is injected, and no memory (session summary, evidence gaps, compaction state) is withheld. Only an explicit new-task phrase yields `new`, which keeps the isolation instruction and memory withholding. Either way separate work may not overwrite or repurpose an earlier task's deliverables.",
+      "baseline": "2026-09-28 integration audit: any phrasing the continuation regexes missed (e.g. 用 Python 实现第二个方案) defaulted to `new`, which told the model prior conversation was background only and dropped compaction state, so a compacted session lost its own history on an ordinary follow-up. The 2026-08-13 protection (a new request must not modify an earlier task's output directory) is preserved.",
+      "failureFallback": "`unspecified` is not inherited, exactly like the old default, so the deliverable gate never demands an earlier task's files; source-resolution guidance and procedure cards treat it as not inherited (unchanged). Mutation-verified 2026-09-28: fallback back to `new`, withholding memory for `unspecified`, and isolating `unspecified` each fail by name.",
+      "tests": [
+        "scripts/test-task-contract.mjs",
+        "scripts/test-task-request-continuity.mjs"
+      ]
+    },
+    {
       "id": "node-shim-argv-compatible",
       "protects": "Lily's node shim (Electron running as Node) gives scripts Node's argv layout: it preloads node-argv-compat.cjs, which sets process.defaultApp when unset, so yargs' hideBin and commander stop treating the script path as an argument; without the file the shim still runs; a shim written for the same binary by an older Lily is rewritten; release preflight checks the node on PATH with electron-builder's own parser before anything is built.",
       "baseline": "2026-09-27: every yargs/commander CLI run from Lily's shell misread its arguments; release 0.1.189 attempt 3 failed after building the runtime bundle with 'Unknown argument: …/.bin/electron-builder'.",

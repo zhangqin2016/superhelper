@@ -7,7 +7,8 @@ function sourceResolutionGuidance(contract) {
   if (contract?.externalFactPolicy?.required) return "";
   if (!intent || !["extract", "understand", "convert", "modify"].includes(intent.operation)) return "";
   if (!intent.sourceKinds?.length || intent.attachmentKinds?.length || contract.priorSourceContentEvidence) return "";
-  if ((contract.intentContract?.relation || "new") !== "new") return "";
+  const relation = contract.intentContract?.relation || "new";
+  if (relation !== "new" && relation !== "unspecified") return "";
   return [
     "Source resolution precedes output planning:",
     "This new request refers to source content, but no attachment source is bound to it. No output format or deliverable has been established by the platform.",

@@ -40,7 +40,10 @@ for (const text of ['好的，继续', '可以，继续', 'Please continue', 'OK
   assert.equal(relationForText(text, true), 'continue', text);
 }
 assert.equal(relationForText('好的，新任务：写报告', true), 'new');
-assert.equal(relationForText('可以介绍下天气吗', true), 'new');
+// Wording that names no relation is not asserted "new": the model judges it from
+// the conversation (a regex default of "new" isolated "用 Python 实现第二个方案").
+assert.equal(relationForText('可以介绍下天气吗', true), 'unspecified');
+assert.equal(relationForText('用 Python 实现第二个方案', true), 'unspecified');
 assert.equal(relationForText('Please continue', false), 'new');
 const refined = applyModelIntentCandidate(second.taskContract.intentContract, {
   objective: 'Model summary', requestSource: { turnIds: ['foreign'] },

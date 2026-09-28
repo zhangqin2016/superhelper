@@ -97,24 +97,49 @@ assert.equal(
 assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
-    model: { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" },
+    model: { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]", contextWindowTokens: 1_000_000 },
     runner: { alive: true, busy: false },
-    sessionSummary: { turnCount: 40 },
+    sessionSummary: { turnCount: 40, lastEnginePromptTokens: 950_000, lastEnginePromptTokenSource: "runtime_usage" },
     now: 1_000_000,
   }),
-  { action: "compact", reason: "long_session", mode: "native" },
-  "long sessions on the distributed DeepSeek model now compact natively (no longer force-skipped)",
+  { action: "compact", reason: "token_pressure", mode: "native" },
+  "a full context on the distributed DeepSeek model compacts natively (no longer force-skipped)",
+);
+
+// Field symptom: a 1M-window session at 5% use was summarized down to its last
+// two turns every 20 minutes once it passed 24 turns. Turn count is not pressure.
+assertDecision(
+  decideBackgroundCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    model: { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]", contextWindowTokens: 1_000_000 },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 400, lastEnginePromptTokens: 50_000, lastEnginePromptTokenSource: "runtime_usage" },
+    now: 1_000_000,
+  }),
+  { action: "skip", reason: "below_token_pressure" },
+  "a long session far below its window is never compacted on turn count",
 );
 
 assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
-    sessionSummary: { turnCount: 8 },
+    sessionSummary: { turnCount: 400, lastEnginePromptTokens: 50_000 },
     now: 1_000_000,
   }),
-  { action: "skip", reason: "below_threshold" },
-  "ordinary short sessions stay fast",
+  { action: "skip", reason: "window_unknown" },
+  "an unknown window is left to the engine's own overflow compaction, not guessed from turn count",
+);
+
+assertDecision(
+  decideBackgroundCompaction({
+    capabilities: { nativeCompaction: true, manualSummarize: true },
+    runner: { alive: true, busy: false },
+    sessionSummary: { turnCount: 400, lastContextOverflowAt: "2026-09-28T01:00:00.000Z" },
+    now: Date.parse("2026-09-28T02:00:00.000Z"),
+  }),
+  { action: "compact", reason: "context_overflow", mode: "native" },
+  "a provider overflow still compacts even when the window is unknown",
 );
 
 assertDecision(
@@ -242,11 +267,12 @@ assertDecision(
   decideBackgroundCompaction({
     capabilities: { nativeCompaction: true, manualSummarize: true },
     runner: { alive: true, busy: false },
-    sessionSummary: { turnCount: 40 },
+    model: { contextWindowTokens: 65_536 },
+    sessionSummary: { turnCount: 40, lastEnginePromptTokens: 60_000 },
     now: 1_000_000,
   }),
-  { action: "compact", reason: "long_session", mode: "native" },
-  "long idle sessions use native runtime compaction",
+  { action: "compact", reason: "token_pressure", mode: "native" },
+  "an idle session under real pressure uses native runtime compaction",
 );
 
 assertDecision(

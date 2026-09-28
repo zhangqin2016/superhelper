@@ -1166,15 +1166,8 @@ class TurnOrchestrator {
           shortFollowupContext);
       const memoryPreferences = readMemoryPreferences(session.projectId);
       const memoryDisabledKinds = new Set(memoryPreferences.disabledKinds);
-      const isIndependentTask = Boolean(taskContract.active) && (taskContract.intentContract?.relation || "new") === "new";
-      if (isIndependentTask) {
-        // A new task still needs project identity and workspace structure, but
-        // prior task summaries can contain concrete output paths and plans.
-        // Do not let those turn an independent request into a hidden resume.
-        memoryDisabledKinds.add("session_summary");
-        memoryDisabledKinds.add("evidence_gap");
-        memoryDisabledKinds.add("compaction_state");
-      }
+      const withheldForTask = require("./intent-contract").memoryKindsWithheldForTask(taskContract);
+      for (const kind of withheldForTask) memoryDisabledKinds.add(kind);
       contextMemory = await buildContextMemoryAsync({
         userText: rawUserText,
         sessionSummary: summary,
@@ -1184,7 +1177,7 @@ class TurnOrchestrator {
         workspaceDigest: shouldLoadProjectMemory ? buildWorkspaceDigest(project.path) : "",
         learnedConventions: shouldLoadProjectMemory ? readLearnedConventions(session.projectId) : "",
         turnPolicy,
-        includeSessionSummary: !isIndependentTask && !rehydrated && !shortFollowupContext,
+        includeSessionSummary: !withheldForTask.length && !rehydrated && !shortFollowupContext,
         coldStart: Boolean(ensured.coldStart),
         shortFollowup: shortFollowupContext,
       });

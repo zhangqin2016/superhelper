@@ -2,7 +2,6 @@
 
 const script = require("../shared/script.mjs");
 
-const DEFAULT_MIN_TURNS_BEFORE_COMPACT = 24;
 const DEFAULT_MIN_COMPACTION_INTERVAL_MS = 20 * 60 * 1000;
 const DEFAULT_TOKEN_PRESSURE_THRESHOLD = 0.72;
 const DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD = 0.88;
@@ -336,7 +335,6 @@ function decideBackgroundCompaction({
   runner = {},
   sessionSummary = {},
   now = Date.now(),
-  minTurnsBeforeCompact = DEFAULT_MIN_TURNS_BEFORE_COMPACT,
   minIntervalMs = DEFAULT_MIN_COMPACTION_INTERVAL_MS,
   // Deliberately undefaulted, unlike the pre-turn path beside it. Defaulting
   // here shadowed better sources: an explicit 120,000 outranks the model's own
@@ -378,19 +376,22 @@ function decideBackgroundCompaction({
     }, budget, retainedPressure.source);
   }
 
-  // Below the pressure trigger. Both outcomes here were measured against the
-  // same budget, so both report it — without that, a compaction taken purely on
-  // turn count cannot be told apart from one that was genuinely needed.
-  const turnCount = Number(sessionSummary.turnCount || 0);
-  if (!Number.isFinite(turnCount) || turnCount < minTurnsBeforeCompact) {
-    return withBudget({ action: "skip", reason: "below_threshold", estimatedPromptTokens, turnCount }, budget, retainedPressure.source);
-  }
-  return withBudget({ action: "compact", reason: "long_session", mode: "native", estimatedPromptTokens, turnCount }, budget, retainedPressure.source);
+  // Below measured pressure nothing is compacted, however many turns the
+  // session has: compaction is lossy, and a turn count says nothing about how
+  // full the context is. It used to fire on 24 turns alone (89 times in one
+  // field log), summarizing a 1M-window session at 5% use down to its last two
+  // turns. Like the engine, Claude Code and Codex CLI, only real pressure — a
+  // known window crossed, or a provider overflow above — compacts; an unknown
+  // window is left to the engine's own overflow compaction.
+  return withBudget({
+    action: "skip",
+    reason: budget.compactionTriggerTokens ? "below_token_pressure" : "window_unknown",
+    estimatedPromptTokens,
+  }, budget, retainedPressure.source);
 }
 
 module.exports = {
   DEFAULT_EXACT_TOKEN_PRESSURE_THRESHOLD,
-  DEFAULT_MIN_TURNS_BEFORE_COMPACT,
   DEFAULT_MIN_COMPACTION_INTERVAL_MS,
   DEFAULT_OUTPUT_RESERVE_TOKENS,
   DEFAULT_TOKEN_PRESSURE_THRESHOLD,

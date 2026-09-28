@@ -68,7 +68,15 @@ function applyStepBudget(config, lilyEnv) {
 }
 const DEFAULT_COMPACTION = Object.freeze({
   auto: true,
-  prune: true,
+  // The engine's default (off). Prune permanently erases every tool output
+  // older than two turns beyond the newest 40k tokens after EVERY turn, whatever
+  // the window: a 1M-window session lost file reads it was still using, and
+  // skill guides read through `read` (the native skill tool — the only one prune
+  // protects — is denied here) were wiped mid-task. Trimming under real pressure
+  // belongs to context-window-guard, which bounds a COPY per model call and
+  // never rewrites history; overflow is left to native compaction.
+  // LILY_OPENCODE_PRUNE=1 restores the previous behaviour.
+  prune: process.env.LILY_OPENCODE_PRUNE === "1",
   reserved: 10_000,
   tail_turns: 2,
 });

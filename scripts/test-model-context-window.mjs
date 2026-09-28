@@ -118,25 +118,25 @@ const budgetFor = (contextWindowTokens) => decidePreTurnCompaction({
 
 {
   // Every decision taken after the budget is resolved reports it — the two
-  // most common outcomes used to drop it, which left the compaction taken on
-  // turn count alone with no record of whether it was needed.
-  const longSession = decideBackgroundCompaction({
+  // most common outcomes used to drop it, which left a compaction with no record
+  // of whether it was needed.
+  const underPressure = decideBackgroundCompaction({
     capabilities: { nativeCompaction: true },
     model: { providerID: "p", modelID: "m", contextWindowTokens: 32_768 },
     runner: { alive: true, canStart: true, busy: false },
-    sessionSummary: { turnCount: 40 },
+    sessionSummary: { turnCount: 40, lastEnginePromptTokens: 30_000 },
   });
-  assert.equal(longSession.reason, "long_session");
-  assert.equal(longSession.contextWindowTokens, 32_768, "a turn-count compaction now says what it was measured against");
-  assert.ok(longSession.compactionTriggerTokens > 0, "and how far it was from real pressure");
+  assert.equal(underPressure.reason, "token_pressure");
+  assert.equal(underPressure.contextWindowTokens, 32_768, "a compaction says what it was measured against");
+  assert.ok(underPressure.compactionTriggerTokens > 0, "and where real pressure starts");
 
   const belowThreshold = decideBackgroundCompaction({
     capabilities: { nativeCompaction: true },
     model: { providerID: "p", modelID: "m", contextWindowTokens: 32_768 },
     runner: { alive: true, canStart: true, busy: false },
-    sessionSummary: { turnCount: 1 },
+    sessionSummary: { turnCount: 400, lastEnginePromptTokens: 1_000 },
   });
-  assert.equal(belowThreshold.reason, "below_threshold");
+  assert.equal(belowThreshold.reason, "below_token_pressure", "turn count alone never compacts");
   assert.equal(belowThreshold.contextWindowTokens, 32_768, "so does the skip beside it");
   check("every decision measured against a budget now reports that budget");
 }

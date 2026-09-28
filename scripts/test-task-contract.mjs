@@ -343,6 +343,33 @@ assert.match(
   "a new task must not silently repurpose an earlier task's files or output directory",
 );
 
+// With earlier work in the conversation, wording the host does not recognise is
+// NOT asserted to be a new task: "用 Python 实现第二个方案" was told "prior
+// conversation is background only". The model judges the relation; the
+// deliverable-overwrite protection above survives either way.
+{
+  const priorTurn = [{ role: "assistant", record: { meta: { taskContract: documentQuestion } } }];
+  const ambiguous = buildTaskContract({ text: "用 Python 实现第二个方案", messages: priorTurn });
+  assert.equal(ambiguous.intentContract.relation, "unspecified");
+  const ambiguousPrompt = withTaskContractPrefix("用 Python 实现第二个方案", { ...ambiguous, active: true });
+  assert.doesNotMatch(ambiguousPrompt, /New-task isolation boundary:|Prior conversation is background only/,
+    "an unrecognised follow-up must not be isolated from its own conversation");
+  assert.match(ambiguousPrompt, /decide from the conversation itself/, "the model is told the relation is its call");
+  assert.match(ambiguousPrompt, /do not overwrite or repurpose an earlier task's deliverables/,
+    "separate work still may not overwrite an earlier task's deliverables");
+
+  const explicitNew = buildTaskContract({ text: "新任务：做个复杂的前端展示系统", messages: priorTurn });
+  assert.equal(explicitNew.intentContract.relation, "new");
+  assert.match(withTaskContractPrefix("新任务：做个复杂的前端展示系统", { ...explicitNew, active: true }),
+    /New-task isolation boundary:/, "an explicit new task is still isolated");
+
+  const { memoryKindsWithheldForTask } = require("../src/main/intent-contract.js");
+  assert.deepEqual(memoryKindsWithheldForTask({ ...ambiguous, active: true }), [],
+    "an unrecognised follow-up keeps its compaction state and session summary");
+  assert.deepEqual(memoryKindsWithheldForTask({ ...explicitNew, active: true }),
+    ["session_summary", "evidence_gap", "compaction_state"], "an explicit new task still withholds prior-task memory");
+}
+
 const releaseContract = buildTaskContract({
   text: "发布新版本并检查线上是否生效",
   project: { path: tmp },

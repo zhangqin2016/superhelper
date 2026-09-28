@@ -61,7 +61,7 @@
         },
         {
           "user": "hello",
-          "expect": { "active": false, "taskType": "general", "relation": "new", "rigor": "fast" }
+          "expect": { "active": false, "taskType": "general", "relation": "unspecified", "rigor": "fast" }
         },
         {
           "user": "continue",

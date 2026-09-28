@@ -1085,7 +1085,14 @@ function withTaskContractPrefix(text, contract) {
         "You may inspect the workspace to identify the real target, but never select an earlier task's directory merely because it already contains useful-looking files. Before the first side effect, establish the target and output scope from the current request.",
         "When the current request does not identify a target and the workspace contains multiple unrelated workstreams, keep the new work independently named and avoid overwriting an existing deliverable; ask only if a safe independent scope cannot be chosen.",
       ]
-    : [];
+    : intentRelation === "unspecified"
+      ? [
+          "",
+          "Relation to earlier work:",
+          "The wording alone does not say whether this continues earlier work in this conversation; decide from the conversation itself, and build on earlier work when it does.",
+          "If it starts separate work, do not overwrite or repurpose an earlier task's deliverables or output directory unless the current request names them.",
+        ]
+      : [];
   const contractText = [
     "<lily_task_contract>",
     "This internal contract improves execution quality. Do not quote it back unless the user asks about process.",

@@ -1219,7 +1219,7 @@ if (architectureAuditAssistant?.record?.meta?.taskContract?.taskType !== "archit
 const archivedIntentContract = architectureAuditAssistant?.record?.meta?.taskContract?.intentContract;
 if (
   !archivedIntentContract?.contractId ||
-  archivedIntentContract.relation !== "new" ||
+  !["new", "unspecified"].includes(archivedIntentContract.relation) ||
   !archivedIntentContract.successCriteria?.includes("source_evidence")
 ) {
   throw new Error(`architecture audit archive should persist the durable intent contract: ${JSON.stringify(archivedIntentContract)}`);
@@ -1522,22 +1522,45 @@ if (!sent.some((entry) => entry.payload?.events?.some((event) => (
 }
 delete runner.spawnOptions.model;
 
+// A long session is compacted by measured pressure, never by its turn count.
+function seedLongSession(label, { pressured }) {
+  clearSessionSummary("s1");
+  for (let i = 0; i < 30; i += 1) {
+    updateSessionSummaryFromRecord("s1", {
+      terminal: "turn.completed",
+      user: { text: `${label} ${i}` },
+      assistantText: "ok",
+      ...(pressured && i === 29 ? { meta: { engine: { promptChars: 400_000, estimatedPromptTokens: 100_000 } } } : {}),
+      fileChanges: [],
+    });
+  }
+}
+
 sent.length = 0;
 runner.compactions.length = 0;
-clearSessionSummary("s1");
-for (let i = 0; i < 30; i += 1) {
-  updateSessionSummaryFromRecord("s1", {
-    terminal: "turn.completed",
-    user: { text: `long session turn ${i}` },
-    assistantText: "ok",
-    fileChanges: [],
-  });
+runner.spawnOptions.model = { contextWindowTokens: 1_000_000 };
+seedLongSession("long unpressured session turn", { pressured: false });
+ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
+await new Promise((resolve) => setTimeout(resolve, 20));
+ctx.eventBus.flush();
+if (runner.compactions.length) {
+  throw new Error("thirty turns far below the window must not be compacted: turn count is not pressure");
 }
+if (!sent.some((entry) => entry.payload?.events?.some((event) => (
+  event.type === "context.compactionDecision" && event.payload?.reason === "below_token_pressure"
+)))) {
+  throw new Error(`an unpressured long session should publish a below_token_pressure skip: ${JSON.stringify(sent)}`);
+}
+
+sent.length = 0;
+runner.compactions.length = 0;
+runner.spawnOptions.model = { contextWindowTokens: 120_000 };
+seedLongSession("long session turn", { pressured: true });
 ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
 await new Promise((resolve) => setTimeout(resolve, 20));
 ctx.eventBus.flush();
 if (!runner.compactions.length) {
-  throw new Error("long idle sessions should invoke native compaction");
+  throw new Error("long idle sessions under real pressure should invoke native compaction");
 }
 if (!sent.some((entry) => entry.payload?.events?.some((event) => event.type === "engine.notice" && event.payload?.notice?.code === "compactBoundary"))) {
   throw new Error(`native compaction should publish a compactBoundary notice before compacting: ${JSON.stringify(sent)}`);
@@ -1545,16 +1568,8 @@ if (!sent.some((entry) => entry.payload?.events?.some((event) => event.type === 
 
 sent.length = 0;
 runner.compactions.length = 0;
-runner.spawnOptions.model = { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]" };
-clearSessionSummary("s1");
-for (let i = 0; i < 30; i += 1) {
-  updateSessionSummaryFromRecord("s1", {
-    terminal: "turn.completed",
-    user: { text: `anthropic-compatible deepseek turn ${i}` },
-    assistantText: "ok",
-    fileChanges: [],
-  });
-}
+runner.spawnOptions.model = { providerID: "anthropic", modelID: "deepseek-v4-pro[1m]", contextWindowTokens: 120_000 };
+seedLongSession("anthropic-compatible deepseek turn", { pressured: true });
 ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
 await new Promise((resolve) => setTimeout(resolve, 20));
 ctx.eventBus.flush();
@@ -1563,7 +1578,7 @@ if (!runner.compactions.length) {
 }
 if (!sent.some((entry) => entry.payload?.events?.some((event) => (
   event.type === "context.compactionDecision" &&
-  event.payload?.reason === "long_session" &&
+  event.payload?.reason === "token_pressure" &&
   event.payload?.providerID === "anthropic" &&
   event.payload?.modelID === "deepseek-v4-pro[1m]"
 )))) {
@@ -1574,15 +1589,8 @@ runner.spawnOptions = {};
 sent.length = 0;
 runner.compactions.length = 0;
 runner.compactResult = false;
-clearSessionSummary("s1");
-for (let i = 0; i < 30; i += 1) {
-  updateSessionSummaryFromRecord("s1", {
-    terminal: "turn.completed",
-    user: { text: `failing compaction turn ${i}` },
-    assistantText: "ok",
-    fileChanges: [],
-  });
-}
+runner.spawnOptions.model = { contextWindowTokens: 120_000 };
+seedLongSession("failing compaction turn", { pressured: true });
 ctx.turnOrchestrator._scheduleBackgroundCompaction("s1");
 await new Promise((resolve) => setTimeout(resolve, 20));
 ctx.eventBus.flush();
@@ -1609,6 +1617,7 @@ if (!sent.some((entry) => entry.payload?.events?.some((event) => (
   throw new Error(`recent compaction failures should publish a skip decision: ${JSON.stringify(sent)}`);
 }
 runner.compactResult = { ok: true };
+runner.spawnOptions = {};
 
 sent.length = 0;
 const interruptSource = await ctx.turnOrchestrator.sendUserMessage("s1", "long running", [], {

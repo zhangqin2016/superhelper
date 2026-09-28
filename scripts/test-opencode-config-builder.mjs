@@ -139,7 +139,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   assert(cfg.permission.skill === "deny", "OpenCode native skill tool denied in built config");
   assert(cfg.instructions.length === 1 && cfg.instructions[0].endsWith("AGENT.md"), "fallback: instructions paths used when no agentPrompt");
   assert(cfg.compaction.auto === true, "native OpenCode auto-compaction explicitly enabled");
-  assert(cfg.compaction.prune === true, "native OpenCode tool-output prune explicitly enabled");
+  assert(cfg.compaction.prune === false, "tool-output prune stays at the engine default (off): it erases history whatever the window");
   assert(cfg.compaction.reserved === 10000, "native OpenCode compaction reserve pinned for stable defaults");
   assert(r.diagnostics.modelRoute.route === "direct", "shared diagnostics carry model route audit");
 }
@@ -152,7 +152,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
   });
   const cfg = JSON.parse(r.configContent);
   assert(cfg.compaction.auto === true, "shared serve -> auto compaction enabled");
-  assert(cfg.compaction.prune === true, "shared serve -> prune enabled");
+  assert(cfg.compaction.prune === false, "shared serve -> prune off (pressure trimming belongs to context-window-guard)");
   assert(cfg.compaction.tail_turns === 2, "shared serve -> tail turn retention matches OpenCode default");
   assert(cfg.skills.paths.length === 1 && cfg.skills.paths[0].endsWith("/skills"), "shared serve -> Lily skill registry path configured");
   // summarize-500 root cause: OpenCode's processCompaction resolves the model via
