@@ -1,0 +1,396 @@
+{
+  "about": "Web search provider evaluation set. `expect`: any one of these strings in the top-5 titles/snippets counts as a hit (stable facts only). `fresh`: a time-sensitive question, scored by the share of top-5 results dated within `fresh` days. Keep questions plain-language, as users ask them.",
+  "questions": [
+    {
+      "id": "law-labor-39",
+      "kind": "law",
+      "q": "劳动合同法第三十九条 用人单位可以解除劳动合同的情形",
+      "expect": [
+        "严重违反"
+      ]
+    },
+    {
+      "id": "law-civil-code-date",
+      "kind": "law",
+      "q": "民法典什么时候开始施行",
+      "expect": [
+        "2021年1月1日"
+      ]
+    },
+    {
+      "id": "law-constitution-amend",
+      "kind": "law",
+      "q": "宪法最近一次修正是哪一年",
+      "expect": [
+        "2018"
+      ]
+    },
+    {
+      "id": "tax-threshold",
+      "kind": "life",
+      "q": "个人所得税起征点每月多少钱",
+      "expect": [
+        "5000"
+      ]
+    },
+    {
+      "id": "gov-palace-monday",
+      "kind": "life",
+      "q": "故宫周一开放吗",
+      "expect": [
+        "周一",
+        "闭馆"
+      ]
+    },
+    {
+      "id": "geo-yangtze",
+      "kind": "fact",
+      "q": "长江全长多少公里",
+      "expect": [
+        "6300",
+        "6397"
+      ]
+    },
+    {
+      "id": "geo-everest",
+      "kind": "fact",
+      "q": "珠穆朗玛峰最新测量高程",
+      "expect": [
+        "8848.86"
+      ]
+    },
+    {
+      "id": "sci-light",
+      "kind": "fact",
+      "q": "光速每秒多少米",
+      "expect": [
+        "299792458",
+        "299,792,458",
+        "30万"
+      ]
+    },
+    {
+      "id": "sci-euv",
+      "kind": "tech",
+      "q": "EUV光刻机的光源波长是多少",
+      "expect": [
+        "13.5"
+      ]
+    },
+    {
+      "id": "rail-fuxing",
+      "kind": "fact",
+      "q": "复兴号高铁最高运营时速",
+      "expect": [
+        "350"
+      ]
+    },
+    {
+      "id": "lit-luxun",
+      "kind": "fact",
+      "q": "鲁迅原名叫什么",
+      "expect": [
+        "周树人"
+      ]
+    },
+    {
+      "id": "city-shenzhen-flower",
+      "kind": "fact",
+      "q": "深圳市花是什么",
+      "expect": [
+        "簕杜鹃",
+        "三角梅"
+      ]
+    },
+    {
+      "id": "dev-asyncio",
+      "kind": "dev",
+      "q": "Python asyncio gather 并发执行多个协程",
+      "expect": [
+        "gather"
+      ]
+    },
+    {
+      "id": "dev-useeffect",
+      "kind": "dev",
+      "q": "React useEffect 依赖数组为空是什么意思",
+      "expect": [
+        "useEffect"
+      ]
+    },
+    {
+      "id": "dev-compose-ports",
+      "kind": "dev",
+      "q": "docker compose 端口映射怎么写",
+      "expect": [
+        "ports"
+      ]
+    },
+    {
+      "id": "dev-http-418",
+      "kind": "dev",
+      "q": "HTTP 418 状态码是什么意思",
+      "expect": [
+        "teapot",
+        "茶壶"
+      ]
+    },
+    {
+      "id": "en-canberra",
+      "kind": "english",
+      "q": "what is the capital of Australia",
+      "expect": [
+        "Canberra"
+      ]
+    },
+    {
+      "id": "en-rust-lifetimes",
+      "kind": "english",
+      "q": "Rust borrow checker lifetime annotations explained",
+      "expect": [
+        "lifetime"
+      ]
+    },
+    {
+      "id": "fresh-ashare",
+      "kind": "fresh",
+      "q": "今天A股收盘 上证指数",
+      "expect": [
+        "上证"
+      ],
+      "fresh": 7
+    },
+    {
+      "id": "fresh-cpi",
+      "kind": "fresh",
+      "q": "国家统计局 最新CPI同比数据",
+      "expect": [
+        "CPI"
+      ],
+      "fresh": 45
+    },
+    {
+      "id": "fresh-deepseek",
+      "kind": "fresh",
+      "q": "DeepSeek最新发布的模型",
+      "expect": [
+        "DeepSeek"
+      ],
+      "fresh": 90
+    },
+    {
+      "id": "fresh-nev",
+      "kind": "fresh",
+      "q": "乘联会 最新 新能源汽车零售销量",
+      "expect": [
+        "新能源"
+      ],
+      "fresh": 45
+    },
+    {
+      "id": "fresh-iphone",
+      "kind": "fresh",
+      "q": "最新款iPhone发布会",
+      "expect": [
+        "iPhone"
+      ],
+      "fresh": 60
+    },
+    {
+      "id": "fresh-weather",
+      "kind": "fresh",
+      "q": "北京今天天气",
+      "expect": [
+        "℃",
+        "气温"
+      ],
+      "fresh": 3
+    },
+    {
+      "id": "law-dsl-date",
+      "kind": "law",
+      "q": "数据安全法施行日期",
+      "expect": [
+        "2021年9月1日"
+      ]
+    },
+    {
+      "id": "law-pipl-date",
+      "kind": "law",
+      "q": "个人信息保护法什么时候施行",
+      "expect": [
+        "2021年11月1日"
+      ]
+    },
+    {
+      "id": "std-gb18030",
+      "kind": "law",
+      "q": "GB 18030-2022 实施日期",
+      "expect": [
+        "2023年8月1日",
+        "2023-08-01"
+      ]
+    },
+    {
+      "id": "life-pension-cap",
+      "kind": "life",
+      "q": "个人养老金每年最多可以缴纳多少",
+      "expect": [
+        "12000",
+        "1.2万"
+      ]
+    },
+    {
+      "id": "fact-carrier",
+      "kind": "fact",
+      "q": "中国第一艘国产航母叫什么",
+      "expect": [
+        "山东舰"
+      ]
+    },
+    {
+      "id": "fact-sanxingdui",
+      "kind": "fact",
+      "q": "三星堆遗址在哪个城市",
+      "expect": [
+        "广汉"
+      ]
+    },
+    {
+      "id": "fact-jiuzhang",
+      "kind": "fact",
+      "q": "九章量子计算原型机是哪个单位研制的",
+      "expect": [
+        "中国科学技术大学",
+        "中国科大",
+        "中科大"
+      ]
+    },
+    {
+      "id": "fact-asiad",
+      "kind": "fact",
+      "q": "杭州亚运会是哪一年举办的",
+      "expect": [
+        "2023"
+      ]
+    },
+    {
+      "id": "dev-chmod",
+      "kind": "dev",
+      "q": "chmod 755 是什么权限",
+      "expect": [
+        "rwxr-xr-x"
+      ]
+    },
+    {
+      "id": "dev-pg-size",
+      "kind": "dev",
+      "q": "PostgreSQL 查看表占用的磁盘大小",
+      "expect": [
+        "pg_total_relation_size",
+        "pg_relation_size"
+      ]
+    },
+    {
+      "id": "dev-git-soft",
+      "kind": "dev",
+      "q": "git 撤销最近一次提交但保留代码修改",
+      "expect": [
+        "--soft",
+        "reset --soft"
+      ]
+    },
+    {
+      "id": "dev-abort-timeout",
+      "kind": "dev",
+      "q": "Node.js fetch 请求设置超时",
+      "expect": [
+        "AbortSignal.timeout",
+        "AbortController"
+      ]
+    },
+    {
+      "id": "dev-electron-ci",
+      "kind": "dev",
+      "q": "Electron contextIsolation 有什么作用",
+      "expect": [
+        "contextIsolation"
+      ]
+    },
+    {
+      "id": "dev-sqlite-wal",
+      "kind": "dev",
+      "q": "SQLite 开启 WAL 模式",
+      "expect": [
+        "journal_mode"
+      ]
+    },
+    {
+      "id": "dev-tokio-select",
+      "kind": "dev",
+      "q": "tokio select 宏怎么用",
+      "expect": [
+        "select!"
+      ]
+    },
+    {
+      "id": "dev-ffmpeg-audio",
+      "kind": "dev",
+      "q": "ffmpeg 从视频中提取音频",
+      "expect": [
+        "-vn"
+      ]
+    },
+    {
+      "id": "dev-rapidocr",
+      "kind": "dev",
+      "q": "RapidOCR 是什么",
+      "expect": [
+        "RapidOCR"
+      ]
+    },
+    {
+      "id": "dev-opencode",
+      "kind": "dev",
+      "q": "opencode 开源 AI 编程代理 终端",
+      "expect": [
+        "opencode",
+        "OpenCode"
+      ]
+    },
+    {
+      "id": "en-pep8-line",
+      "kind": "english",
+      "q": "PEP 8 maximum line length",
+      "expect": [
+        "79"
+      ]
+    },
+    {
+      "id": "en-rfc9110",
+      "kind": "english",
+      "q": "which RFC defines HTTP semantics",
+      "expect": [
+        "9110"
+      ]
+    },
+    {
+      "id": "fresh-holiday",
+      "kind": "fresh",
+      "q": "2026年国庆节放假安排",
+      "expect": [
+        "国庆"
+      ],
+      "fresh": 120
+    },
+    {
+      "id": "fresh-fed",
+      "kind": "fresh",
+      "q": "美联储最近一次利率决议",
+      "expect": [
+        "美联储"
+      ],
+      "fresh": 60
+    }
+  ]
+}
