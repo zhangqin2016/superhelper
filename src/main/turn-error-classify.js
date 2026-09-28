@@ -29,7 +29,14 @@ function looksLikeLeakedToolCallText(value) {
   // sight instead. Any occurrence is unambiguously a leak.
   if (/[｜|▁]{1,3}\s*DSML\s*[｜|▁]{1,3}/i.test(text)) return true;
   if (/<\s*[｜｜|▁]{1,3}[^<>]{0,48}\b(?:tool_calls?|invoke|parameter|function)\b/i.test(text)) return true;
-  const compact = text.replace(/\s+/g, " ");
+  // XML-style markers are ordinary prose inside code: an answer that EXPLAINS
+  // the <invoke>/<parameter> format in a fence or backticks is an answer, not a
+  // leaked call (2026-09-28 audit). Only markers outside code count.
+  const compact = text
+    .replace(/```[\s\S]*?(?:```|$)/g, " ")
+    .replace(/`[^`\n]*`/g, " ")
+    .replace(/\s+/g, " ");
+  if (!compact.trim()) return false;
   const markers = [
     // tool_call AND tool_calls (plural); the old `tool_call\b` missed the plural
     // opener `<tool_calls>` that Anthropic-style leaks use.
@@ -42,6 +49,12 @@ function looksLikeLeakedToolCallText(value) {
   ];
   const hits = markers.filter((pattern) => pattern.test(compact)).length;
   if (!hits) return false;
+  // Structure of a CALL, not a mention: two markers, call syntax with
+  // arguments, a marker opening a JSON argument object, or nothing but markup.
+  // A sentence that names "<tool_call>" while explaining it is prose.
+  if (hits >= 2) return true;
+  if (/<\s*(?:function|parameter)=|<\s*(?:[a-z]+:)?invoke\s+name=|<\s*parameter\s+name=/i.test(compact)) return true;
+  if (/<\s*tool_calls?\s*>\s*[{[]/i.test(compact)) return true;
   const stripped = compact
     .replace(/>\s*/g, " ")
     .replace(/<\/?tool_call[^>]*>/gi, " ")
@@ -50,7 +63,16 @@ function looksLikeLeakedToolCallText(value) {
     .replace(/[<>{}/=_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return hits >= 2 || stripped.length <= 80;
+  return !/[\p{L}\p{N}]/u.test(stripped);
+}
+
+/** The text ends inside a tool-call block that was opened and never closed. */
+function endsInOpenToolCall(value) {
+  const text = String(value || "");
+  let last = -1;
+  for (const match of text.matchAll(/<\s*(?:tool_calls?\b|function=|(?:[a-z]+:)?invoke\b)/gi)) last = match.index;
+  if (last < 0) return false;
+  return !/<\/\s*(?:tool_calls?|function|(?:[a-z]+:)?invoke)\s*>/i.test(text.slice(last));
 }
 
 function failureTextFromProcessEvent(event = {}) {
@@ -284,7 +306,13 @@ function classifyTurnFailure(payload, normalized, state) {
   const assistantLikeText = [normalized?.text, state?.assistantText]
     .filter((value) => typeof value === "string" && value.trim())
     .join("\n");
-  const thinkingLikeText = String(state?.thinkingText || "");
+  // A tool call written into the REASONING is a leak only when it is the call
+  // the model meant to make: no tool ran this turn and the reasoning ENDS in an
+  // unclosed call ("…<tool_call><function=write><parameter=content><!DOCTYPE"),
+  // so the visible text is just the announcement of work that never happened.
+  // Reasoning that merely discusses the format is not a failure.
+  const thinkingLikeText = (state?.tools?.size || 0) === 0 && endsInOpenToolCall(state?.thinkingText)
+    ? String(state?.thinkingText || "") : "";
   // Check each candidate INDIVIDUALLY as well as joined: normalized.text and
   // state.assistantText usually carry the SAME leaked fragment, and the joined
   // duplicate doubles the stripped length past the short-fragment heuristic —
@@ -321,37 +349,37 @@ function classifyTurnFailure(payload, normalized, state) {
     };
   }
   // Micro-completion: the gateway glitches and the content channel leaks a
-  // stray fragment as the whole answer — a sentence tail ("…file paths, and a
-  // single research question", 9 tokens) or even CODE from an earlier task
-  // ("paragraphs.push(p2('7.4 …'));\nparagraph", 18 tokens, to "hi"). Evidence
-  // gates keep legitimate short answers safe: no tools ran, gateway-reported
-  // output is tiny, the text does NOT end like a finished sentence, AND the
-  // fragment carries a continuation signature — code syntax without a fence,
-  // a lowercase latin mid-sentence start, or a few-token reply to a
-  // non-trivial ask. Kill switch: LILY_MICRO_COMPLETION_GUARD=0.
+  // stray fragment as the whole answer ("…file paths, and a single research
+  // question", 9 tokens; "ily-csv-conversion (CSV 转换)**" to "你好"). Only
+  // evidence that the text cannot be this request's answer counts: the stream
+  // itself ended without a recognized finish (cut, not concluded) or began
+  // mid-sequence, the text
+  // echoes Lily's own internal skill namespace the user never typed (the
+  // system guide leaking into the content channel), or it closes a bold run
+  // it never opened. What the answer LOOKS like never counts: "391", "晴朗",
+  // "Promise<string>" and "约4小时18分" are complete answers with no full stop,
+  // and the old length/punctuation/code-shape rules replayed them as failures
+  // (2026-09-28 audit). Kill switch: LILY_MICRO_COMPLETION_GUARD=0.
   if (process.env.LILY_MICRO_COMPLETION_GUARD !== "0" && (state?.tools?.size || 0) === 0) {
     const text = String(normalized?.text || state?.assistantText || "").trim();
     // Evidence-first: only the gateway's own usage accounting counts — no
     // usage data, no classification (synthetic/edge turns stay untouched).
     const outputTokens = Number(state?.usage?.output_tokens);
     const tinyOutput = Number.isFinite(outputTokens) && outputTokens > 0 && outputTokens <= 24;
-    const endsLikeSentence = /[。．.!?！?…"”』」)）\]】:：]$/.test(text);
     const userAsk = String(state?.enginePayload?.rawText || "").trim();
-    const userAskNonTrivial = userAsk.length >= 8;
-    const codeShaped = !text.includes("```") &&
-      (/[;{}]\s*$/.test(text) || /\)\);|=>|\\n/.test(text));
-    const latinMidSentenceStart = /^[a-z]/.test(text) && /[,;]/.test(text);
-    // An unpaired ** is a document cut mid-bold-run, never a finished answer
-    // ("ily-csv-conversion (CSV 转换)**", 11 tokens, to "你好" — the fragment
-    // was a bolded list item from OUR OWN system guide with its head cut off).
+    const streamCut = ["unknown", "length"].includes(String(state?.lastStopReason || ""));
     const danglingMarkdown = ((text.match(/\*\*/g) || []).length % 2) === 1;
-    // Our internal skill namespace appearing unprompted is a system-prompt
-    // echo — the user never typed "lily-…", so the content channel leaked the
-    // injected guide instead of an answer.
     const promptEcho = /\blily-[a-z0-9][a-z0-9-]*/i.test(text) && !/lily-/i.test(userAsk);
-    const fragmentSignature = codeShaped || latinMidSentenceStart || danglingMarkdown || promptEcho ||
-      (Number.isFinite(outputTokens) && outputTokens <= 12 && userAskNonTrivial);
-    if (text && tinyOutput && !endsLikeSentence && fragmentSignature &&
+    // A content stream that STARTS mid-sequence — leading whitespace, then a
+    // lowercase word (" file paths, and a single research question") — is the
+    // tail of a token stream, not an answer's first token.
+    const midStreamStart = /^[ \t]+[a-z]/.test(String(state?.assistantText || normalized?.text || ""));
+    // A SERIALIZED source string — a statement end, then a literal backslash-n,
+    // then more code ("…'));\\nparagraph") — is a tool argument that leaked into
+    // the content channel; prose never escapes its own newlines.
+    const serializedCode = /[;{})]\\n\S/.test(text);
+    const fragmentSignature = streamCut || midStreamStart || serializedCode || danglingMarkdown || promptEcho;
+    if (text && tinyOutput && fragmentSignature &&
         !payload?.interruptedByUser && !payload?.userInterrupted && !payload?.stalled && !payload?.engineInterrupted) {
       return {
         code: "MICRO_COMPLETION",

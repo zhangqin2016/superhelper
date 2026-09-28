@@ -189,6 +189,35 @@ const askedAboutSkill = ec.classifyTurnFailure(
   { usage: { output_tokens: 14 }, enginePayload: { rawText: "lily-csv-conversion 能转 xlsx 吗" } },
 );
 assert(askedAboutSkill === null, "mentioning a skill the user asked about is not a prompt echo");
+// 2026-09-28 audit: failure is decided by structure and provenance, never by
+// what a correct answer looks like. These complete answers have no full stop,
+// few tokens, or code in them — the old length/punctuation/code-shape rules
+// replayed them as MICRO_COMPLETION failures.
+for (const [ask, answer, tokens] of [
+  ["帮我算一下 17 乘以 23", "391", 2],
+  ["用一个词形容今天的天气", "晴朗", 2],
+  ["北京到上海的高铁最快几小时", "约4小时18分", 6],
+  ["把这句翻译成英文：你好世界", "Hello, world", 3],
+  ["这个函数的返回类型是什么", "Promise<string>", 4],
+  ["js 数组每项乘 2 怎么写", "arr.map(x => x * 2)", 9],
+  ["换行符在字符串里怎么写", "用 \\n 表示", 5],
+]) {
+  const result = ec.classifyTurnFailure({ code: 0 }, { text: answer }, { usage: { output_tokens: tokens }, lastStopReason: "stop", enginePayload: { rawText: ask } });
+  assert(result === null, `a complete short answer is not a failure: ${ask} -> ${answer} (${result?.code})`);
+}
+const cutStream = ec.classifyTurnFailure({ code: 0 }, { text: "391 的计算过程是" }, { usage: { output_tokens: 8 }, lastStopReason: "length", enginePayload: { rawText: "帮我算一下 17 乘以 23" } });
+assert(cutStream?.code === "MICRO_COMPLETION", "a stream the gateway cut (finish=length) is a failure");
+// Explaining the tool-call format inside code is an answer, not a leak; and
+// reasoning that discusses the format is not a leak when it does not END in an
+// unclosed call the model meant to make.
+const explainsFormat = ec.classifyTurnFailure({ code: 0 },
+  { text: "工具调用的格式是这样的：\n```xml\n<invoke name=\"bash\">\n  <parameter name=\"command\">ls</parameter>\n</invoke>\n```\n模型发出后由引擎执行。" },
+  { assistantText: "工具调用的格式是这样的：…", usage: { output_tokens: 60 }, lastStopReason: "stop" });
+assert(explainsFormat === null, "explaining <invoke>/<parameter> in a code fence is an answer");
+const discussesInReasoning = ec.classifyTurnFailure({ code: 0 },
+  { text: "OpenCode 用 <tool_call> 包住一次调用，结束时闭合。" },
+  { assistantText: "OpenCode 用 <tool_call> 包住一次调用，结束时闭合。", thinkingText: "用户问格式。例子：<tool_call><function=read></function></tool_call>，然后解释。", usage: { output_tokens: 30 }, lastStopReason: "stop" });
+assert(discussesInReasoning === null, "reasoning that discusses a closed call is not a leaked call");
 
 const leakedToolCall = ec.classifyTurnFailure(
   {},

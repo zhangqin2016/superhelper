@@ -2600,6 +2600,16 @@
       ]
     },
     {
+      "id": "failure-from-structure",
+      "protects": "A turn that ended normally is judged a failure only by structure and provenance, never by what a correct answer looks like. A fragment is a failure when the stream ended without a recognized finish (unknown/length), began mid-sequence (leading whitespace then a lowercase word), carries a serialized source string (a statement end, a literal backslash-n, more code), closes a bold run it never opened, or echoes Lily's internal skill namespace the user never typed. A leaked tool call needs call structure outside code — two markers, call syntax with arguments, a marker opening a JSON argument object, or nothing but markup — and reasoning counts only when no tool ran and it ENDS in an unclosed call.",
+      "baseline": "2026-09-28 audit: MICRO_COMPLETION replayed complete short answers (391, 晴朗, 约4小时18分, Hello, world, Promise<string>) as failures because they had few tokens and no full stop; MALFORMED_TOOL_CALL_TEXT fired on answers explaining <invoke>/<parameter> in code fences, on a sentence naming <tool_call>, and on reasoning that merely discussed the format.",
+      "failureFallback": "The recorded field fragments (' file paths, and a single research question'; a leaked paragraphs.push(...)\\\\n blob; system-guide echoes; unpaired bold; the reasoning-only write call; DSML control tokens; multi-marker XML leaks) are still caught. Kill switch LILY_MICRO_COMPLETION_GUARD=0 unchanged. Mutation-verified: restoring the short-answer rule, dropping code stripping and scanning reasoning unconditionally each fail by name.",
+      "tests": [
+        "scripts/test-turn-error-classify.mjs",
+        "scripts/test-tool-call-rescue.mjs"
+      ]
+    },
+    {
       "id": "node-shim-argv-compatible",
       "protects": "Lily's node shim (Electron running as Node) gives scripts Node's argv layout: it preloads node-argv-compat.cjs, which sets process.defaultApp when unset, so yargs' hideBin and commander stop treating the script path as an argument; without the file the shim still runs; a shim written for the same binary by an older Lily is rewritten; release preflight checks the node on PATH with electron-builder's own parser before anything is built.",
       "baseline": "2026-09-27: every yargs/commander CLI run from Lily's shell misread its arguments; release 0.1.189 attempt 3 failed after building the runtime bundle with 'Unknown argument: …/.bin/electron-builder'.",
@@ -2629,6 +2639,24 @@
         "scripts/test-legal-kb-remote.mjs",
         "scripts/test-legal-kb-tool.mjs",
         "scripts/test-agent-knowledge-preparation.mjs"
+      ]
+    },
+    {
+      "id": "subagent-hook-identity",
+      "protects": "Tool calls of subagents (engine child sessions) pass the public-hook bridge under the identity of the conversation that spawned them: the bridge follows the child's parentID chain (bounded, cached) to the root session the host registered, and the host still verifies that session's token, applies its hooks and scopes the result to it.",
+      "baseline": "2026-09-28 capability-gauntlet run: the bridge looked up only the child session in the identity registry, which holds only root sessions, so every tool call of every subagent failed with PUBLIC_HOOK_BRIDGE_IDENTITY_UNAVAILABLE (also seen 2026-09-27).",
+      "failureFallback": "A session with no registered ancestor, a failed parent lookup or no engine client still fails closed with the same error; a parent lookup failure is logged. The acting child session id is passed alongside for audit. Mutation-verified: the previous own-session lookup fails the child and grandchild cases.",
+      "tests": [
+        "scripts/test-public-hook-bridge.mjs"
+      ]
+    },
+    {
+      "id": "websearch-provider-fallback",
+      "protects": "A web search whose chosen provider cannot answer is answered by 阿里 IQS when this install has an IQS key, with the failure that caused the fallback logged; SearXNG instances are raced and the losers aborted once one answers.",
+      "baseline": "2026-09-28: the search setting was SearXNG without a URL, the public instances were tried one after another and none is reachable from mainland China, so every search failed after 63 s while IQS, configured on the same machine, was never asked.",
+      "failureFallback": "No IQS key or WEBSEARCH_FALLBACK=0: the chosen provider alone, its failure reported as before. IQS as the chosen provider is unchanged. Mutation-verified: the previous sequential, no-fallback script fails the test.",
+      "tests": [
+        "scripts/test-websearch-provider-fallback.mjs"
       ]
     }
   ]
