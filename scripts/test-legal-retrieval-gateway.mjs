@@ -151,6 +151,10 @@ try {
       point("V27-update");
       const after = await ask();
       assert.deepEqual([after.releaseId, /一年/.test(after.results[0].text)], ["V27-update", true], "an applied update is the next request's corpus");
+      assert.equal(after.corpusVersion, "V27", "an unlabelled release reports its manifest version");
+      // The release named after its update held newer content; the agent read "V27".
+      fs.writeFileSync(path.join(runtime, "labels.json"), JSON.stringify({ "V27-update": { name: "V28", dataAsOf: "2026-09-26" } }));
+      assert.equal((await ask()).corpusVersion, "V28（数据截至 2026-09-26）", "a labelled release reports the content it holds");
       fs.writeFileSync(path.join(runtime, "active.json"), "{ half-written");
       assert.equal((await ask()).releaseId, "V27-update", "a pointer caught mid-write keeps the open release serving");
       point("../../escape");

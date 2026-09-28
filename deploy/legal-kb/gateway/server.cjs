@@ -58,10 +58,27 @@ function activeRelease(runtime) {
   return { releaseId: active.releaseId, folder };
 }
 
-let current = null; // { corpus, releaseId }
+// What a release is called. The update toolchain writes the release id into
+// the (hash-protected) manifest as the content version, so a release named
+// after its update ("V27-update-20260926") announced itself as V27 while it
+// held V28 — and the agent said so. `labels.json`, beside the releases and
+// maintained at deploy time, names the content: {"<releaseId>": {"name": "V28",
+// "dataAsOf": "2026-09-26"}}. Unlabelled releases report their manifest.
+function releaseLabel(releaseId, fallback) {
+  try {
+    const labels = JSON.parse(fs.readFileSync(path.join(path.resolve(RUNTIME), "labels.json"), "utf8"));
+    const label = labels?.[releaseId];
+    if (label?.name) return label.dataAsOf ? `${label.name}（数据截至 ${label.dataAsOf}）` : String(label.name);
+  } catch (error) {
+    if (error?.code !== "ENOENT") log(`release labels unreadable, using the manifest version: ${error?.message || error}`);
+  }
+  return fallback;
+}
+
+let current = null; // { corpus, releaseId, label }
 function corpusNow() {
   if (!RUNTIME) {
-    if (!current) current = { corpus: openCorpus(PACK), releaseId: "" };
+    if (!current) { const corpus = openCorpus(PACK); current = { corpus, releaseId: "", label: corpus.version }; }
     return current;
   }
   let release;
@@ -72,8 +89,12 @@ function corpusNow() {
     if (current) { log(`active pointer unreadable, still serving ${current.releaseId}: ${error?.message || error}`); return current; }
     throw error;
   }
-  if (current?.releaseId === release.releaseId) return current;
-  const next = { corpus: openCorpus(release.folder), releaseId: release.releaseId };
+  if (current?.releaseId === release.releaseId) {
+    current.label = releaseLabel(release.releaseId, current.corpus.version);
+    return current;
+  }
+  const opened = openCorpus(release.folder);
+  const next = { corpus: opened, releaseId: release.releaseId, label: releaseLabel(release.releaseId, opened.version) };
   const previous = current;
   current = next;
   log(`serving release ${next.releaseId} (corpus ${next.corpus.version}, ${next.corpus.laws.size} laws)${previous ? `, was ${previous.releaseId}` : ""}`);
@@ -154,24 +175,24 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}`);
   const started = Date.now();
   try {
-    const { corpus, releaseId } = corpusNow();
+    const { corpus, releaseId, label } = corpusNow();
     if (req.method === "GET" && url.pathname === "/health") {
       let v2 = null;
       try { v2 = await v2Fetch("/api/v2/health"); } catch (error) { v2 = { error: error?.message || String(error) }; }
-      send(res, 200, { ok: true, corpusVersion: corpus.version, releaseId, laws: corpus.laws.size, v2: { ok: !v2?.error, releaseId: v2?.releaseId || "", semanticState: v2?.semanticState || "", error: v2?.error || undefined } });
+      send(res, 200, { ok: true, corpusVersion: label, releaseId, laws: corpus.laws.size, v2: { ok: !v2?.error, releaseId: v2?.releaseId || "", semanticState: v2?.semanticState || "", error: v2?.error || undefined } });
       return;
     }
     if (req.method === "POST" && url.pathname === "/search") {
       const input = JSON.parse((await readBody(req)) || "{}");
       if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 240) { send(res, 400, { ok: false, error: "LEGAL_QUERY_INVALID" }); return; }
-      const result = { ...(await searchLegal(corpus, input, { v2Search: (q, mode) => v2Search(q, mode), lawValidity, log })), releaseId };
+      const result = { ...(await searchLegal(corpus, input, { v2Search: (q, mode) => v2Search(q, mode), lawValidity, log })), corpusVersion: label, releaseId };
       log(`search ${Date.now() - started}ms laws=${result.laws.map((l) => `${l.name}:${l.source}`).join(",") || "-"} results=${result.results.length}`);
       send(res, 200, result);
       return;
     }
     if (req.method === "GET" && url.pathname === "/article") {
       const result = getArticle(corpus, { id: url.searchParams.get("id"), law: url.searchParams.get("law"), article: url.searchParams.get("article") });
-      if (result.ok) { result.article.validity = await lawValidity(result.article.title); result.releaseId = releaseId; }
+      if (result.ok) { result.article.validity = await lawValidity(result.article.title); result.corpusVersion = label; result.releaseId = releaseId; }
       send(res, result.ok ? 200 : 404, result);
       return;
     }

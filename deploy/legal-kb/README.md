@@ -41,7 +41,7 @@ prefix — tens of milliseconds.
 ```sh
 # 1. data: build the managed runtime (V27 → reviewed delta), lowest priority
 sh apply-delta.sh /opt/lily-legal-kb/patches/V27-Linux-UpdatePatch-20260926-r4 delta-20260926 \
-  V27-update-20260926 V27-base 43b029bea0848bfe24feb74217a2f8548a3facbbfc3c3e5c95134ef1f15b0ef1
+  V28 V27-base 43b029bea0848bfe24feb74217a2f8548a3facbbfc3c3e5c95134ef1f15b0ef1
 # 2. gateway (idempotent)
 sh install-gateway.sh <dir with server.cjs, legal-retrieval.cjs, lily-legal-gateway.service>
 # 3. gate: never below the previous release
@@ -52,6 +52,13 @@ Before a delta is applied, verify the bundle independently: every file's
 sha256 against its `manifest.json`, and the canonical sha256 of `delta.json`
 against the `--confirm` value (the bundle's own `patch-package.cjs verify`
 predates data bundles and rejects them as `INVALID_MANIFEST`).
+
+Name a release after the content it holds (`--release V29`), not after the
+update that produced it: the update toolchain writes the release id into the
+manifest as the content version. The first V28 release was named
+`V27-update-20260926`, and the agent, reading that version, told the user the
+corpus was V27. `runtime/labels.json` names such releases for the gateway:
+`{"V27-update-20260926": {"name": "V28", "dataAsOf": "2026-09-26"}}`.
 
 Rollback: `python3 <patch>/tools/v2/legal-pack-delta.py rollback --runtime /opt/lily-legal-kb/runtime --expected <active> --target <previous>` — the gateway serves the new pointer from the next request.
 
