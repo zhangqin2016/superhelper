@@ -2651,10 +2651,10 @@
       ]
     },
     {
-      "id": "websearch-provider-fallback",
-      "protects": "A web search whose chosen provider cannot answer is answered by 阿里 IQS when this install has an IQS key, with the failure that caused the fallback logged; SearXNG instances are raced and the losers aborted once one answers.",
+      "id": "websearch-platform-first",
+      "protects": "Web search asks platform search (阿里 IQS) first whenever this install has an IQS key — most users are in mainland China — and the provider chosen in settings when IQS cannot answer, logging the failure that moved it on; SearXNG instances are raced and the losers aborted once one answers.",
       "baseline": "2026-09-28: the search setting was SearXNG without a URL, the public instances were tried one after another and none is reachable from mainland China, so every search failed after 63 s while IQS, configured on the same machine, was never asked.",
-      "failureFallback": "No IQS key or WEBSEARCH_FALLBACK=0: the chosen provider alone, its failure reported as before. IQS as the chosen provider is unchanged. Mutation-verified: the previous sequential, no-fallback script fails the test.",
+      "failureFallback": "No IQS key or WEBSEARCH_FALLBACK=0: the chosen provider alone, its failure reported as before. IQS as the chosen provider is unchanged. Mutation-verified: the previous chosen-provider-only, sequential script fails the test.",
       "tests": [
         "scripts/test-websearch-provider-fallback.mjs"
       ]

@@ -2,7 +2,9 @@
 "use strict";
 
 /**
- * Web search — default 阿里 IQS; optional SearXNG / DuckDuckGo via WEBSEARCH_PROVIDER.
+ * Web search — 阿里 IQS (platform search) first when configured; SearXNG /
+ * DuckDuckGo via WEBSEARCH_PROVIDER, asked first only without an IQS key or
+ * with WEBSEARCH_FALLBACK=0, otherwise when IQS cannot answer.
  * IQS: WEBSEARCH_IQS_API_KEY, WEBSEARCH_IQS_ENGINE_TYPE (default LiteAdvanced)
  * SearXNG: WEBSEARCH_SEARXNG_URL=https://your-searx.example
  */
@@ -146,11 +148,12 @@ function searxInstances() {
   return list;
 }
 
-async function searchSearXNG(query, baseUrl) {
+async function searchSearXNG(query, baseUrl, signal) {
   const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&format=json`;
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const response = await fetch(url, {
     headers: FETCH_HEADERS,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   if (!response.ok) {
     throw new Error(`SearXNG ${baseUrl} returned HTTP ${response.status}`);
@@ -166,29 +169,32 @@ async function searchSearXNG(query, baseUrl) {
     .filter((item) => item.title && item.url);
 }
 
+// The public instances are raced, not tried in turn: from a network that can
+// reach none of them (mainland China), one at a time meant waiting out every
+// connect timeout — 63 s for nothing on 2026-09-28. The losers are aborted
+// once one answers, or the process would wait out their timeouts anyway.
 async function searchWithSearXNG(query) {
   const instances = searxInstances();
-  let lastError = null;
-
-  for (const instance of instances) {
+  const race = new AbortController();
+  const attempts = instances.map(async (instance) => {
+    log("info", `Searching via SearXNG: ${instance}`);
     try {
-      log("info", `Searching via SearXNG: ${instance}`);
-      const results = await searchSearXNG(query, instance);
-      if (results.length > 0) {
-        log("info", `Got ${results.length} results from ${instance}`);
-        return results;
-      }
-      log("warn", `No results from ${instance}, trying next instance`);
+      const results = await searchSearXNG(query, instance, race.signal);
+      if (!results.length) throw new Error(`no results from ${instance}`);
+      log("info", `Got ${results.length} results from ${instance}`);
+      return results;
     } catch (err) {
-      lastError = err;
-      log(
-        "warn",
-        `${instance} failed: ${errorMessage(err)}`,
-      );
+      if (!race.signal.aborted) log("warn", `${instance} failed: ${errorMessage(err)}`);
+      throw err;
     }
+  });
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    throw new Error(`No search results from any SearXNG instance (${instances.length} tried)`);
+  } finally {
+    race.abort();
   }
-
-  throw lastError || new Error("No search results from any SearXNG instance");
 }
 
 function buildIqsAdvancedParams(input) {
@@ -316,8 +322,7 @@ function resolveProvider() {
   return "iqs";
 }
 
-async function searchWithProvider(input) {
-  const provider = resolveProvider();
+function searchOne(provider, input) {
   if (provider === "duckduckgo") {
     log("info", "Searching via DuckDuckGo Lite");
     return searchDDG(input.query);
@@ -329,11 +334,43 @@ async function searchWithProvider(input) {
   return searchIQS(input);
 }
 
+/**
+ * Platform search (阿里 IQS) first whenever this install has it — most users
+ * are in mainland China, where the public SearXNG instances and DuckDuckGo are
+ * unreachable — then the provider chosen in settings. A setting of SearXNG
+ * without a reachable instance made every search fail while IQS, configured on
+ * the same machine, was never asked (2026-09-28). WEBSEARCH_FALLBACK=0 keeps
+ * the chosen provider alone. Every failure that moves to the next provider is
+ * logged.
+ */
+function providerOrder() {
+  const chosen = resolveProvider();
+  const hasIqs = Boolean(process.env.WEBSEARCH_IQS_API_KEY?.trim());
+  if (chosen === "iqs" || !hasIqs || process.env.WEBSEARCH_FALLBACK === "0") return [chosen];
+  return ["iqs", chosen];
+}
+
+async function searchWithProvider(input) {
+  const order = providerOrder();
+  let lastError = null;
+  for (const candidate of order) {
+    try {
+      const results = await searchOne(candidate, input);
+      if (lastError) log("warn", `answered by ${candidate} after ${order[0]} failed: ${errorMessage(lastError)}`);
+      return results;
+    } catch (err) {
+      lastError = err;
+      if (candidate !== order.at(-1)) log("warn", `${candidate} failed (${errorMessage(err)}); falling back`);
+    }
+  }
+  throw lastError;
+}
+
 async function main() {
   try {
     const parsed = await readStdin();
     validateDomainExclusivity(parsed);
-    log("info", `Searching for: ${parsed.query} (${resolveProvider()})`);
+    log("info", `Searching for: ${parsed.query} (${providerOrder().join(" → ")})`);
     const results = await searchWithProvider(parsed);
     const filtered = filterByDomains(
       results,

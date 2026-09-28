@@ -17,8 +17,9 @@ Run:
 echo '{"query":"search keywords"}' | "{{NODE_BIN}}" "{{WEBSEARCH_SCRIPT}}"
 ```
 
-The script uses the configured web search provider from Settings -> Web Search.
-Do not assume IQS when the current provider context says SearXNG or DuckDuckGo.
+The script asks platform search (Alibaba IQS) first when this install has it, then
+the provider from Settings -> Web Search if IQS cannot answer. Without IQS, only
+the configured provider is used. A failure names every provider it tried.
 
 Optional JSON parameters:
 

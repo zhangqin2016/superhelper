@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "websearch",
   "name": "联网搜索",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "使用设置里的默认联网搜索服务商，支持阿里 IQS、SearXNG / DuckDuckGo。",
   "minAppVersion": "0.1.0",
   "runtime": "node",

@@ -79,6 +79,35 @@ try {
     const output = { context: ["existing"] };
     await hooks["experimental.session.compacting"]({ sessionID: "engine:1" }, output);
     assert.deepEqual(output.context, ["preserve this", "existing"]);
+
+    // A subagent's child session (and its own child) acts under the granted
+    // ancestor: every tool call a subagent made failed here before (2026-09-28).
+    const parents = { "child:1": "engine:1", "grandchild:1": "child:1", "orphan:1": "" };
+    const lookups = [];
+    const client = { session: { get: async ({ path: { id } }) => { lookups.push(id); return { data: { parentID: parents[id] || "" } }; } } };
+    const withParents = await (await import(`${pluginUrl}&parents`)).PublicHooksBridgePlugin({ client });
+    await withParents["tool.execute.before"]({ sessionID: "child:1", tool: "read" }, { args: {} });
+    await withParents["tool.execute.before"]({ sessionID: "grandchild:1", tool: "read" }, { args: {} });
+    await assert.rejects(
+      () => withParents["tool.execute.before"]({ sessionID: "child:1", tool: "bash" }, { args: {} }),
+      /PUBLIC_HOOK_DENIED/,
+      "and the hooks that govern the turn govern its subagents too",
+    );
+    const childCall = seen.filter((event) => event.payload.tool === "bash").at(-1);
+    assert.equal(childCall.payload.sessionId, "session:1", "the subagent is scoped to the turn that dispatched it");
+    const lookupsBefore = lookups.length;
+    await withParents["tool.execute.before"]({ sessionID: "child:1", tool: "read" }, { args: {} });
+    assert.equal(lookups.length, lookupsBefore, "a known parent is not looked up again");
+    await assert.rejects(
+      () => withParents["tool.execute.before"]({ sessionID: "orphan:1", tool: "read" }, { args: {} }),
+      /PUBLIC_HOOK_BRIDGE_IDENTITY_UNAVAILABLE/,
+      "a session with no granted ancestor still fails closed",
+    );
+    await assert.rejects(
+      () => hooks["tool.execute.before"]({ sessionID: "child:1", tool: "read" }, { args: {} }),
+      /PUBLIC_HOOK_BRIDGE_IDENTITY_UNAVAILABLE/,
+      "and without the engine client nothing is inferred",
+    );
   } finally {
     if (previous.registry === undefined) delete process.env.LILY_RUNTIME_IDENTITY_REGISTRY;
     else process.env.LILY_RUNTIME_IDENTITY_REGISTRY = previous.registry;
