@@ -922,7 +922,10 @@ await check("promoted turns reuse the frozen snapshot without reusing queue admi
   // With no live runner a preflight-skipping turn runs the full preflight
   // (6c7d92ec); with no blocker it is refused where the runner is allocated.
   const originalDiagnose = orchestrator.ctx.diagnoseSendBlocker;
+  const originalEnsure = orchestrator.ctx.ensureSessionRunner;
   orchestrator.ctx.diagnoseSendBlocker = () => null;
+  // No runner can be allocated (whether the CLI is installed must not matter).
+  orchestrator.ctx.ensureSessionRunner = () => ({ runner: null, error: "RUNNER_UNAVAILABLE" });
   const startedAfter = Date.now();
   try {
     const result = await orchestrator._startTurn(session, "queued long ago", [], {
@@ -939,6 +942,7 @@ await check("promoted turns reuse the frozen snapshot without reusing queue admi
   } finally {
     orchestrator._finalize = originalFinalize;
     orchestrator.ctx.diagnoseSendBlocker = originalDiagnose;
+    orchestrator.ctx.ensureSessionRunner = originalEnsure;
     runners.set(SESSION_A, runner);
     orchestrator._state(SESSION_A).phase = "idle";
   }
@@ -2327,6 +2331,11 @@ await check("principal switch pauses foreign queue and restores it once for its 
 
   session.ownerScopeForTest = OWNER_A;
   runtime.orchestrator.handlePrincipalChange();
+  // The restore is asynchronous: wait for it (a fixed 20ms raced on a loaded
+  // machine), then settle so a second execution would still show.
+  for (let waited = 0; runner.sentPayloads.length < 1 && waited < 2000; waited += 10) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(runner.sentPayloads.length, 1, "owner A restores and executes once");
   assert.equal(
