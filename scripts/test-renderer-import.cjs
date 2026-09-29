@@ -2604,6 +2604,26 @@ app.whenReady().then(async () => {
           const ws = getComputedStyle(pre.querySelector("code")).whiteSpace;
           if (ws !== getComputedStyle(pre).whiteSpace) throw new Error("a code block's <code> must follow the block's line handling, got " + ws);
         }
+        // A long unwrapped line: the frame fades the edge with more to see.
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const jsFrame = js.parentElement;
+        const wrappedFrame = untagged.parentElement;
+        if (!jsFrame.classList.contains("has-overflow-end") || jsFrame.classList.contains("has-overflow-start")) {
+          throw new Error("a sideways-scrolling block fades its end edge: " + jsFrame.className);
+        }
+        if (wrappedFrame.classList.contains("has-overflow-end") || wrappedFrame.classList.contains("has-overflow-start")) {
+          throw new Error("a wrapped block has nothing sideways to hint at: " + wrappedFrame.className);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400)); // past the fade-in transition
+        const fade = getComputedStyle(jsFrame, "::after");
+        if (fade.opacity !== "1" || !String(fade.backgroundImage).includes("gradient") || fade.pointerEvents !== "none") {
+          throw new Error("the end fade is a visible, click-through gradient: " + fade.opacity + " " + fade.pointerEvents);
+        }
+        js.scrollLeft = js.scrollWidth;
+        js.dispatchEvent(new Event("scroll"));
+        if (jsFrame.classList.contains("has-overflow-end") || !jsFrame.classList.contains("has-overflow-start")) {
+          throw new Error("scrolled to the end, the fade moves to the start edge: " + jsFrame.className);
+        }
         const multi = document.createElement("div");
         multi.className = "assistant-turn-final markdown-body";
         multi.style.width = "520px";

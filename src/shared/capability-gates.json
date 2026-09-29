@@ -2858,9 +2858,9 @@
     },
     {
       "id": "code-block-lines",
-      "protects": "A fenced block in an answer shows its lines: every block's <code> follows the block's own line handling; untagged and plain-text blocks (text/log/output) wrap like prose inside the block, real code keeps its lines unwrapped; table repair never touches lines inside a fence and never emits a line twice; the copy control is an icon in its own reserved corner.",
+      "protects": "A fenced block in an answer shows its lines: every block's <code> follows the block's own line handling; untagged and plain-text blocks (text/log/output) wrap like prose inside the block, real code keeps its lines unwrapped, and a block whose line continues sideways fades the edge with more to see (the end until scrolled, then the start); table repair never touches lines inside a fence and never emits a line twice; the copy control is an icon in its own reserved corner.",
       "baseline": "2026-09-29: the inline-code nowrap rule (2026-09-03) reached every fenced block and joined a five-line report extract into one line reachable only sideways (the horizontal scrollbar is zero-height); a lone pipe line was emitted twice by table repair, inside code too; the English 'Copy' button was drawn over the text.",
-      "failureFallback": "Code with a language keeps its lines as before (unwrapped, sideways for long lines); tables outside fences are repaired as before; a still-streaming unclosed fence is left alone. Mutation-verified: dropping white-space: inherit, the old table repair, the old renderer, the old stylesheet and the copy button's reserved space each fail by name.",
+      "failureFallback": "Code with a language keeps its lines as before (unwrapped, sideways for long lines); tables outside fences are repaired as before; a still-streaming unclosed fence is left alone. Mutation-verified: dropping white-space: inherit, the old table repair, the old renderer, the old stylesheet and the copy button's reserved space and the unwired overflow fade each fail by name.",
       "tests": [
         "scripts/test-markdown-renderer.mjs",
         "scripts/test-renderer-import.cjs"

@@ -96,6 +96,40 @@
   padding-inline-end: 48px;
 }
 
+/* Fades on the edge a long line continues past (markdown.js watchCodeOverflow). */
+.markdown-code-frame::before,
+.markdown-code-frame::after {
+  content: "";
+  position: absolute;
+  inset-block: 1px;
+  inline-size: 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.markdown-code-frame::before {
+  inset-inline-start: 1px;
+  border-start-start-radius: var(--radius-lg);
+  border-end-start-radius: var(--radius-lg);
+  background: linear-gradient(to right, var(--pre-bg), transparent);
+}
+
+.markdown-code-frame::after {
+  inset-inline-end: 1px;
+  border-start-end-radius: var(--radius-lg);
+  border-end-end-radius: var(--radius-lg);
+  background: linear-gradient(to left, var(--pre-bg), transparent);
+}
+
+[dir="rtl"] .markdown-code-frame::before { background: linear-gradient(to left, var(--pre-bg), transparent); }
+[dir="rtl"] .markdown-code-frame::after { background: linear-gradient(to right, var(--pre-bg), transparent); }
+
+.markdown-code-frame.has-overflow-start::before,
+.markdown-code-frame.has-overflow-end::after {
+  opacity: 1;
+}
+
 .markdown-body pre.is-wrapped,
 .markdown-body pre.is-wrapped code {
   white-space: pre-wrap;

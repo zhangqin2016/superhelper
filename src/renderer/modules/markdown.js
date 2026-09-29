@@ -683,7 +683,36 @@ function wireCodeCopyButtons(element) {
 
     pre.parentNode?.insertBefore(frame, pre);
     frame.append(pre, button);
+    watchCodeOverflow(frame, pre);
   }
+}
+
+// A long code line scrolls sideways, and the horizontal scrollbar is
+// zero-height (it keeps streaming layout still), so the frame fades the edge
+// that has more to see: `has-overflow-end` while text continues past the
+// visible end, `has-overflow-start` once scrolled. One observer serves every
+// block and lets go of blocks that left the page.
+let codeOverflowObserver = null;
+function syncCodeOverflow(frame, pre) {
+  const max = pre.scrollWidth - pre.clientWidth;
+  const at = Math.abs(pre.scrollLeft);
+  frame.classList.toggle("has-overflow-start", max > 1 && at > 1);
+  frame.classList.toggle("has-overflow-end", max > 1 && at < max - 1);
+}
+function watchCodeOverflow(frame, pre) {
+  pre.addEventListener("scroll", () => syncCodeOverflow(frame, pre), { passive: true });
+  if (typeof ResizeObserver === "function") {
+    codeOverflowObserver ||= new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target;
+        if (!target.isConnected) { codeOverflowObserver.unobserve(target); continue; }
+        const owner = target.closest(".markdown-code-frame");
+        if (owner) syncCodeOverflow(owner, target);
+      }
+    });
+    codeOverflowObserver.observe(pre);
+  }
+  syncCodeOverflow(frame, pre);
 }
 
 async function copyText(text) {
