@@ -47,6 +47,9 @@ export async function userStatement(userId, { before = "", limit = 50, kind = "a
     left join products p on p.id = o.product_id
     left join refunds rf on l.source_type = 'refund' and rf.id = l.source_id
     where l.user_id = ${userId}
+      -- The personal statement: org-pool grants (booked under the owner) and
+      -- usage the org pool paid for belong to the organization, not this person.
+      and not exists (select 1 from wallet_grants og where og.id = l.grant_id and og.organization_id is not null)
       ${kind === "topup" ? sql`and l.event_type in ('grant', 'refund')` : kind === "usage" ? sql`and l.event_type = 'consume'` : sql``}
     group by line_id
     ${cursor ? sql`having max(l.created_at) < ${before}::timestamptz` : sql``}

@@ -126,6 +126,9 @@ function isRecoverableModelConnectionFailure(classified, raw = "") {
 
 function isManagedGatewayAuthFailure(classified, raw = "", spawnOptions = null) {
   if (classified?.code === "UPSTREAM_MODEL_AUTH_FAILED") return false;
+  // A 403 org_forbidden is the chosen identity being refused, not a stale
+  // gateway token: refreshing config and replaying cannot change the answer.
+  if (require("./organization-identity").isOrgIdentityCode(classified?.code)) return false;
   const text = String(raw || "");
   if (classified?.code === "MANAGED_MODEL_AUTH_INVALID" || classified?.code === "MANAGED_MODEL_AUTH_MISSING") return true;
   if (/MODEL_GATEWAY_TOKEN_(INVALID|EXPIRED)/i.test(text)) return true;

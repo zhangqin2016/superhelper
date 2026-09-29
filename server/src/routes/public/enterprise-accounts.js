@@ -3,7 +3,7 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 import { ENTERPRISE_ACCOUNT_LIMITS } from "../../services/enterprise-accounts.js";
-import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
+import { enterpriseMutationResponse, enterpriseScope, requireOrgRole } from "./enterprise-route-support.js";
 
 /**
  * Enterprise-issued accounts — the company generates dedicated logins.
@@ -34,7 +34,7 @@ const provisionSchema = z.object({
 
 export function registerPublicEnterpriseAccountRoutes(app) {
   const mutations = createEnterpriseMutationService(db);
-  const scope = (request) => ({ organizationId: request.params.id, account: request.user });
+  const scope = enterpriseScope;
 
   app.get(
     "/api/enterprise/organizations/:id/accounts",
@@ -50,7 +50,10 @@ export function registerPublicEnterpriseAccountRoutes(app) {
       if (!await requireOrgRole(request, reply, request.params.id, "admin")) return;
       const rows = await db
         .selectFrom("users")
-        .innerJoin("organization_members", (join) => join
+        // LEFT join: a removed issued account is still this org's (its login
+        // name stays taken, its login is locked). It used to vanish from every
+        // list the moment it was removed, with no way to see or restore it.
+        .leftJoin("organization_members", (join) => join
           .onRef("organization_members.user_id", "=", "users.id")
           .on("organization_members.organization_id", "=", request.params.id))
         .select([
@@ -66,7 +69,7 @@ export function registerPublicEnterpriseAccountRoutes(app) {
         .where("users.provisioned_organization_id", "=", request.params.id)
         .orderBy("users.created_at", "asc")
         .execute();
-      return { ok: true, accounts: rows };
+      return { ok: true, accounts: rows.map((row) => ({ ...row, memberStatus: row.memberStatus || "removed" })) };
     },
   );
 

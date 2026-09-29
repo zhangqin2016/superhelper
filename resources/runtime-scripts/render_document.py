@@ -16,6 +16,11 @@ A successful render also leaves <out_dir>/.lily-render-receipt.json naming the
 source file (path, mtime, size) and its page images. The delivery gate reads
 it, so a render counts whatever a calling script prints; a later edit of the
 source makes the receipt stale by its mtime/size.
+
+An Office package is also checked against the OOXML schema for markup a strict
+Office reader refuses (ooxml_conformance.py). LibreOffice renders such files
+anyway, so the pages alone never showed it. The result rides in the stdout JSON
+and the receipt as "package"; checked:false means it could not be judged.
 """
 
 import json
@@ -124,15 +129,34 @@ def main(argv):
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
 
-    _write_receipt(path, out_dir, images)
-    print(json.dumps({"ok": True, "images": images, "pages": len(images)}))
+    package = _package_check(path)
+    _write_receipt(path, out_dir, images, package)
+    result = {"ok": True, "images": images, "pages": len(images)}
+    if package is not None:
+        result["package"] = package
+    print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def _package_check(path):
+    try:
+        from ooxml_conformance import OOXML_EXTS, check_package
+    except Exception as exc:  # noqa: BLE001 — the render stands; say why the package was not judged
+        return {"checked": False, "reason": "checker_unavailable: %s" % type(exc).__name__}
+    if os.path.splitext(path)[1].lower() not in OOXML_EXTS:
+        return None
+    package = check_package(path)
+    if package.get("count"):
+        package["note"] = ("Word/PowerPoint/Excel will refuse to open this file although it rendered: "
+                           "an element from one markup vocabulary sits where the schema does not allow it "
+                           "(see violations). Fix the generating code, regenerate, and render again.")
+    return package
 
 
 RECEIPT_NAME = ".lily-render-receipt.json"
 
 
-def _write_receipt(source, out_dir, images):
+def _write_receipt(source, out_dir, images, package=None):
     try:
         stat = os.stat(source)
         receipt = {
@@ -145,6 +169,8 @@ def _write_receipt(source, out_dir, images):
             "pages": len(images),
             "renderedAtMs": int(time.time() * 1000),
         }
+        if package is not None:
+            receipt["package"] = package
         target = os.path.join(out_dir, RECEIPT_NAME)
         partial = target + ".partial"
         with open(partial, "w", encoding="utf-8") as handle:

@@ -17,7 +17,7 @@ import {
 } from "./dom.js";
 import { elementScrollTargetTop, revealScrollIntent, shouldLoadOlderOnScroll } from "./scroll-geometry.js";
 import { t } from "../i18n/index.js";
-import { buildDiagnoseAction } from "./diagnose-action.js";
+import { buildDiagnoseAction, buildPersonalIdentityAction } from "./diagnose-action.js";
 import {
   buildMinimapItems,
   COMMITTED_INITIAL_WINDOW,
@@ -522,7 +522,7 @@ function buildRewindAction(sessionId, message) {
 function appendArticleActions(article, sessionId, message) {
   const actions = document.createElement("div");
   actions.className = "assistant-article-actions";
-  if (shouldShowRetryAction(message)) actions.append(buildRetryAction(sessionId, message), buildDiagnoseAction());
+  if (shouldShowRetryAction(message)) actions.append(...[buildPersonalIdentityAction(message)].filter(Boolean), buildRetryAction(sessionId, message), buildDiagnoseAction());
   const copyText = copyActionText(message);
   if (copyText) {
     const copy = document.createElement("button");

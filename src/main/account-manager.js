@@ -5,6 +5,7 @@ const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
 const serviceClient = require("./service-client");
+const organizationIdentity = require("./organization-identity");
 
 const ACCOUNT_FILE = "account-state.json";
 const ACCOUNT_ACCESS_MAX_STALE_MS = 24 * 60 * 60 * 1000;
@@ -223,10 +224,68 @@ async function fetchOrganizations() {
     headers: { Authorization: `Bearer ${String(token.accessToken || "").trim()}` },
   });
   if (!result.ok) return result;
-  const rows = Array.isArray(result.json?.organizations) ? result.json.organizations : [];
+  const rows = (Array.isArray(result.json?.organizations) ? result.json.organizations : [])
+    .map((row) => ({ ...row, unusableCode: organizationIdentity.organizationUnusableCode(row) }));
   const state = readState();
-  writeState({ ...state, organizations: rows, organizationsRefreshedAt: new Date().toISOString() });
-  return { ok: true, organizations: rows };
+  // Only a list the server actually returned may move the selection; a failed
+  // refresh returned above and proves nothing.
+  const decision = organizationIdentity.organizationSelectionDecision({
+    currentId: state.currentOrganizationId,
+    organizations: rows,
+  });
+  const next = { ...state, organizations: rows, organizationsRefreshedAt: new Date().toISOString() };
+  let selection = decision;
+  if (decision.action === "clear") {
+    // Gone for this user (removed / left / deleted): the header would only be
+    // refused. Clear it and report it — the caller tells the user they are on
+    // their personal identity now.
+    const previous = (Array.isArray(state.organizations) ? state.organizations : [])
+      .find((row) => String(row?.id || "") === decision.organizationId);
+    selection = { ...decision, organizationName: String(previous?.name || "") };
+    next.currentOrganizationId = "";
+    delete next.organizationMe;
+  }
+  writeState(next);
+  const currentOrganizationId = String(next.currentOrganizationId || "").trim();
+  let currentOrganizationMe = null;
+  if (currentOrganizationId && decision.action === "keep") {
+    const detail = await fetchOrganizationMe(currentOrganizationId, token.accessToken);
+    currentOrganizationMe = detail.ok ? detail.me : null;
+  }
+  return { ok: true, organizations: rows, currentOrganizationId, selection, currentOrganizationMe };
+}
+
+/**
+ * The member's own week in one organization (detail `me`), cached so a weekly
+ * limit refusal in chat can name the reset time. Fail-open: no detail, no cache
+ * change, no error surfaced.
+ */
+async function fetchOrganizationMe(organizationId, bearer) {
+  const id = String(organizationId || "").trim();
+  if (!id) return { ok: false };
+  try {
+    const result = await serviceClient.serviceFetch(`/api/enterprise/organizations/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${String(bearer || "").trim()}` },
+    });
+    const me = result?.ok ? result.json?.organization?.me : null;
+    if (!me || typeof me !== "object" || me.ok === false) return { ok: false };
+    const state = readState();
+    if (String(state.currentOrganizationId || "").trim() === id) {
+      writeState({ ...state, organizationMe: { ...me, organizationId: id, fetchedAt: new Date().toISOString() } });
+    }
+    return { ok: true, me };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Cached `me` for the CURRENT organization only; null otherwise. */
+function getCurrentOrganizationMe() {
+  const state = readState();
+  const id = String(state.currentOrganizationId || "").trim();
+  const me = state.organizationMe;
+  return id && me && me.organizationId === id ? me : null;
 }
 
 /** Current org selection for the model request header; "" = personal path. */
@@ -238,7 +297,10 @@ function getCurrentOrganizationId() {
 /** Persist the user's current org selection; "" clears back to personal. */
 function setCurrentOrganizationId(organizationId) {
   const state = readState();
-  writeState({ ...state, currentOrganizationId: String(organizationId || "").trim() });
+  const nextId = String(organizationId || "").trim();
+  const next = { ...state, currentOrganizationId: nextId };
+  if (state.organizationMe?.organizationId !== nextId) delete next.organizationMe;
+  writeState(next);
   return getCurrentOrganizationId();
 }
 
@@ -299,6 +361,7 @@ module.exports = {
   refreshEntitlements,
   fetchOrganizations,
   getCurrentOrganizationId,
+  getCurrentOrganizationMe,
   setCurrentOrganizationId,
   createBillingLink,
   accessTokenForService,

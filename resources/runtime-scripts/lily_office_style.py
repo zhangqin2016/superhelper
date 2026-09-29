@@ -49,7 +49,10 @@ _RFONT_THEME_ATTRS = ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme")
 
 def _set_rfonts(rpr, latin, cjk):
     qn = _docx_qn()
-    rfonts = rpr.find(qn("w:rFonts"))
+    # python-docx's CT_RPr knows where w:rFonts sits in w:rPr (after w:rStyle);
+    # the library's content model places it, not a copy of the schema here.
+    get_or_add = getattr(rpr, "get_or_add_rFonts", None)
+    rfonts = get_or_add() if get_or_add else rpr.find(qn("w:rFonts"))
     if rfonts is None:
         rfonts = rpr.makeelement(qn("w:rFonts"), {})
         rpr.insert(0, rfonts)
@@ -89,12 +92,8 @@ def _set_theme_fonts(doc, latin, cjk):
             node = root.find(".//%s%s" % (ns, scheme))
             if node is None:
                 continue
-            for tag, value in (("latin", latin), ("ea", cjk), ("cs", latin)):
-                element = node.find("%s%s" % (ns, tag))
-                if element is None:
-                    element = etree.SubElement(node, "%s%s" % (ns, tag))
-                element.set("typeface", value)
-                changed = True
+            _set_drawingml_fonts(node, latin, cjk, latin)
+            changed = True
         if changed:
             part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
         return changed
@@ -137,7 +136,9 @@ def style_docx(doc, latin=DEFAULT_LATIN_FONT, cjk=None):
     for style in doc.styles:
         try:
             el = style.element
-            rpr = el.find(qn("w:rPr"))
+            # CT_Style places w:rPr before a table style's w:tblPr.
+            get_or_add = getattr(el, "get_or_add_rPr", None)
+            rpr = get_or_add() if get_or_add else el.find(qn("w:rPr"))
             if rpr is None:
                 rpr = el.makeelement(qn("w:rPr"), {})
                 el.append(rpr)
@@ -155,22 +156,58 @@ def _pptx_qn():
     return qn
 
 
-def apply_ea_font(run, cjk=None, latin=DEFAULT_LATIN_FONT):
-    """Set latin (a:latin) + East-Asian (a:ea) typefaces on one pptx run."""
-    cjk = cjk or _default_cjk()
-    qn = _pptx_qn()
-    rPr = run._r.get_or_add_rPr()
+_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+
+
+def _set_drawingml_fonts(props, latin=None, ea=None, cs=None):
+    """Set a:latin / a:ea / a:cs on DrawingML text properties, in schema position.
+
+    The three are one contiguous run in every DrawingML content model that has
+    them (text run properties, chart text, theme font collections), so a:latin
+    is the anchor and ea/cs follow it. python-pptx places a:latin itself
+    (get_or_add_latin knows its successors — fills before it, hyperlinks after);
+    appending instead put the fonts after a:hlinkClick on any linked run."""
+    get_or_add_latin = getattr(props, "get_or_add_latin", None)
+    anchor = props.find(_A_NS + "latin")
+    created = False
+    if anchor is None and get_or_add_latin is not None:
+        anchor = get_or_add_latin()
+        created = True
+    if latin and anchor is None:
+        anchor = props.makeelement(_A_NS + "latin", {})
+        props.append(anchor)
     if latin:
-        latin_el = rPr.find(qn("a:latin"))
-        if latin_el is None:
-            latin_el = rPr.makeelement(qn("a:latin"), {})
-            rPr.append(latin_el)
-        latin_el.set("typeface", latin)
-    ea = rPr.find(qn("a:ea"))
-    if ea is None:
-        ea = rPr.makeelement(qn("a:ea"), {})
-        rPr.append(ea)
-    ea.set("typeface", cjk)
+        anchor.set("typeface", latin)
+    previous = anchor
+    for tag, value in (("ea", ea), ("cs", cs)):
+        element = props.find(_A_NS + tag)
+        if value and element is None:
+            element = props.makeelement(_A_NS + tag, {})
+            if previous is None:
+                props.append(element)
+            else:
+                previous.addnext(element)
+        if value:
+            element.set("typeface", value)
+        if element is not None:
+            previous = element
+    if created and not latin:
+        props.remove(anchor)  # only borrowed to find the position
+
+
+def apply_ea_font(run, cjk=None, latin=DEFAULT_LATIN_FONT):
+    """Set the latin + East-Asian typefaces on one run — pptx OR docx.
+
+    Agents reach for this one name on Word runs too. DrawingML a:latin/a:ea in a
+    w:rPr is a file Word refuses to open while LibreOffice renders it fine, so a
+    render check never saw it (2026-09-29: a report with 238 of them). The run's
+    own element model decides: a WordprocessingML rPr gets w:rFonts."""
+    cjk = cjk or _default_cjk()
+    rPr = run._r.get_or_add_rPr()
+    if hasattr(rPr, "get_or_add_rFonts"):
+        _set_rfonts(rPr, latin or DEFAULT_LATIN_FONT, cjk)
+        return
+    _set_drawingml_fonts(rPr, latin, cjk)
 
 
 def _style_text_frame(tf, latin, cjk):
@@ -201,11 +238,7 @@ def _set_chart_fonts(prs, latin, cjk):
         return 0
 
     def apply_fonts(node):
-        for tag, value in (("latin", latin), ("ea", cjk), ("cs", latin)):
-            child = node.find("%s%s" % (A, tag))
-            if child is None:
-                child = etree.SubElement(node, "%s%s" % (A, tag))
-            child.set("typeface", value)
+        _set_drawingml_fonts(node, latin, cjk, latin)
 
     for part in parts:
         try:
@@ -726,6 +759,27 @@ def _selftest():
     assert rfonts.get(qn("w:eastAsia")) == expected_cjk, "docx eastAsia must persist after save/reopen"
     assert rfonts.get(qn("w:ascii")) == DEFAULT_LATIN_FONT, "docx latin must persist after save/reopen"
 
+    # A table style's rPr must precede its tblPr (schema order). [gate: docx-run-font-schema]
+    for style_el in reopened.styles.element.findall(qn("w:style")):
+        kids = [c.tag for c in style_el]
+        if qn("w:rPr") in kids and qn("w:tblPr") in kids:
+            assert kids.index(qn("w:rPr")) < kids.index(qn("w:tblPr")), "style rPr must precede tblPr"
+
+    # apply_ea_font on a WORD run must write w:rFonts, never DrawingML a:latin/a:ea
+    # (Word refuses such a file; LibreOffice hides it). [gate: docx-run-font-schema]
+    wdoc = Document()
+    styled = wdoc.add_paragraph().add_run("标题 Title")
+    styled.bold = True
+    styled.style = wdoc.styles["Strong"]  # a w:rStyle that w:rFonts must follow
+    apply_ea_font(styled, latin="Arial")
+    wrpr = styled._r.rPr
+    w_ns = qn("w:rPr").split("}")[0] + "}"
+    assert all(c.tag.startswith(w_ns) for c in wrpr), "docx run rPr must hold only w: elements"
+    wfonts = wrpr.find(qn("w:rFonts"))
+    assert wfonts is not None and wfonts.get(qn("w:eastAsia")) == expected_cjk, "docx run must carry w:eastAsia"
+    tags = [c.tag for c in wrpr]
+    assert tags.index(qn("w:rStyle")) < tags.index(qn("w:rFonts")), "w:rStyle must precede w:rFonts"
+
     prs = Presentation()
     slide = prs.slides.add_slide(prs.slide_layouts[5])
     slide.shapes.title.text = "季度回顾 Q3 Review"
@@ -738,6 +792,19 @@ def _selftest():
     title_run = slide.shapes.title.text_frame.paragraphs[0].runs[0]
     ea = title_run._r.get_or_add_rPr().find(pqn("a:ea"))
     assert ea is not None and ea.get("typeface") == expected_cjk, "pptx run must carry a:ea typeface"
+    # A linked run: fonts go BEFORE a:hlinkClick (schema order), not appended after.
+    linked = box.text_frame.paragraphs[0].add_run()
+    linked.text = "链接 link"
+    linked.hyperlink.address = "https://example.com"
+    apply_ea_font(linked)
+    order = [c.tag.split("}")[1] for c in linked._r.rPr]
+    assert order.index("latin") < order.index("ea") < order.index("hlinkClick"), \
+        "pptx fonts must precede a:hlinkClick, got %s" % order
+    bare = box.text_frame.paragraphs[0].add_run()
+    bare.hyperlink.address = "https://example.com"
+    apply_ea_font(bare, latin=None)  # ea only: still placed, no stray a:latin
+    order = [c.tag.split("}")[1] for c in bare._r.rPr]
+    assert order == ["ea", "hlinkClick"], "ea-only run must be [ea, hlinkClick], got %s" % order
 
     # A chart sheet must be fitted to ONE page in both directions, or LibreOffice
     # splits the chart across a page break and leaves a near-empty page carrying

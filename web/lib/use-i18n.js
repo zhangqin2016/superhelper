@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useState } from "react";
 import { dictionaries, dirForLocale, normalizeLocale } from "./i18n.mjs";
 
 function cookieLocale() {
@@ -12,8 +12,19 @@ function cookieLocale() {
   return normalizeLocale(value);
 }
 
+// The locale the SERVER rendered with (the root layout reads the cookie there).
+// Without it a client component's first render guessed: the server has no
+// document, so it rendered zh, while the browser read lily_locale=en — every
+// en/ar page with a translated client component failed hydration (React #418).
+const LocaleContext = createContext(null);
+
+export function LocaleProvider({ locale, children }) {
+  return createElement(LocaleContext.Provider, { value: normalizeLocale(locale) }, children);
+}
+
 export function useI18n(initialLocale) {
-  const [locale, setLocaleState] = useState(() => normalizeLocale(initialLocale || cookieLocale()));
+  const serverLocale = useContext(LocaleContext);
+  const [locale, setLocaleState] = useState(() => normalizeLocale(initialLocale || serverLocale || cookieLocale()));
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
     document.documentElement.dir = dirForLocale(locale);

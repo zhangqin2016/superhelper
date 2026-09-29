@@ -64,6 +64,42 @@ if (haveLibreOffice && fs.existsSync(path.join(FIXTURES, "sample.docx"))) {
   assert(res.ok, `docx render failed: ${JSON.stringify(res)}`);
   assert(res.pages >= 1 && res.images.length === res.pages, "docx should render to page images");
   assert(fs.statSync(res.images[0]).size > 0, "docx page image should be non-empty");
+  assert(res.package?.checked === true && res.package.count === 0, `a clean docx has no schema violations: ${JSON.stringify(res.package)}`);
+
+  // A package LibreOffice renders but Word refuses (2026-09-29: DrawingML fonts
+  // inside w:rPr). The render still succeeds; its receipt carries the schema
+  // check, and the delivery gate's structure check fails on it, naming the part.
+  // [gate: docx-run-font-schema]
+  const bad = path.join(tmp, "foreign-markup.docx");
+  execFileSync(python, ["-c", [
+    "import sys",
+    "from docx import Document",
+    "from docx.oxml.ns import qn",
+    "d = Document()",
+    "r = d.add_paragraph().add_run('中文 text')",
+    "rpr = r._r.get_or_add_rPr()",
+    "rpr.append(rpr.makeelement('{http://schemas.openxmlformats.org/drawingml/2006/main}latin', {'typeface': 'Arial'}))",
+    "d.save(sys.argv[1])",
+  ].join("\n"), bad], { env });
+  const badOut = path.join(tmp, "foreign");
+  const badRes = run([bad, badOut]);
+  assert(badRes.ok, "the render itself succeeds — LibreOffice tolerates the markup");
+  assert(badRes.package?.checked === true && badRes.package.count === 1, `the renderer reports the foreign element: ${JSON.stringify(badRes.package)}`);
+  assert(/w:rPr\/\w+:latin$/.test(badRes.package.violations[0].node), `the violation names the node: ${badRes.package.violations[0].node}`);
+  const { assessDocumentDelivery, buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-gate.js");
+  const verdict = (file, images) => assessDocumentDelivery({
+    taskContract: { taskType: "document_work", semanticIntent: { operation: "create", outputMode: "artifact" } },
+    artifacts: [{ path: file, ext: ".docx" }],
+    tools: images.map((img) => ({ name: "bash", status: "done", result: `LILY_VISION_RECEIPT ${JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: img })}` })),
+  });
+  const refused = verdict(bad, badRes.images);
+  assert(refused.missing.includes("structure") && refused.artifacts[0].checks.structure.reason === "ooxml_schema_violation",
+    `a file Word refuses does not pass the structure check: ${JSON.stringify(refused.artifacts[0].checks.structure)}`);
+  assert(!refused.missing.includes("render") && !refused.missing.includes("visual_inspection"), "render and vision still count");
+  const prompt = buildDocumentDeliveryRecoveryPrompt(refused, "请生成报告");
+  assert(prompt.includes("word/document.xml") && /latin/.test(prompt), "the follow-up names the offending part and element");
+  const clean = verdict(path.join(FIXTURES, "sample.docx"), res.images);
+  assert(!clean.missing.includes("structure"), `a clean docx still passes structure: ${JSON.stringify(clean.missing)}`);
 } else {
   console.log("test-render-document: (office→image SKIPPED — LibreOffice not bundled)");
 }

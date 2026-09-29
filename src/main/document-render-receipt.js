@@ -47,7 +47,12 @@ function renderReceiptFor(artifactPath, tools = []) {
     if (!receipt || !samePath(receipt.source, artifactPath)) continue;
     // Rendered from the file as it is now: an edit after rendering needs a new render.
     if (receipt.sourceBytes !== stat.size || Math.abs(Number(receipt.sourceMtimeMs) - Math.floor(stat.mtimeMs)) > 1) continue;
-    return { images: receipt.images.map(String), pages: Number(receipt.pages) || receipt.images.length };
+    return {
+      images: receipt.images.map(String),
+      pages: Number(receipt.pages) || receipt.images.length,
+      // render_document.py's OOXML schema check of the same file (absent on old receipts).
+      package: receipt.package && typeof receipt.package === "object" ? receipt.package : null,
+    };
   }
   return null;
 }

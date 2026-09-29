@@ -4,6 +4,8 @@
  */
 
 import { t } from "../i18n/index.js";
+// Enterprise-identity refusals get their own way out next to retry/diagnose.
+export { buildPersonalIdentityAction } from "./organization-identity-action.js";
 
 // A failed turn whose retry keeps failing is an environment problem, not a
 // message problem — give the user a direct path to the diagnostics page that

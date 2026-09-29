@@ -2918,6 +2918,16 @@
       ]
     },
     {
+      "id": "docx-run-font-schema",
+      "protects": "A generated Office file opens in Word/PowerPoint/Excel, not only in LibreOffice. apply_ea_font accepts a Word run and writes w:rFonts (dispatch by the run's own element model); every font element is positioned by the authoring library's content model (python-docx get_or_add_rFonts / CT_Style.get_or_add_rPr, python-pptx get_or_add_latin with ea/cs following it), not by lists copied from the schema. render_document.py checks each OOXML package against the bundled schemas for elements of a different vocabulary than their parent where the schema forbids them (ooxml_conformance.py) and records it in its output and receipt; the delivery gate's structure check fails on a counted violation and the follow-up names the part and node.",
+      "baseline": "2026-09-29 星野新能源 report: the agent called the pptx-only apply_ea_font on python-docx runs; 238 DrawingML a:latin/a:ea landed in w:rPr. LibreOffice rendered it, the PDF was fine, the gate's structure check (PK header + the string [Content_Types].xml) passed, and Word refused to open the file. Also: style_docx appended rPr after tblPr in 44 table styles; pptx fonts were appended after a:hlinkClick on linked runs.",
+      "failureFallback": "Raw XSD validity is deliberately NOT the criterion: 57 real files that open in Word (Word, WPS, POI, SheetJS authored) fail the XSDs for transitional values and style order; the cross-vocabulary criterion flagged 0 of them. A package that cannot be judged (validator missing, unreadable zip, part >16MB or 20s budget → partial) reports checked:false and the gate is unchanged; an old receipt without package is unchanged. Mutation-verified: removing the gate wiring, the receipt field, the renderer check or the prompt listing each fails by name; the old helper fails the selftest on the Word run, table-style order and linked pptx run.",
+      "tests": [
+        "scripts/test-office-style-helper.mjs",
+        "scripts/test-render-document.mjs"
+      ]
+    },
+    {
       "id": "agent-schedule-propose",
       "protects": "Whether a message asks for scheduled work is the model's call, made while it answers, as in ChatGPT: no pre-check replaces the answer with a card. The agent proposes (lily_schedule_propose); when it proposes nothing but the user plainly asked (the local schedule parser), the platform drafts the card as a safety net. Either way the pending 自动执行 card sits under the answer (withAnswer), nothing is created until the user confirms, declining declines only the schedule, and a scheduled run never proposes another schedule. The agent guide tells the model to call the tool and never to claim a task is registered or a card will appear without it.",
       "baseline": "2026-09-29: '没五分钟查看最新的销量 小米汽车的' (每 typed as 没) passed the keyword pre-check by; the model understood it but had no scheduling tool and, as the guide promised a card, said one would appear. None did. Messages the pre-check did catch had their answer replaced by the card before the model ran.",
@@ -2928,6 +2938,21 @@
         "scripts/test-assistant-ipc-routing.mjs",
         "scripts/test-scheduled-task-rejection.mjs",
         "scripts/test-agent-schedule-card.cjs"
+      ]
+    },
+    {
+      "id": "enterprise-closed-loop",
+      "protects": "The enterprise back office works as a closed loop on both sides. Two-layer switch: organizations.status is derived by a DB CHECK from owner_status (the enterprise owner's own pause) and platform_status (the platform's freeze), so an enterprise can never lift a platform freeze and the platform cannot un-pause an owner's pause; every existing reader of status keeps its meaning. The identity the user picks pays: with x-lily-organization-id only the org pool is charged (per-request cap + a weekly member budget whose window starts at the first charge and resets 7 days later; member override > org default > unlimited), without it only the personal balance; a pool shortage is ORG_POOL_INSUFFICIENT. Admins cannot act on other admins/owners; the last owner cannot step down or leave; ownership transfers in one step; any member can leave (issued accounts excepted). Invitation phones are normalised to E.164 and expire; seats deferred while an org was disabled are granted when it becomes active. Removed issued accounts stay listed and are restored by re-adding. Every enterprise-side mutation writes its audit_logs row in the same transaction; both consoles read the org history. Platform grants are idempotent per form key and can be reduced/revoked with a ledger row. Org-pool grants (booked under the owner's user_id) never count as the owner's personal balance in admin users list/detail or the personal statement. Self-serve org creation is closed (ORG_CREATE_PLATFORM_ONLY). Every server enterprise code has a zh/en/ar message.",
+      "baseline": "2026-09-30 audit of both consoles: an org admin could re-enable a platform-disabled org through the same PATCH; typed 138… invitations never redeemed (login stores +86…); billing spent personal balance first and fell back to the pool, so platform grants showed zero consumption and a pool shortage read ENTITLEMENT_INSUFFICIENT; one member could drain the pool (only a per-request cap); quota could only be added and a retry granted twice; org grants inflated the owner's balance in three views; admins could reset each other's passwords; removed issued accounts vanished; nobody could leave or transfer ownership; enterprise-side changes left no audit; raw codes (ORG_OWNER_IMMUTABLE, a Postgres 23505) reached users; anyone could self-create orgs and mint unlimited password accounts.",
+      "failureFallback": "Migration 064 is additive with conservative backfills: a legacy disabled org becomes a platform freeze (the enterprise cannot lift it), audited admin-created orgs become source=platform, pending mainland phones are normalised (duplicates revoked, oldest kept). Licence/trial/anonymous access is unmetered exactly as before. A deferred seat grant runs inside the re-enable transaction. The admin PATCH still accepts the legacy {status} form (disabled = suspended). Unknown future codes still render a message naming the code. Mutation-verified against real Postgres: removing the peer guard, making the freeze owner-liftable, restoring personal-first billing, dropping the weekly gate, dropping the owner-balance filter, or dropping deferred redemption each fails the closed loop by name.",
+      "tests": [
+        "scripts/test-enterprise-messages.mjs",
+        "server/scripts/enterprise-closed-loop-integration.mjs",
+        "server/scripts/admin-enterprise-create-integration.mjs",
+        "scripts/test-enterprise-console-ui.mjs",
+        "scripts/test-admin-enterprise-pages.mjs",
+        "scripts/test-enterprise-identity-client.mjs",
+        "scripts/test-web-locale-hydration.mjs"
       ]
     },
     {

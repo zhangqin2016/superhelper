@@ -9,23 +9,32 @@ import { db } from "../../db.js";
 import { zodBody, okResponse } from "../../openapi.js";
 import { publicId } from "../../services/ids.js";
 import { verifyAccessToken, verifyWebSessionToken } from "../../services/account-auth.js";
-import { fetchOrgGrants } from "../../services/wallet.js";
+import { fetchOrgGrants, memberWeeklyStatus } from "../../services/wallet.js";
 import { registerPublicEnterpriseMemberRoutes } from "./enterprise-members.js";
 import { registerPublicEnterpriseAccountRoutes } from "./enterprise-accounts.js";
 import { registerPublicEnterpriseAgentRoutes } from "./enterprise-agents.js";
-import { enterpriseMutationResponse, requireOrgRole } from "./enterprise-route-support.js";
+import { enterpriseMutationResponse, enterpriseScope, memberIdentities, requireOrgRole } from "./enterprise-route-support.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
+const ALLOW_SELF_SERVE_ORGS = false;
 const createOrgSchema = z.object({
   name: z.string().min(1).max(120),
 });
 const patchOrgSchema = z.object({
   name: z.string().min(1).max(120).optional(),
+  // The enterprise's own pause (owner only). A platform freeze is not this.
   status: z.enum(["active", "disabled"]).optional(),
-}).refine((v) => v.name !== undefined || v.status !== undefined, { message: "at least one field required" });
+  defaultMemberWeeklyBudget: z.number().int().min(0).nullable().optional(),
+}).refine((v) => v.name !== undefined || v.status !== undefined || v.defaultMemberWeeklyBudget !== undefined, { message: "at least one field required" });
+// A hand-typed ?days=abc used to throw a 400 that blanked the whole page.
 const usageSchema = z.object({
-  days: z.coerce.number().int().min(1).max(365).default(30),
+  days: z.coerce.number().int().min(1).max(365).catch(30).default(30),
+});
+const memberTargetSchema = z.object({ userId: z.string().min(3).max(120) });
+const auditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).catch(50).default(50),
+  before: z.coerce.number().int().min(1).optional().catch(undefined),
 });
 
 /** Look up an organization; 404 when missing. */
@@ -77,7 +86,14 @@ async function orgUsage(organizationId, days = 30) {
     .groupBy("model")
     .orderBy("units", "desc")
     .execute();
-  return { days, byMember, byModel };
+  const identities = await memberIdentities(db, byMember.map((row) => row.user_id));
+  const members = byMember.map((row) => ({ ...row, ...identities.get(row.user_id) }));
+  const totals = members.reduce((sum, row) => ({
+    requests: sum.requests + Number(row.request_count || 0),
+    units: sum.units + Number(row.units || 0),
+    tokens: sum.tokens + Number(row.tokens || 0),
+  }), { requests: 0, units: 0, tokens: 0 });
+  return { days, byMember: members, byModel, totals };
 }
 
 export function registerPublicEnterpriseRoutes(app) {
@@ -138,6 +154,9 @@ export function registerPublicEnterpriseRoutes(app) {
           "organizations.id",
           "organizations.name",
           "organizations.status",
+          "organizations.owner_status",
+          "organizations.platform_status",
+          "organizations.source",
           "organizations.plan",
           "organizations.created_at",
           "organization_members.role",
@@ -167,12 +186,17 @@ export function registerPublicEnterpriseRoutes(app) {
         reply.code(401).send({ ok: false, code: "USER_LOGIN_REQUIRED" });
         return;
       }
+      // Enterprises are opened by the platform (sales handoff, owner issued or
+      // named there). Self-serve creation let anyone mint an org and then issue
+      // unlimited password accounts that take global login names. Orgs already
+      // created this way keep working; admin lists them as source=self_serve.
+      if (!ALLOW_SELF_SERVE_ORGS) return reply.code(403).send({ ok: false, code: "ORG_CREATE_PLATFORM_ONLY" });
       const input = createOrgSchema.parse(request.body);
       const id = publicId("org");
       await db.transaction().execute(async (trx) => {
         await trx
           .insertInto("organizations")
-          .values({ id, name: input.name, status: "active", plan: "standard" })
+          .values({ id, name: input.name, status: "active", plan: "standard", source: "self_serve" })
           .execute();
         await trx
           .insertInto("organization_members")
@@ -209,15 +233,19 @@ export function registerPublicEnterpriseRoutes(app) {
         reply.code(404).send({ ok: false, code: "ORG_NOT_FOUND" });
         return;
       }
-      const grants = await fetchOrgGrants(request.params.id);
-      const quotaSummary = grants.map((g) => ({
+      // The pool is the admins' view (the grants page is owner-only, and this
+      // detail used to hand it to every member). A member sees their own week.
+      const admin = membership.role === "owner" || membership.role === "admin";
+      const quotaSummary = admin ? (await fetchOrgGrants(request.params.id)).map((g) => ({
         id: g.id,
         resource_type: g.resource_type,
+        status: g.status,
         unit_total: Number(g.unit_total || 0),
         unit_remaining: Number(g.unit_remaining || 0),
         expires_at: g.expires_at,
-      }));
-      return { ok: true, organization: { ...org, role: membership.role, quota: quotaSummary } };
+      })) : undefined;
+      const me = await memberWeeklyStatus({ userId: request.user.userId, organizationId: request.params.id });
+      return { ok: true, organization: { ...org, role: membership.role, ...(admin ? { quota: quotaSummary } : {}), me: me.ok ? me : { ok: false, code: me.code } } };
     },
   );
 
@@ -235,9 +263,46 @@ export function registerPublicEnterpriseRoutes(app) {
     },
     async (request, reply) => {
       const input = patchOrgSchema.parse(request.body);
-      return enterpriseMutationResponse(reply, () => mutations.changeOrganization({ organizationId: request.params.id, account: request.user }, input));
+      return enterpriseMutationResponse(reply, () => mutations.changeOrganization(enterpriseScope(request), input));
     },
   );
+
+  // POST /api/enterprise/organizations/:id/transfer-ownership — owner hands over
+  app.post("/api/enterprise/organizations/:id/transfer-ownership", {
+    schema: { tags: ["public:enterprise"], summary: "Transfer ownership to an active member (caller becomes admin)",
+      params: orgIdSchema, body: zodBody(memberTargetSchema), response: { 200: okResponse({ transferred: { type: "boolean" } }) } },
+  }, async (request, reply) => {
+    const input = memberTargetSchema.parse(request.body);
+    return enterpriseMutationResponse(reply, () => mutations.transferOwnership(enterpriseScope(request), input.userId));
+  });
+
+  // POST /api/enterprise/organizations/:id/leave — leave on your own
+  app.post("/api/enterprise/organizations/:id/leave", {
+    schema: { tags: ["public:enterprise"], summary: "Leave an organization", params: orgIdSchema, response: { 200: okResponse({ left: { type: "boolean" } }) } },
+  }, async (request, reply) => enterpriseMutationResponse(reply, () => mutations.leaveOrganization(enterpriseScope(request))));
+
+  // GET /api/enterprise/organizations/:id/audit — who changed what (admin+)
+  app.get("/api/enterprise/organizations/:id/audit", {
+    schema: { tags: ["public:enterprise"], summary: "Organization change history", params: orgIdSchema, querystring: zodBody(auditQuerySchema),
+      response: { 200: okResponse({ entries: { type: "array" } }) } },
+  }, async (request, reply) => {
+    if (!await requireOrgRole(request, reply, request.params.id, "admin")) return;
+    const input = auditQuerySchema.parse(request.query || {});
+    let query = db.selectFrom("audit_logs").select(["id", "actor", "action", "metadata", "created_at"])
+      .where("target_type", "=", "organization").where("target_id", "=", request.params.id);
+    if (input.before) query = query.where("id", "<", input.before);
+    const rows = await query.orderBy("id", "desc").limit(input.limit).execute();
+    const actorIds = [...new Set(rows.map((row) => String(row.actor || "")).filter((a) => a.startsWith("user:")).map((a) => a.slice(5)))];
+    const identities = await memberIdentities(db, actorIds);
+    const entries = rows.map((row) => {
+      const actor = String(row.actor || "");
+      const userId = actor.startsWith("user:") ? actor.slice(5) : null;
+      // The platform acts as "the platform" here, never by operator identity.
+      return { id: Number(row.id), action: row.action, metadata: row.metadata, createdAt: row.created_at,
+        actor: userId ? { kind: "member", userId, ...identities.get(userId) } : { kind: "platform" } };
+    });
+    return { ok: true, entries, nextBefore: rows.length === input.limit ? Number(rows.at(-1).id) : null };
+  });
 
   // GET /api/enterprise/organizations/:id/grants — org quota pool (owner/admin)
   app.get(
@@ -269,7 +334,7 @@ export function registerPublicEnterpriseRoutes(app) {
         tags: ["public:enterprise"],
         summary: "Organization usage (by member / by model)",
         params: orgIdSchema,
-        querystring: usageSchema,
+        querystring: zodBody(usageSchema),
         response: { 200: okResponse({ usage: { type: "object" } }) },
       },
     },

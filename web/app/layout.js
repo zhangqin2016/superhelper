@@ -1,5 +1,6 @@
 import "./globals.css";
 import { getI18n } from "../lib/i18n.mjs";
+import { LocaleProvider } from "../lib/use-i18n";
 
 export const metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://lilywb.cn"),
@@ -21,7 +22,7 @@ export default async function RootLayout({ children }) {
   const { locale, dir } = await getI18n();
   return (
     <html lang={locale === "zh" ? "zh-CN" : locale} dir={dir}>
-      <body>{children}</body>
+      <body><LocaleProvider locale={locale}>{children}</LocaleProvider></body>
     </html>
   );
 }

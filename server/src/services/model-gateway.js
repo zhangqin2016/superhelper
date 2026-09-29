@@ -175,6 +175,8 @@ async function consumeChatUsage({ request, reply, token, providerId, provider, b
         resourceType: usage.resourceType,
         requiredUnits: consumed.requiredUnits || usage.units,
         availableUnits: consumed.availableUnits || 0,
+        ...(consumed.resetsAt ? { resetsAt: new Date(consumed.resetsAt).toISOString() } : {}),
+        ...(consumed.budget !== undefined && consumed.budget !== null ? { weeklyBudget: consumed.budget, weeklyUsed: consumed.used } : {}),
       },
     });
     return { ok: false };
@@ -221,6 +223,7 @@ async function reconcileChatUsage(billing, usage) {
       idempotencyKey: billing.idempotencyKey ? `${billing.idempotencyKey}:final` : "",
       metadata: { phase: "usage_reconcile", inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
       organizationId: billing.organizationId || "",
+      enforceMemberLimits: false,
     });
   } catch {
     // The input estimate was already charged; a failed reconcile must not break

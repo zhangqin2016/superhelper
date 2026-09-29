@@ -4,6 +4,11 @@ const net = require("../shared/network-errors.mjs");
 
 const ERROR_PATTERNS = [
   require("./upstream-model-auth").UPSTREAM_AUTH_FAILURE,
+  // Enterprise-identity refusals (403 org_forbidden / 402 payment_required with
+  // an ORG_* code). Exact codes only, and ahead of QUOTA_EXCEEDED/AUTH_FAILED:
+  // "ORG_MEMBER_QUOTA_EXCEEDED" would otherwise read as a personal top-up and
+  // a frozen organization as a bad API key.
+  ...require("./organization-identity").ORG_IDENTITY_ERROR_PATTERNS,
   {
     code: "RUNTIME_SKILL_TOO_MANY",
     category: "runtime_diagnostic",
@@ -253,12 +258,16 @@ function classifyAssistantError(raw) {
   // not by the generic "Request failed:" prefix.
   const cleaned = scrubVendorNames(raw).replace(/^request failed:\s*/i, "");
   if (!cleaned.trim()) return null;
-  for (const { code, category, test, message, retryable } of ERROR_PATTERNS) {
+  for (const { code, category, test, message, describe, retryable } of ERROR_PATTERNS) {
     if (test.test(cleaned)) {
+      let text = message;
+      if (typeof describe === "function") {
+        try { text = describe(cleaned) || message; } catch { text = message; }
+      }
       return {
         code,
         category,
-        message,
+        message: text,
         retryable: retryable !== false,
       };
     }

@@ -60,8 +60,9 @@ try {
     create table devices(id text primary key);
     create table user_devices(user_id text references users(id),device_id text references devices(id),status text not null default 'active',primary key(user_id,device_id));
     create table user_profiles(user_id text primary key,lily_id text,display_name text,avatar_object_id text,discoverability text);
-    create table organizations(id text primary key,name text,status text,plan text default 'standard',created_at timestamptz default now(),updated_at timestamptz default now());
-    create table organization_members(organization_id text references organizations(id),user_id text references users(id),role text,status text,quota bigint,joined_at timestamptz default now(),primary key(organization_id,user_id));
+    create table organizations(id text primary key,name text,status text,plan text default 'standard',created_at timestamptz default now(),updated_at timestamptz default now(),
+      owner_status text not null default 'active',platform_status text not null default 'active',platform_status_reason text,platform_status_changed_at timestamptz,source text not null default 'self_serve',default_member_weekly_budget bigint);
+    create table organization_members(organization_id text references organizations(id),user_id text references users(id),role text,status text,quota bigint,joined_at timestamptz default now(),weekly_budget bigint,weekly_window_started_at timestamptz,weekly_used bigint not null default 0,primary key(organization_id,user_id));
     create table device_public_keys(device_id text primary key,public_key text);
     create table request_nonces(device_id text,nonce text,created_at timestamptz default now(),primary key(device_id,nonce));
     create table user_sessions(id text primary key,user_id text,device_id text,revoked_at timestamptz,expires_at timestamptz);

@@ -46,6 +46,26 @@ const MESSAGES = {
   loginMissingCredentials: { zh: "请填写邮箱和密码。", en: "Email and password are required." },
   loginRejected: { zh: "登录失败，请检查邮箱和密码。", en: "Login failed. Check the email and password." },
   loginNoSession: { zh: "登录成功，但服务端没有返回管理会话。", en: "Login succeeded but no admin session was returned." },
+  // Enterprise governance (web/app/admin/enterprise/actions.js). These carry
+  // Arabic too: the enterprise pages are translated end to end.
+  enterpriseNameRequired: { zh: "请填写企业名称（1–120 个字）。", en: "Enter the organization's name (1–120 characters).", ar: "أدخل اسم المؤسسة (من 1 إلى 120 حرفًا)." },
+  enterpriseOwnerPhoneRequired: { zh: "请填写所有者的手机号，或改为“平台签发一个新账号”。", en: "Enter the owner's phone number, or choose “Issue a new account”.", ar: "أدخل رقم هاتف المالك، أو اختر «إصدار حساب جديد»." },
+  enterpriseCreatedIssued: { zh: "企业「{name}」已创建。所有者的初始密码在下方，只显示这一次。", en: "“{name}” is created. The owner's initial password is below — it is shown only this once.", ar: "تم إنشاء «{name}». كلمة مرور المالك الأولية أدناه — تظهر هذه المرة فقط." },
+  enterpriseFreezeReasonRequired: { zh: "冻结前请填写原因，它会记入变更历史。", en: "Enter a reason before freezing — it goes into the history.", ar: "أدخل سببًا قبل التجميد — سيُسجَّل في السجل." },
+  enterpriseFrozen: { zh: "已冻结。全体成员现在无法使用企业额度池。", en: "Frozen. Members can no longer use the organization's pool.", ar: "تم التجميد. لم يعد بإمكان الأعضاء استخدام رصيد المؤسسة." },
+  enterpriseUnfrozen: { zh: "已解除平台冻结。", en: "The platform freeze is lifted.", ar: "رُفع تجميد المنصة." },
+  enterpriseRenamed: { zh: "企业名称已改为「{name}」。", en: "Renamed to “{name}”.", ar: "تمت إعادة التسمية إلى «{name}»." },
+  enterpriseBudgetSaved: { zh: "成员默认每周额度已设为 {units}。", en: "The default weekly budget is now {units}.", ar: "أصبحت الميزانية الأسبوعية الافتراضية {units}." },
+  enterpriseBudgetCleared: { zh: "成员默认每周额度已改为不限。", en: "The default weekly budget is now unlimited.", ar: "أصبحت الميزانية الأسبوعية الافتراضية غير محدودة." },
+  enterpriseGrantInvalidUnits: { zh: "数量必须是 1 到 1,000,000,000 之间的整数。", en: "The amount must be a whole number from 1 to 1,000,000,000.", ar: "يجب أن تكون الكمية عددًا صحيحًا من 1 إلى 1,000,000,000." },
+  enterpriseGrantInvalidDays: { zh: "有效期必须是 1 到 3650 天之间的整数。", en: "The validity must be a whole number of days from 1 to 3650.", ar: "يجب أن تكون الصلاحية عددًا صحيحًا من الأيام بين 1 و3650." },
+  enterpriseGranted: { zh: "已调拨 {amount}，{days} 天后到期。", en: "Granted {amount}, expiring in {days} days.", ar: "تم منح {amount}، وتنتهي بعد {days} يومًا." },
+  enterpriseGrantIdempotent: { zh: "这次提交和上一次是同一笔，没有重复调拨（{amount}）。", en: "This was the same submission as before — nothing was granted twice ({amount}).", ar: "كان هذا الإرسال نفسه السابق — لم يُمنح شيء مرتين ({amount})." },
+  enterpriseReduceInvalidUnits: { zh: "扣回数量必须是大于 0 的整数。", en: "The amount to take back must be a whole number above 0.", ar: "يجب أن تكون الكمية المستعادة عددًا صحيحًا أكبر من 0." },
+  enterpriseReduceReasonRequired: { zh: "请填写原因，它会记入变更历史。", en: "Enter a reason — it goes into the history.", ar: "أدخل سببًا — سيُسجَّل في السجل." },
+  enterpriseReduced: { zh: "已扣回 {units}。", en: "Took back {units}.", ar: "تمت استعادة {units}." },
+  enterpriseRevoked: { zh: "已撤销，收回剩余 {units}。", en: "Revoked; {units} taken back.", ar: "أُلغيت؛ واستُعيد {units}." },
+  enterpriseOwnerPasswordReissued: { zh: "已重新签发所有者初始密码，旧的初始密码已失效。请现在复制并交给所有者。", en: "A new initial password is issued and the old one no longer works. Copy it now and hand it to the owner.", ar: "صدرت كلمة مرور أولية جديدة ولم تعد القديمة تعمل. انسخها الآن وسلّمها للمالك." },
 };
 
 export const ADMIN_MESSAGE_KEYS = Object.keys(MESSAGES);

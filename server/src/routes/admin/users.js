@@ -56,6 +56,8 @@ export function registerAdminUserRoutes(app) {
             .selectFrom("wallet_grants")
             .select(() => sql`coalesce(sum(wallet_grants.token_remaining), 0)`.as("sum"))
             .whereRef("wallet_grants.user_id", "=", "users.id")
+            // Org-pool grants carry the owner's user_id; they are the org's, not the owner's.
+            .where("wallet_grants.organization_id", "is", null)
             .where("wallet_grants.status", "=", "active")
             .where("wallet_grants.expires_at", ">", new Date())
             .as("token_remaining"),
@@ -63,6 +65,8 @@ export function registerAdminUserRoutes(app) {
             .selectFrom("wallet_grants")
             .select(() => sql`coalesce(sum(wallet_grants.unit_remaining), 0)`.as("sum"))
             .whereRef("wallet_grants.user_id", "=", "users.id")
+            // Org-pool grants carry the owner's user_id; they are the org's, not the owner's.
+            .where("wallet_grants.organization_id", "is", null)
             .where("wallet_grants.resource_type", "=", "image_generation")
             .where("wallet_grants.status", "=", "active")
             .where("wallet_grants.expires_at", ">", new Date())
@@ -71,6 +75,8 @@ export function registerAdminUserRoutes(app) {
             .selectFrom("wallet_grants")
             .select(() => sql`coalesce(sum(wallet_grants.unit_remaining), 0)`.as("sum"))
             .whereRef("wallet_grants.user_id", "=", "users.id")
+            // Org-pool grants carry the owner's user_id; they are the org's, not the owner's.
+            .where("wallet_grants.organization_id", "is", null)
             .where("wallet_grants.resource_type", "=", "video_generation")
             .where("wallet_grants.status", "=", "active")
             .where("wallet_grants.expires_at", ">", new Date())
@@ -167,8 +173,13 @@ export function registerAdminUserRoutes(app) {
           .orderBy("orders.created_at", "desc")
           .limit(100)
           .execute(),
-        db.selectFrom("wallet_grants").selectAll().where("user_id", "=", user.id).orderBy("created_at", "desc").limit(100).execute(),
-        db.selectFrom("wallet_ledger").selectAll().where("user_id", "=", user.id).orderBy("created_at", "desc").limit(120).execute(),
+        // Personal only: org-pool grants (user_id = owner) and ledger rows against
+        // them are the organization's and are listed under organizations below.
+        db.selectFrom("wallet_grants").selectAll().where("user_id", "=", user.id).where("organization_id", "is", null).orderBy("created_at", "desc").limit(100).execute(),
+        db.selectFrom("wallet_ledger").selectAll().where("user_id", "=", user.id)
+          .where((eb) => eb.not(eb.exists(eb.selectFrom("wallet_grants").select("wallet_grants.id")
+            .whereRef("wallet_grants.id", "=", "wallet_ledger.grant_id").where("wallet_grants.organization_id", "is not", null))))
+          .orderBy("created_at", "desc").limit(120).execute(),
         db
           .selectFrom("user_sessions")
           .select([
@@ -230,10 +241,20 @@ export function registerAdminUserRoutes(app) {
           .limit(100)
           .execute(),
       ]);
+      // Which organizations this person is in — the operator's way from a user
+      // (a phone on a support call) to the enterprise behind them.
+      const organizations = await db.selectFrom("organization_members")
+        .innerJoin("organizations", "organizations.id", "organization_members.organization_id")
+        .select(["organizations.id", "organizations.name", "organizations.status", "organizations.platform_status", "organizations.owner_status",
+          "organization_members.role", "organization_members.status as membership_status", "organization_members.joined_at"])
+        .where("organization_members.user_id", "=", user.id)
+        .orderBy("organization_members.joined_at", "asc")
+        .execute();
 
       return {
         ok: true,
         user: publicUser(user),
+        organizations,
         entitlements,
         orders,
         grants,

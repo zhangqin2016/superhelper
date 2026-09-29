@@ -127,6 +127,8 @@ async function requireMediaEntitlement(request, reply, token, providerId, rest) 
         resourceType: usage.resourceType,
         requiredUnits: consumed.requiredUnits || 1,
         availableUnits: consumed.availableUnits || 0,
+        ...(consumed.resetsAt ? { resetsAt: new Date(consumed.resetsAt).toISOString() } : {}),
+        ...(consumed.budget !== undefined && consumed.budget !== null ? { weeklyBudget: consumed.budget, weeklyUsed: consumed.used } : {}),
       },
     });
     return false;

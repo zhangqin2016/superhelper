@@ -53,15 +53,18 @@ assert.doesNotMatch(route, /\/api\/admin\/enterprise\/organizations\/:id\/member
 
 // ---------- web ----------
 const actions = read("../web/app/admin/enterprise/actions.js");
-assert.match(actions, /apiPost\("\/api\/admin\/enterprise\/organizations", \{ name, plan, owner \}\)/, "the admin form calls the create endpoint");
-assert.match(actions, /#issued=\$\{payload\}/, "an issued owner's one-time password travels via the URL hash, never the server");
-const page = read("../web/app/admin/enterprise/page.js");
-assert.match(page, /createOrganizationAction/, "the admin list page has the create form");
-assert.match(page, /<option value="issue">/, "and offers issuing the owner");
-assert.match(page, /<option value="phone">/, "or naming a registered phone");
-const detail = read("../web/app/admin/enterprise/[id]/page.js");
-assert.match(detail, /<IssuedCredentials \/>/, "the detail page reveals the issued owner credentials once");
-assert.ok(fs.existsSync(new URL("../web/components/issued-credentials.js", import.meta.url)), "the reveal component is shared, not duplicated");
-
+assert.match(actions, /apiPostResult\("\/api\/admin\/enterprise\/organizations", \{ name, plan, owner \}\)/, "the admin form calls the create endpoint");
+// The one-time password used to ride a redirect in the URL hash. Next replays
+// an action redirect on the client without the hash, so the password could be
+// gone before the page read it. It now comes back in the action's own result
+// and is rendered by the form that asked (test-admin-enterprise-pages).
+assert.doesNotMatch(actions, /#issued=/, "an issued owner's password never travels in a URL");
+assert.match(actions, /issued: \[\{ l: issued\.loginName, p: issued\.initialPassword \}\]/, "it is returned to the form that asked for it");
+const createForm = read("../web/components/admin-enterprise-create-form.js");
+assert.match(read("../web/app/admin/enterprise/page.js"), /<CreateOrganizationForm action=\{createOrganizationAction\} \/>/, "the admin list page has the create form");
+assert.match(createForm, /choice\("issue"/, "and offers issuing the owner");
+assert.match(createForm, /choice\("phone"/, "or naming a registered phone");
+const forms = read("../web/components/admin-enterprise-form.js");
+assert.match(forms, /state\?\.ok && state\.issued\?\.length \? <OwnerCredentials/, "the form reveals the issued owner credentials once, from its own result");
 console.log("admin-enterprise-create: ok");
 console.log("  admin creates + hands off; owner by registered phone or issued account; members stay the owner's");

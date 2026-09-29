@@ -184,7 +184,7 @@ const mutations = read("../server/src/services/enterprise-mutations.js");
 assert.match(mutations, /if \(request\?\.role === "owner"\) fail\("INVITE_ROLE_UNSUPPORTED", 400\)/, "an issued account can never be an owner");
 assert.match(mutations, /if \(pattern\?\.role === "owner"\) fail\("INVITE_ROLE_UNSUPPORTED", 400\)/, "nor can a sequential batch be owners");
 assert.match(mutations, /if \(pattern\) requireAllowed\(canChangeMemberRole\("member", pattern\.role \|\| "member", membership\.role\)\)/, "a batch's role is gated by what the issuer may assign");
-assert.match(mutations, /if \(organization\.status !== "active"\) fail\("ORG_DISABLED"\)/, "a disabled org cannot issue accounts");
+assert.match(mutations, /if \(organization\.status !== "active"\) fail\(organization\.platform_status === "suspended" \? "ORG_SUSPENDED" : "ORG_DISABLED"\)/, "a disabled or frozen org cannot issue accounts");
 assert.match(mutations, /ownedAccountStatusAfterMembership\(/, "membership changes must consult the ownership rule");
 assert.match(mutations, /if \(ownedStatus\) await trx\.updateTable\("users"\)\.set\(\{ status: ownedStatus \}\)/, "and apply it to the login itself");
 

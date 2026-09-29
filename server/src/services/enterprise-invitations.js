@@ -17,6 +17,10 @@ import { publicId } from "./ids.js";
 /** Roles an invitation may carry. Ownership is never transferable this way. */
 export const INVITABLE_ROLES = Object.freeze(["admin", "member"]);
 
+/** An open seat does not wait forever: it expires, and re-inviting renews it. */
+export const INVITATION_TTL_DAYS = 30;
+const invitationExpiry = (now = new Date()) => new Date(now.getTime() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
 /**
  * Should a pending invitation become a membership right now?
  *
@@ -67,12 +71,11 @@ export async function createInvitation(trx, { organizationId, phoneE164, role, i
     .where("status", "=", "pending")
     .executeTakeFirst();
   if (existing) {
-    // Re-inviting with a different role updates the open invitation rather
-    // than colliding with the partial unique index.
-    if (existing.role === normalizedRole) return existing;
+    // Re-inviting updates the open invitation (role, and a fresh expiry)
+    // rather than colliding with the partial unique index.
     return trx
       .updateTable("organization_invitations")
-      .set({ role: normalizedRole, invited_by: invitedBy || null })
+      .set({ role: normalizedRole, invited_by: invitedBy || null, expires_at: invitationExpiry() })
       .where("id", "=", existing.id)
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -86,6 +89,7 @@ export async function createInvitation(trx, { organizationId, phoneE164, role, i
       role: normalizedRole,
       status: "pending",
       invited_by: invitedBy || null,
+      expires_at: invitationExpiry(),
     })
     .returningAll()
     .executeTakeFirstOrThrow();
@@ -93,13 +97,23 @@ export async function createInvitation(trx, { organizationId, phoneE164, role, i
 
 /** Open invitations for an organization, newest first. */
 export async function listInvitations(database, organizationId) {
+  await expireInvitations(database, { organizationId });
   return database
     .selectFrom("organization_invitations")
-    .select(["id", "phone_e164", "role", "status", "created_at", "invited_by"])
+    .select(["id", "phone_e164", "role", "status", "created_at", "invited_by", "expires_at"])
     .where("organization_id", "=", organizationId)
     .where("status", "=", "pending")
     .orderBy("created_at", "desc")
     .execute();
+}
+
+/** Mark pending invitations past their expiry as expired (for one org, or one phone). */
+export async function expireInvitations(database, { organizationId = "", phoneE164 = "" } = {}) {
+  let query = database.updateTable("organization_invitations").set({ status: "expired" })
+    .where("status", "=", "pending").where("expires_at", "is not", null).where("expires_at", "<=", new Date());
+  if (organizationId) query = query.where("organization_id", "=", organizationId);
+  if (phoneE164) query = query.where("phone_e164", "=", phoneE164);
+  await query.execute();
 }
 
 /**
@@ -114,6 +128,7 @@ export async function listInvitations(database, organizationId) {
 export async function redeemInvitationsForPhone(database, { userId, phoneE164 }) {
   const result = { granted: [], consumed: [], deferred: [] };
   if (!userId || !phoneE164) return result;
+  await expireInvitations(database, { phoneE164 });
   const pending = await database
     .selectFrom("organization_invitations")
     .selectAll()
@@ -174,4 +189,37 @@ export async function redeemInvitationsForPhone(database, { userId, phoneE164 })
     });
   }
   return result;
+}
+
+/**
+ * When an organization becomes usable again, grant the seats that were deferred
+ * because it was not: a registered person whose login happened while it was
+ * disabled would otherwise wait for a next SMS login that may never come.
+ * `trx` must hold the organization lock. Returns the user ids granted.
+ */
+export async function redeemDeferredForOrganization(trx, organizationId) {
+  const rows = await trx
+    .selectFrom("organization_invitations")
+    .innerJoin("users", "users.phone_e164", "organization_invitations.phone_e164")
+    .select(["organization_invitations.id", "organization_invitations.role", "users.id as user_id"])
+    .where("organization_invitations.organization_id", "=", organizationId)
+    .where("organization_invitations.status", "=", "pending")
+    .where((eb) => eb.or([eb("organization_invitations.expires_at", "is", null), eb("organization_invitations.expires_at", ">", new Date())]))
+    .where("users.status", "=", "active")
+    .forUpdate("organization_invitations")
+    .execute();
+  const granted = [];
+  for (const row of rows) {
+    const inserted = await trx.insertInto("organization_members")
+      .values({ organization_id: organizationId, user_id: row.user_id, role: row.role, status: "active", quota: null })
+      .onConflict((oc) => oc.columns(["organization_id", "user_id"]).doNothing())
+      .returning("user_id")
+      .executeTakeFirst();
+    if (inserted) granted.push(row.user_id);
+    await trx.updateTable("organization_invitations")
+      .set({ status: "accepted", accepted_at: new Date(), accepted_user_id: row.user_id })
+      .where("id", "=", row.id)
+      .execute();
+  }
+  return granted;
 }

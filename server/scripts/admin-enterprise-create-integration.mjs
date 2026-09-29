@@ -237,7 +237,7 @@ try {
   const employeeReset = await call("POST", `/api/enterprise/organizations/${orgId}/accounts/${manager.userId}/reset-password`, {}, employeeHeaders);
   assert.equal(employeeReset.status, 403);
 
-  step("platform grants pool; employee debit preserves personal-first and records actual consumer");
+  step("platform grants pool; the enterprise identity is charged to the pool only, never the person's own balance");
   const funded = await call("POST", `/api/admin/enterprise/organizations/${orgId}/grants`, { resourceType: "token", unitTotal: 100 }, asAdmin);
   assert.equal(funded.status, 200, JSON.stringify(funded.body));
   const orgGrant = (await pool.query("select * from wallet_grants where organization_id=$1", [orgId])).rows[0];
@@ -245,12 +245,14 @@ try {
   await pool.query(`insert into wallet_grants(id,user_id,source_type,source_id,grant_type,resource_type,token_total,token_remaining,unit_total,unit_remaining,starts_at,expires_at,status,metadata)
     values('employee-personal',$1,'admin_adjustment',$1,'tokens','token',10,10,10,10,now()-interval '1 second',now()+interval '1 day','active','{}')`, [employee.userId]);
   const consume = (units, key = crypto.randomUUID()) => consumeEntitlement({ userId: employee.userId, organizationId: orgId, feature: "chat", resourceType: "token", units, idempotencyKey: key });
+  // 2026-09-30 decision: the identity the user picks pays. It used to spend the
+  // person's own balance first and fall back to the pool.
   assert.equal((await consume(6)).ok, true);
-  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 100);
+  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 94);
   assert.equal((await consume(20)).ok, true);
-  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id='employee-personal'")).rows[0].unit_remaining), 4, "full request falls back without partially spending personal funds");
-  const debit = (await pool.query("select user_id,unit_delta from wallet_ledger where grant_id=$1 and event_type='consume'", [orgGrant.id])).rows[0];
-  assert.equal(debit.user_id, employee.userId); assert.equal(Number(debit.unit_delta), -20);
+  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id='employee-personal'")).rows[0].unit_remaining), 10, "the person's own balance is never touched under the enterprise identity");
+  const debits = (await pool.query("select user_id,unit_delta from wallet_ledger where grant_id=$1 and event_type='consume' order by created_at", [orgGrant.id])).rows;
+  assert.deepEqual(debits.map((d) => [d.user_id, Number(d.unit_delta)]), [[employee.userId, -6], [employee.userId, -20]], "each debit records the real consumer");
   // Hold the grant until both real requests are waiting on its row. This
   // deterministically exposes stale selections instead of relying on timing.
   const blocker = await pool.connect();
@@ -269,13 +271,13 @@ try {
     await blocker.query("commit");
     concurrent = await pending;
   } finally { await blocker.query("rollback"); blocker.release(); }
-  assert.equal(concurrent.filter((r) => r.ok).length, 1, "only one request can spend the remaining 80 units");
-  assert.equal(concurrent.find((r) => !r.ok).code, "ENTITLEMENT_INSUFFICIENT");
-  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 20);
+  assert.equal(concurrent.filter((r) => r.ok).length, 1, "only one request can spend the remaining 74 units");
+  assert.equal(concurrent.find((r) => !r.ok).code, "ORG_POOL_INSUFFICIENT", "a pool shortage is named as the pool's, not the person's");
+  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 14);
   const retryKey = crypto.randomUUID();
   const duplicate = await Promise.all([consume(10, retryKey), consume(10, retryKey)]);
   assert.ok(duplicate.every((r) => r.ok)); assert.equal(duplicate.filter((r) => r.idempotent).length, 1);
-  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 10);
+  assert.equal(Number((await pool.query("select unit_remaining from wallet_grants where id=$1", [orgGrant.id])).rows[0].unit_remaining), 4);
 
   const foreignRetry = await consumeEntitlement({ userId: manager.userId, organizationId: orgId, feature: "chat", resourceType: "token", units: 10, idempotencyKey: retryKey });
   assert.equal(foreignRetry.ok, false, "another user cannot replay someone else's consumption receipt");

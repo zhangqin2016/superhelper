@@ -89,9 +89,12 @@ assert.match(
 );
 
 const mutationsSource = fs.readFileSync(new URL("../server/src/services/enterprise-mutations.js", import.meta.url), "utf8");
+// The dead end was the PHONE lookup: an unregistered phone failed instead of
+// becoming an invitation. (An unknown explicit userId is still USER_NOT_FOUND —
+// that one is a real typo, not a seat to hold.)
 assert.doesNotMatch(
   mutationsSource,
-  /if \(!user\) fail\("USER_NOT_FOUND", 404\)/,
+  /where\("phone_e164", "=", phoneE164\)\.executeTakeFirst\(\);\s*if \(!user\) fail\("USER_NOT_FOUND"/,
   "the dead end this change removes must be gone",
 );
 assert.match(mutationsSource, /if \(input\.role === "owner"\) fail\("INVITE_ROLE_UNSUPPORTED", 400\)/,

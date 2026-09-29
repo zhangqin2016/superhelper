@@ -39,21 +39,30 @@ async function load(relative, overrides = {}) {
     if (id.startsWith('.')) return requireWeb(new URL(id, new URL('../web/' + relative, import.meta.url)).pathname);
     return requireWeb(id);
   }
-  vm.runInNewContext(code, { module, exports: module.exports, require, Buffer, FormData, URL, crypto: globalThis.crypto, process }, { filename: relative });
+  vm.runInNewContext(code, { module, exports: module.exports, require, Buffer, FormData, URL, URLSearchParams, crypto: globalThis.crypto, process }, { filename: relative });
   return module.exports;
 }
 
-const admin = await load('app/admin/enterprise/[id]/page.js');
+// The platform detail page renders its forms through client components; they
+// are stood in for here (test-admin-enterprise-pages renders them for real).
+const passthrough = ({ children }) => React.createElement(React.Fragment, null, children);
+const clientForms = new Proxy({}, { get: () => passthrough });
+const { dictionaries } = await import('../web/lib/i18n.mjs');
+const admin = await load('app/admin/enterprise/[id]/page.js', {
+  '../../../../lib/i18n.mjs': { getI18n: async () => ({ locale: 'zh', t: dictionaries.zh }) },
+  '../../../../components/admin-empty': { AdminEmpty: ({ title }) => React.createElement('p', null, title) },
+  '../../../../components/ui/badge': { Badge: passthrough },
+  '../../../../components/admin-enterprise-form': clientForms,
+  '../../../../components/admin-enterprise-grants': clientForms,
+  '../../../../components/admin-enterprise-shared': await load('components/admin-enterprise-shared.js', { './ui/badge': { Badge: passthrough } }),
+});
 const html = renderToStaticMarkup(await admin.default({ params: Promise.resolve({ id: org.id }) }));
 assert.match(html, /Enterprise acceptance/, 'API success envelope must render enterprise, not not-found');
-assert.match(html, /ISSUED_CREDENTIALS/, 'successful creation must display initial owner credentials');
 
 const detail = await load('app/account/enterprise/[id]/page.js');
 assert.match(renderToStaticMarkup(await detail.default({ params: Promise.resolve({ id: org.id }) })), /Enterprise acceptance/);
 
 for (const [file, fn, args, response] of [
-  ['app/admin/enterprise/actions.js', 'createOrganizationAction', [], { organization: org, owner: { issued: true, loginName: 'owner', initialPassword: 'test-only-password' } }],
-  ['app/account/enterprise/actions.js', 'createOrganizationAction', [], { organization: org }],
   ['app/account/enterprise/actions.js', 'provisionAccountsAction', [org.id], { accounts: [{ loginName: 'employee', initialPassword: 'test-only-password' }] }],
   ['app/account/enterprise/actions.js', 'resetAccountPasswordAction', [org.id, 'usr_employee'], { loginName: 'employee', initialPassword: 'test-only-password' }],
 ]) {
@@ -66,6 +75,27 @@ for (const [file, fn, args, response] of [
     continue;
   }
   await assert.rejects(actions[fn](...args, form), (error) => error.digest === 'NEXT_REDIRECT' && error.url.includes(org.id), `${fn} must propagate navigation, not swallow redirect as failure`);
+}
+// Platform create: an issued owner's one-time password comes back in the
+// action's result (a redirect's URL hash is dropped by Next's client replay,
+// so it could be lost); a phone owner has no secret and opens the organization.
+{
+  const adminApi = (json) => ({ '../../../lib/api': { apiPostResult: async () => ({ ok: true, status: 200, json }) } });
+  const form = new FormData(); form.set('name', org.name);
+  const issuing = await load('app/admin/enterprise/actions.js', adminApi({ organization: org, owner: { issued: true, loginName: 'owner', initialPassword: 'test-only-password' } }));
+  const issued = await issuing.createOrganizationAction(form);
+  assert.equal(issued.ok, true); assert.equal(issued.issued[0].l, 'owner'); assert.equal(issued.issued[0].p, 'test-only-password');
+  assert.equal(issued.organizationId, org.id, 'successful creation must display initial owner credentials, with the way to the new organization');
+  form.set('ownerMode', 'phone'); form.set('ownerPhone', '13800000000');
+  const byPhone = await load('app/admin/enterprise/actions.js', adminApi({ organization: org, owner: { issued: false, userId: 'usr_owner' } }));
+  await assert.rejects(byPhone.createOrganizationAction(form), (error) => error.digest === 'NEXT_REDIRECT' && error.url.includes(org.id), 'createOrganizationAction must propagate navigation, not swallow redirect as failure');
+}
+// Organizations are opened by the platform only (the server answers
+// ORG_CREATE_PLATFORM_ONLY), so the enterprise console no longer offers a
+// self-serve create action at all.
+{
+  const accountActions = await load('app/account/enterprise/actions.js');
+  assert.equal(accountActions.createOrganizationAction, undefined, 'the enterprise console must not offer self-serve organization creation');
 }
 console.log('enterprise web flow: page envelope, owner credentials and server-action redirects and issuance receipts passed');
 
@@ -122,7 +152,7 @@ const recoveryHtml = renderToStaticMarkup(await admin.default({ params: { id: or
 assert.match(recoveryHtml, /first-owner/); assert.match(recoveryHtml, /active-owner/);
 assert.equal((recoveryHtml.match(/重新签发负责人初始密码/g) || []).length, 1, 'only unfinished initial owner handoff offers platform password reissue');
 const recoveryAction = await load('app/admin/enterprise/actions.js', {
-  '../../../lib/api': { apiPost: async (path, body) => { assert.match(path, /owner-initial-password$/); assert.equal(body.userId, 'owner_initial'); return { owner: { loginName: 'first-owner', initialPassword: 'test-only-password' } }; } },
+  '../../../lib/api': { apiPostResult: async (path, body) => { assert.match(path, /owner-initial-password$/); assert.equal(body.userId, 'owner_initial'); return { ok: true, status: 200, json: { owner: { loginName: 'first-owner', initialPassword: 'test-only-password' } } }; } },
 });
 const recovery = await recoveryAction.reissueOwnerInitialPasswordAction(org.id, 'owner_initial');
 assert.equal(recovery.issued[0].l, 'first-owner'); assert.equal(recovery.issued[0].p, 'test-only-password');

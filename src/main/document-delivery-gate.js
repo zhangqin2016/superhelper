@@ -170,6 +170,22 @@ function structureCheck(artifact = {}) {
   return { ok: true, reason: "structure_valid" };
 }
 
+// The render receipt carries render_document.py's schema check of the same,
+// unchanged file. A header-level check passes any zip that names
+// [Content_Types].xml; Word refuses a package whose markup puts one vocabulary's
+// element where the schema does not allow it (2026-09-29: 238 DrawingML fonts in
+// w:rPr — LibreOffice rendered it, Word would not open it). Not judged → no change.
+function withPackageConformance(structure, receipt) {
+  const pkg = receipt?.package;
+  if (!structure.ok || !pkg || pkg.checked !== true || !(Number(pkg.count) > 0)) return structure;
+  return {
+    ok: false,
+    reason: "ooxml_schema_violation",
+    count: Number(pkg.count),
+    violations: (Array.isArray(pkg.violations) ? pkg.violations : []).slice(0, 5),
+  };
+}
+
 // Whether an .xlsx actually contains formula cells — the ground truth for the
 // recalculation requirement. A keyword match in the user prompt is NOT enough:
 // internal continuation prompts mention formulas/recalc too, which previously
@@ -235,7 +251,7 @@ function requiresDocumentDelivery(taskContract = null, artifacts = []) {
 }
 
 function assessArtifact(artifact, tools) {
-  const structure = structureCheck(artifact);
+  let structure = structureCheck(artifact);
   if (fileKinds.EXTENSIONS.textDocument.has(String(artifact.ext || path.extname(artifact.path || "")).toLowerCase())) {
     // Text delivery has no page rendering. What the gate can certify about text
     // it checks itself: the file decodes as UTF-8 with no replacement
@@ -257,6 +273,7 @@ function assessArtifact(artifact, tools) {
   // The platform's render receipt proves the render whatever the calling
   // script printed; its page list is what vision receipts are matched against.
   const receipt = renderReceiptFor(String(artifact.path || ""), successful.map(({ tool }) => tool));
+  structure = withPackageConformance(structure, receipt);
   const renderedImages = receipt ? receipt.images
     : renderEntry ? [...collectImagePaths(renderEntry.tool.result ?? renderEntry.tool.output ?? "")] : [];
   const pageCount = receipt ? receipt.pages : renderEntry ? parseRenderedPageCount(renderEntry.tool, renderedImages) : 0;
@@ -396,12 +413,23 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
   const paths = (assessment?.artifacts || []).map((item) => item.path).filter(Boolean);
   const language = answerLanguage(userText);
   const listed = paths.map((item) => `- ${item}`).join("\n");
+  // What the schema check found, verbatim — the follow-up fixes that, not a guess.
+  const violations = (assessment?.artifacts || []).flatMap((item) => {
+    const structure = item?.checks?.structure;
+    if (structure?.reason !== "ooxml_schema_violation") return [];
+    return [`- ${item.path} (${structure.count})`, ...(structure.violations || []).slice(0, 3)
+      .map((v) => `  ${v.part} ${v.node}: ${v.message}`)];
+  });
   if (language === "zh") {
     return [
       "[系统文档交付续检] 这是对刚生成文件的一次内部续接，不是让你从头重做原任务。",
       "请继续完成当前文档的交付验收；目标是尽可能完成用户任务，不要把可修复的依赖或工具选择问题当作终点。保留原内容和原路径，只在看到确定的质量问题时修改源文件。",
       "待验文件：",
       listed,
+      ...(violations.length ? [
+        "OOXML 结构校验发现 Word/PowerPoint/Excel 会拒绝打开的标记（LibreOffice 照样能渲染，所以页面看不出来）。修正生成代码并重新生成，再用 render_document.py 渲染确认 package.count 为 0：",
+        ...violations,
+      ] : []),
       "必须完成：",
       "1. 先调用 lily_capability_status 检查当前技能、runtime pack 和工具状态。已安装但健康检查失败的 pack 不可当作可用；按返回的 installAction 调用 runtime_pack_install，若 args 含 repair: true 就用 repair: true 强制修复。不要传 wait: true；安装/修复会返回后台 jobId，用 runtime_pack_list 观察进度。不要优先探测 /usr/local/bin/soffice 这类系统路径。",
       "2. 用确定性库重新打开文件并确认结构有效；工作簿含公式时，用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 重算并消除公式错误。",
@@ -417,6 +445,10 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
     "Finish delivery QA for the current documents. The goal is to keep completing the user's task; repair recoverable dependency or tool-selection problems before declaring a gap. Preserve their content and paths; modify a source file only for a defect you actually observe.",
     "Artifacts to verify:",
     listed,
+    ...(violations.length ? [
+      "The OOXML structure check found markup Word/PowerPoint/Excel will refuse to open (LibreOffice renders it anyway, so the pages do not show it). Fix the generating code, regenerate, and render with render_document.py until package.count is 0:",
+      ...violations,
+    ] : []),
     "Required:",
     "1. First call lily_capability_status to inspect active skills, runtime packs, and tools. A pack that is installed but unhealthy is not available; follow its installAction and call runtime_pack_install, using repair: true when returned. Do not pass wait: true; install/repair returns a background jobId and progress is observed with runtime_pack_list. Do not prefer ad-hoc system paths such as /usr/local/bin/soffice.",
     "2. Reopen each file with a deterministic library and confirm its structure. If the workbook contains formulas, recalculate with the recalc.py bundled in the xlsx skill (anthropics-xlsx) and resolve formula errors.",

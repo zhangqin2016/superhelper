@@ -11,20 +11,59 @@ import { config } from "../../config.js";
 import { createEnterpriseMutationService } from "../../services/enterprise-mutations.js";
 import { provisionAccounts, resetIssuedPassword } from "../../services/enterprise-accounts.js";
 import { normalizePhoneE164 } from "../../services/account-auth.js";
-import { enterpriseMutationResponse } from "../public/enterprise-route-support.js";
+import { enterpriseMutationResponse, memberIdentities } from "../public/enterprise-route-support.js";
 
 const orgIdSchema = z.object({ id: z.string().min(3).max(120) });
 const adjustGrantsSchema = z.object({
   resourceType: z.enum(["token", "image_generation", "video_generation"]),
   unitTotal: z.number().int().min(1).max(1000000000),
   expiresDays: z.number().int().min(1).max(3650).default(365),
+  // One key per form render: a retry after a timeout returns the first grant
+  // instead of granting twice.
+  idempotencyKey: z.string().min(8).max(120).optional(),
+  note: z.string().max(200).optional(),
 });
+const reduceGrantSchema = z.object({
+  // Take back part of what is left, or all of it (revoke). A typo'd grant used
+  // to be permanent: the platform could only ever add.
+  units: z.number().int().min(1).max(1000000000).optional(),
+  all: z.boolean().optional(),
+  reason: z.string().min(1).max(200),
+}).refine((v) => v.all === true || v.units !== undefined, { message: "units or all required" });
 const patchOrgSchema = z.object({
+  // The platform's freeze. Only the platform can lift it; the enterprise's own
+  // pause (owner_status) is separate and cannot override it.
+  platformStatus: z.enum(["active", "suspended"]).optional(),
+  // Legacy form value: disabled = suspended.
   status: z.enum(["active", "disabled"]).optional(),
-}).refine((v) => v.status !== undefined, { message: "status required" });
+  reason: z.string().max(200).optional(),
+  name: z.string().min(1).max(120).optional(),
+  defaultMemberWeeklyBudget: z.number().int().min(0).nullable().optional(),
+}).refine((v) => v.platformStatus !== undefined || v.status !== undefined || v.name !== undefined || v.defaultMemberWeeklyBudget !== undefined, { message: "a field is required" });
 const usageSchema = z.object({
-  days: z.coerce.number().int().min(1).max(365).default(30),
+  days: z.coerce.number().int().min(1).max(365).catch(30).default(30),
 });
+const listSchema = z.object({
+  q: z.string().max(80).optional(),
+  status: z.enum(["all", "active", "suspended", "paused"]).catch("all").default("all"),
+  source: z.enum(["all", "platform", "self_serve"]).catch("all").default("all"),
+  limit: z.coerce.number().int().min(1).max(200).catch(50).default(50),
+  offset: z.coerce.number().int().min(0).catch(0).default(0),
+});
+const grantParamsSchema = z.object({ id: z.string().min(3).max(120), grantId: z.string().min(3).max(120) });
+const auditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).catch(50).default(50),
+  before: z.coerce.number().int().min(1).optional().catch(undefined),
+});
+
+/** What a grant row means to an operator, not its raw columns. */
+export function grantState(grant, now = new Date()) {
+  if (grant.status === "revoked") return "revoked";
+  if (new Date(grant.expires_at).getTime() <= now.getTime()) return "expired";
+  if (Number(grant.unit_remaining || 0) <= 0) return "depleted";
+  if (new Date(grant.starts_at).getTime() > now.getTime()) return "scheduled";
+  return "active";
+}
 
 /** Org with quota/member summary for admin lists. */
 async function orgSummaries(rows) {
@@ -38,7 +77,29 @@ async function orgSummaries(rows) {
     .groupBy("organization_id")
     .execute();
   const counts = new Map(memberCounts.map((row) => [row.organization_id, Number(row.count)]));
-  return rows.map((row) => ({ ...row, member_count: counts.get(row.id) || 0 }));
+  // What the design promised the list would show (§7.1 "额度汇总") and it never
+  // did: who owns it, what is left in the pool, what was used lately.
+  const owners = await db.selectFrom("organization_members").select(["organization_id", "user_id"])
+    .where("organization_id", "in", orgIds).where("role", "=", "owner").where("status", "=", "active")
+    .orderBy("joined_at", "asc").execute();
+  const ownerByOrg = new Map();
+  for (const row of owners) if (!ownerByOrg.has(row.organization_id)) ownerByOrg.set(row.organization_id, row.user_id);
+  const identities = await memberIdentities(db, [...new Set(ownerByOrg.values())]);
+  const pool = await db.selectFrom("wallet_grants").select(["organization_id", "resource_type"])
+    .select((eb) => eb.fn.sum("unit_remaining").as("remaining"))
+    .where("organization_id", "in", orgIds).where("status", "=", "active").where("expires_at", ">", new Date()).where("starts_at", "<=", new Date())
+    .groupBy(["organization_id", "resource_type"]).execute();
+  const poolByOrg = new Map();
+  for (const row of pool) poolByOrg.set(row.organization_id, { ...(poolByOrg.get(row.organization_id) || {}), [row.resource_type]: Number(row.remaining || 0) });
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const used = await db.selectFrom("usage_events").select(["organization_id"]).select((eb) => eb.fn.sum("billable_units").as("units"))
+    .where("organization_id", "in", orgIds).where("created_at", ">=", since).groupBy("organization_id").execute();
+  const usedByOrg = new Map(used.map((row) => [row.organization_id, Number(row.units || 0)]));
+  return rows.map((row) => {
+    const ownerId = ownerByOrg.get(row.id) || null;
+    return { ...row, member_count: counts.get(row.id) || 0, owner: ownerId ? { userId: ownerId, ...identities.get(ownerId) } : null,
+      pool: poolByOrg.get(row.id) || {}, units30d: usedByOrg.get(row.id) || 0 };
+  });
 }
 
 async function orgUsage(organizationId, days = 30) {
@@ -47,6 +108,7 @@ async function orgUsage(organizationId, days = 30) {
     .selectFrom("usage_events")
     .select(["user_id"])
     .select((eb) => eb.fn.sum("usage_events.billable_units").as("units"))
+    .select((eb) => [eb.fn.count("usage_events.id").as("request_count"), eb.fn.sum("usage_events.billable_tokens").as("tokens")])
     .where("organization_id", "=", organizationId)
     .where("created_at", ">=", since)
     .groupBy("user_id")
@@ -55,13 +117,16 @@ async function orgUsage(organizationId, days = 30) {
   const byModel = await db
     .selectFrom("usage_events")
     .select(["model"])
-    .select((eb) => eb.fn.sum("usage_events.billable_units").as("units"))
+    .select((eb) => [eb.fn.sum("usage_events.billable_units").as("units"), eb.fn.count("usage_events.id").as("request_count")])
     .where("organization_id", "=", organizationId)
     .where("created_at", ">=", since)
     .groupBy("model")
     .orderBy("units", "desc")
     .execute();
-  return { days, byMember, byModel };
+  const identities = await memberIdentities(db, byMember.map((row) => row.user_id));
+  const members = byMember.map((row) => ({ ...row, ...identities.get(row.user_id) }));
+  const totals = members.reduce((sum, row) => ({ requests: sum.requests + Number(row.request_count || 0), units: sum.units + Number(row.units || 0) }), { requests: 0, units: 0 });
+  return { days, byMember: members, byModel, totals };
 }
 
 const createOrgSchema = z.object({
@@ -100,7 +165,7 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
       let owner;
       try {
         owner = await db.transaction().execute(async (trx) => {
-          await trx.insertInto("organizations").values({ id: organizationId, name: input.name, status: "active", plan: input.plan }).execute();
+          await trx.insertInto("organizations").values({ id: organizationId, name: input.name, status: "active", plan: input.plan, source: "platform" }).execute();
           if ("phoneE164" in input.owner) {
             const phone = normalizePhoneE164(input.owner.phoneE164);
             const user = phone
@@ -122,8 +187,10 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
           return { userId: issued.userId, loginName: issued.loginName, initialPassword: issued.initialPassword, issued: true };
         });
       } catch (error) {
-        const status = Number(error?.statusCode) || 400;
-        return reply.code(status).send({ ok: false, code: error?.code || "ORG_CREATE_FAILED" });
+        // Only codes we raised on purpose reach the operator; a database error
+        // used to come back as its Postgres code (e.g. 23505) with a 400.
+        if (!(Number(error?.statusCode) >= 400 && Number(error?.statusCode) < 500 && error?.code)) throw error;
+        return reply.code(Number(error.statusCode)).send({ ok: false, code: error.code });
       }
       await audit(request, "enterprise_org_create", "organization", organizationId, {
         name: input.name, plan: input.plan, ownerUserId: owner.userId, ownerIssued: owner.issued,
@@ -138,14 +205,41 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
     {
       schema: {
         tags: ["admin:enterprise"],
-        summary: "List organizations",
-        response: { 200: okResponse({ organizations: { type: "array" } }) },
+        summary: "List organizations (search by name, id, owner phone or login name)",
+        querystring: zodBody(listSchema),
+        response: { 200: okResponse({ organizations: { type: "array" }, total: { type: "number" } }) },
       },
     },
-    async () => {
-      const rows = await db.selectFrom("organizations").selectAll().orderBy("created_at", "desc").limit(500).execute();
+    async (request) => {
+      const input = listSchema.parse(request.query || {});
+      let query = db.selectFrom("organizations");
+      const q = String(input.q || "").trim();
+      if (q) {
+        const like = `%${q.replace(/[%_\\]/g, (c) => "\\" + c)}%`;
+        const digits = q.replace(/\D/g, "");
+        query = query.where((eb) => eb.or([
+          eb("organizations.name", "ilike", like),
+          eb("organizations.id", "=", q),
+          // Find the org from a person: any member's phone, login name or id.
+          eb.exists(eb.selectFrom("organization_members").innerJoin("users", "users.id", "organization_members.user_id")
+            .select("organization_members.user_id")
+            .whereRef("organization_members.organization_id", "=", "organizations.id")
+            .where((inner) => inner.or([
+              inner("users.id", "=", q),
+              inner("users.login_name", "ilike", like),
+              ...(digits.length >= 7 ? [inner("users.phone_e164", "like", `%${digits}%`)] : []),
+            ]))),
+        ]));
+      }
+      if (input.status === "active") query = query.where("organizations.status", "=", "active");
+      if (input.status === "suspended") query = query.where("organizations.platform_status", "=", "suspended");
+      if (input.status === "paused") query = query.where("organizations.owner_status", "=", "disabled");
+      if (input.source !== "all") query = query.where("organizations.source", "=", input.source);
+      const total = Number((await query.select((eb) => eb.fn.countAll().as("n")).executeTakeFirst())?.n || 0);
+      const rows = await query.selectAll("organizations").orderBy("organizations.created_at", "desc").orderBy("organizations.id", "desc")
+        .limit(input.limit).offset(input.offset).execute();
       const summarized = await orgSummaries(rows);
-      return { ok: true, organizations: summarized };
+      return { ok: true, organizations: summarized, total, limit: input.limit, offset: input.offset };
     },
   );
 
@@ -173,7 +267,11 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
         .where("organization_members.status", "=", "active").where("users.status", "=", "active").orderBy("users.id", "asc").execute();
       const owners = ownerRows.map((owner) => ({ id: owner.id, loginName: owner.login_name, displayName: owner.display_name,
         passwordMustChange: Boolean(owner.password_must_change), issued: owner.provisioned_organization_id === org.id }));
-      return { ok: true, organization: { ...org, grants, owners } };
+      const memberCount = Number((await db.selectFrom("organization_members").select((eb) => eb.fn.countAll().as("n")).where("organization_id", "=", org.id).executeTakeFirst())?.n || 0);
+      const pendingInvitations = Number((await db.selectFrom("organization_invitations").select((eb) => eb.fn.countAll().as("n"))
+        .where("organization_id", "=", org.id).where("status", "=", "pending").executeTakeFirst())?.n || 0);
+      const now = new Date();
+      return { ok: true, organization: { ...org, grants: grants.map((grant) => ({ ...grant, state: grantState(grant, now) })), owners, memberCount, pendingInvitations } };
     },
   );
 
@@ -215,13 +313,20 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
       },
     },
     async (request, reply) => {
-      const input = patchOrgSchema.parse(request.body);
+      const raw = patchOrgSchema.parse(request.body);
+      const input = {
+        ...(raw.platformStatus !== undefined ? { platformStatus: raw.platformStatus }
+          : raw.status !== undefined ? { platformStatus: raw.status === "disabled" ? "suspended" : "active" } : {}),
+        ...(raw.name !== undefined ? { name: raw.name } : {}),
+        ...(raw.defaultMemberWeeklyBudget !== undefined ? { defaultMemberWeeklyBudget: raw.defaultMemberWeeklyBudget } : {}),
+        ...(raw.reason !== undefined ? { reason: raw.reason } : {}),
+      };
       const result = await enterpriseMutationResponse(reply, () => mutations.changeOrganization({
         organizationId: request.params.id, adminActor: config.adminEmail || "admin",
         authorizeAdmin: () => assertAdmin(request, reply),
       }, input));
       if (!result?.ok) return result;
-      await audit(request, "enterprise_org_status", "organization", request.params.id, { status: input.status });
+      await audit(request, input.platformStatus !== undefined ? "enterprise_org_status" : "enterprise_org_change", "organization", request.params.id, input);
       return result;
     },
   );
@@ -263,6 +368,14 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
         return;
       }
       const grantId = publicId("grant");
+      const ledgerKey = input.idempotencyKey ? `admin_org_grant:${request.params.id}:${input.idempotencyKey}` : null;
+      if (ledgerKey) {
+        const previous = await db.selectFrom("wallet_ledger").select("grant_id").where("idempotency_key", "=", ledgerKey).executeTakeFirst();
+        if (previous?.grant_id) {
+          const grant = await db.selectFrom("wallet_grants").selectAll().where("id", "=", previous.grant_id).executeTakeFirst();
+          return { ok: true, grant, idempotent: true };
+        }
+      }
       await db.transaction().execute(async (trx) => {
         await trx
           .insertInto("wallet_grants")
@@ -296,7 +409,8 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
             unit_delta: input.unitTotal,
             source_type: "admin_adjustment",
             source_id: request.params.id,
-            metadata: { actor: config.adminEmail || "admin" },
+            idempotency_key: ledgerKey,
+            metadata: { actor: config.adminEmail || "admin", organization_id: request.params.id, ...(input.note ? { note: input.note } : {}) },
           })
           .execute();
       });
@@ -304,6 +418,7 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
         resourceType: input.resourceType,
         unitTotal: input.unitTotal,
         expiresDays: input.expiresDays,
+        ...(input.note ? { note: input.note } : {}),
       });
       const grant = await db.selectFrom("wallet_grants").selectAll().where("id", "=", grantId).executeTakeFirst();
       return { ok: true, grant };
@@ -318,7 +433,7 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
         tags: ["admin:enterprise"],
         summary: "Organization usage audit",
         params: orgIdSchema,
-        querystring: usageSchema,
+        querystring: zodBody(usageSchema),
         response: { 200: okResponse({ usage: { type: "object" } }) },
       },
     },
@@ -333,4 +448,59 @@ export function registerAdminEnterpriseRoutes(app, { audit, assertAdmin }) {
       return { ok: true, usage };
     },
   );
+
+  // POST /api/admin/enterprise/organizations/:id/grants/:grantId/reduce — take back
+  // part of a grant's remaining units, or all of it (revoke). Ledgered + audited.
+  app.post("/api/admin/enterprise/organizations/:id/grants/:grantId/reduce", {
+    schema: { tags: ["admin:enterprise"], summary: "Reduce or revoke an organization grant", params: grantParamsSchema,
+      body: zodBody(reduceGrantSchema), response: { 200: okResponse({ grant: { type: "object" } }) } },
+  }, async (request, reply) => {
+    const input = reduceGrantSchema.parse(request.body);
+    const result = await enterpriseMutationResponse(reply, () => db.transaction().execute(async (trx) => {
+      const grant = await trx.selectFrom("wallet_grants").selectAll().where("id", "=", request.params.grantId)
+        .where("organization_id", "=", request.params.id).forUpdate().executeTakeFirst();
+      if (!grant) throw Object.assign(new Error("GRANT_NOT_FOUND"), { code: "GRANT_NOT_FOUND", statusCode: 404 });
+      if (grant.status !== "active") throw Object.assign(new Error("GRANT_NOT_ACTIVE"), { code: "GRANT_NOT_ACTIVE", statusCode: 409 });
+      const remaining = Number(grant.unit_remaining || 0);
+      const taken = input.all ? remaining : Math.min(remaining, Number(input.units));
+      if (!input.all && taken <= 0) throw Object.assign(new Error("GRANT_NOTHING_LEFT"), { code: "GRANT_NOTHING_LEFT", statusCode: 409 });
+      const updated = await trx.updateTable("wallet_grants").set((eb) => ({
+        unit_remaining: eb("unit_remaining", "-", taken),
+        ...(grant.resource_type === "token" ? { token_remaining: eb("token_remaining", "-", taken) } : {}),
+        ...(input.all ? { status: "revoked" } : {}),
+      })).where("id", "=", grant.id).returningAll().executeTakeFirstOrThrow();
+      await trx.insertInto("wallet_ledger").values({
+        id: publicId("ledger"), user_id: grant.user_id, grant_id: grant.id, event_type: input.all ? "revoke" : "adjust",
+        resource_type: grant.resource_type, token_delta: grant.resource_type === "token" ? -taken : 0, unit_delta: -taken,
+        source_type: "admin_adjustment", source_id: request.params.id,
+        metadata: { actor: config.adminEmail || "admin", organization_id: request.params.id, reason: input.reason },
+      }).execute();
+      return { ok: true, grant: { ...updated, state: grantState(updated) }, taken };
+    }));
+    if (result?.ok) await audit(request, input.all ? "enterprise_grant_revoke" : "enterprise_grant_reduce", "organization", request.params.id, {
+      grantId: request.params.grantId, units: result.taken, reason: input.reason });
+    return result;
+  });
+
+  // GET /api/admin/enterprise/organizations/:id/audit — this org's history, both sides
+  app.get("/api/admin/enterprise/organizations/:id/audit", {
+    schema: { tags: ["admin:enterprise"], summary: "Organization change history (platform and enterprise side)", params: orgIdSchema,
+      querystring: zodBody(auditQuerySchema), response: { 200: okResponse({ entries: { type: "array" } }) } },
+  }, async (request) => {
+    const input = auditQuerySchema.parse(request.query || {});
+    let query = db.selectFrom("audit_logs").select(["id", "actor", "action", "metadata", "created_at", "ip"])
+      .where("target_type", "=", "organization").where("target_id", "=", request.params.id);
+    if (input.before) query = query.where("id", "<", input.before);
+    const rows = await query.orderBy("id", "desc").limit(input.limit).execute();
+    const userIds = [...new Set(rows.map((row) => String(row.actor || "")).filter((a) => a.startsWith("user:")).map((a) => a.slice(5)))];
+    const identities = await memberIdentities(db, userIds);
+    const entries = rows.map((row) => {
+      const actor = String(row.actor || "");
+      const userId = actor.startsWith("user:") ? actor.slice(5) : null;
+      return { id: Number(row.id), action: row.action, metadata: row.metadata, createdAt: row.created_at, ip: row.ip,
+        actor: userId ? { kind: "member", userId, ...identities.get(userId) } : { kind: "platform", name: actor } };
+    });
+    return { ok: true, entries, nextBefore: rows.length === input.limit ? Number(rows.at(-1).id) : null };
+  });
 }
+

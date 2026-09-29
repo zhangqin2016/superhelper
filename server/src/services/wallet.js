@@ -2,7 +2,13 @@ import { sql } from "kysely";
 import { publicId } from "./ids.js";
 import { config } from "../config.js";
 import { choosePricingRule, pricingUnitCost } from "./billing.js";
-import { orgConsumptionDecision } from "./enterprise.js";
+import {
+  effectiveWeeklyBudget,
+  orgConsumptionDecision,
+  orgUnavailableCode,
+  weeklyBudgetDecision,
+  weeklyWindowAfterCharge,
+} from "./enterprise.js";
 
 async function defaultDb() {
   const mod = await import("../db.js");
@@ -233,41 +239,57 @@ export async function fetchOrgGrants(organizationId, trx = null, { forUpdate = f
 }
 
 /**
- * Resolve whether a user may consume from an organization's pool.
- * Enforces, in order:
- * 1. the organization exists and is active;
- * 2. the user is an ACTIVE member of that organization;
- * 3. the per-member quota (organization_members.quota) allows the request.
- * Pure decision on top of the orgConsumptionDecision helper; returns
- * { ok: true, cap } or { ok: false, code }.
+ * Is this user, right now, a usable member of this organization? Reads the org
+ * and the membership (locked when `forUpdate`, as the charge path does) and
+ * says why not: ORG_NOT_FOUND, ORG_SUSPENDED (platform freeze), ORG_DISABLED
+ * (the enterprise's own pause), ORG_MEMBER_REQUIRED, ORG_MEMBER_DISABLED.
  */
-export async function resolveOrgForConsumption({ userId, organizationId, units = 1 }, trx = null) {
-  trx ||= await defaultDb();
+export async function loadOrgAccess(trx, { userId, organizationId, forUpdate = false }) {
   if (!organizationId) return { ok: false, code: "ORG_NOT_FOUND" };
-
-  const org = await trx
+  let orgQuery = trx
     .selectFrom("organizations")
-    .select(["id", "status"])
-    .where("id", "=", organizationId)
-    .executeTakeFirst();
+    .select(["id", "status", "owner_status", "platform_status", "default_member_weekly_budget"])
+    .where("id", "=", organizationId);
+  if (forUpdate) orgQuery = orgQuery.forShare();
+  const org = await orgQuery.executeTakeFirst();
   if (!org) return { ok: false, code: "ORG_NOT_FOUND" };
-  if (org.status !== "active") return { ok: false, code: "ORG_DISABLED" };
-
-  const member = await trx
+  const unavailable = orgUnavailableCode(org);
+  if (unavailable) return { ok: false, code: unavailable };
+  let memberQuery = trx
     .selectFrom("organization_members")
-    .select(["user_id", "status", "quota"])
+    .select(["user_id", "status", "quota", "weekly_budget", "weekly_window_started_at", "weekly_used"])
     .where("organization_id", "=", organizationId)
-    .where("user_id", "=", userId)
-    .executeTakeFirst();
+    .where("user_id", "=", userId);
+  if (forUpdate) memberQuery = memberQuery.forUpdate();
+  const member = await memberQuery.executeTakeFirst();
   if (!member) return { ok: false, code: "ORG_MEMBER_REQUIRED" };
   if (member.status !== "active") return { ok: false, code: "ORG_MEMBER_DISABLED" };
+  return { ok: true, org, member, weeklyBudget: effectiveWeeklyBudget(member.weekly_budget, org.default_member_weekly_budget) };
+}
 
-  return orgConsumptionDecision({
-    memberStatus: member.status,
-    orgStatus: org.status,
-    quota: member.quota,
-    requestedUnits: units,
+/**
+ * May this user act under this organization's identity at all? The gateway asks
+ * before metering (identity check only — the per-request cap, weekly budget and
+ * pool are judged by the charge itself, under lock).
+ */
+export async function resolveOrgForConsumption({ userId, organizationId }, trx = null) {
+  trx ||= await defaultDb();
+  const access = await loadOrgAccess(trx, { userId, organizationId });
+  if (!access.ok) return access;
+  return { ok: true, cap: access.member.quota ?? null };
+}
+
+/** The member's weekly budget as they would see it now (for the console and the client). */
+export async function memberWeeklyStatus({ userId, organizationId }, trx = null) {
+  trx ||= await defaultDb();
+  const access = await loadOrgAccess(trx, { userId, organizationId });
+  if (!access.ok) return access;
+  const decision = weeklyBudgetDecision({
+    budget: access.weeklyBudget,
+    windowStartedAt: access.member.weekly_window_started_at,
+    used: Number(access.member.weekly_used || 0),
   });
+  return { ok: true, weeklyBudget: decision.budget, weeklyUsed: decision.used, resetsAt: decision.resetsAt, limited: !decision.ok, perRequestCap: access.member.quota ?? null };
 }
 
 export async function fetchEntitlementSummary(userId, trx = null) {
@@ -310,6 +332,9 @@ export async function consumeEntitlement({
   idempotencyKey = "",
   metadata = {},
   organizationId = "",
+  // false only for the reconcile phase: the work already happened, so the
+  // per-request cap and the weekly gate do not apply to charging for it.
+  enforceMemberLimits = true,
 } = {}) {
   const db = await defaultDb();
   const billableUnits = Math.max(1, Math.trunc(Number(units || 1))) * Math.max(0, Math.trunc(Number(unitCost ?? 1)));
@@ -330,32 +355,33 @@ export async function consumeEntitlement({
       if (existing) return { ok: true, idempotent: true, usageEventId: existing.id };
     }
 
-    const grants = await fetchUserGrants(userId, trx, { forUpdate: true });
-    let selected = selectGrantsForConsumption(grants, {
-      resourceType,
-      units: billableUnits,
-    });
-    let usedOrganization = false;
-
-    // Personal pool insufficient + caller supplied an organization: fall back to
-    // the org pool for the WHOLE request (no mixed debits — the pure selector
-    // doesn't return partial debits on failure). Membership/org status and the
-    // per-member quota are enforced here.
-    if (!selected.ok && organizationId) {
-      const orgDecision = await resolveOrgForConsumption({ userId, organizationId, units: billableUnits }, trx);
-      if (orgDecision.ok) {
-        const orgGrants = await fetchOrgGrants(organizationId, trx, { forUpdate: true });
-        const orgSelected = selectGrantsForConsumption(orgGrants, {
-          resourceType,
-          units: billableUnits,
-        });
-        if (orgSelected.ok) {
-          selected = orgSelected;
-          usedOrganization = true;
-        }
+    // The identity the user chose decides whose quota pays — never both. Under
+    // an organization identity only the org pool is charged, with the member's
+    // per-request cap and weekly budget; under the personal identity only the
+    // personal balance. (It used to charge personal first and fall back to the
+    // pool, so a platform grant showed zero consumption and a pool shortage was
+    // reported as the personal ENTITLEMENT_INSUFFICIENT.)
+    let selected;
+    let orgMember = null;
+    if (organizationId) {
+      const access = await loadOrgAccess(trx, { userId, organizationId, forUpdate: true });
+      if (!access.ok) return access;
+      if (enforceMemberLimits) {
+        const cap = orgConsumptionDecision({ memberStatus: access.member.status, orgStatus: access.org.status, quota: access.member.quota, requestedUnits: billableUnits });
+        if (!cap.ok) return cap;
+        const weekly = weeklyBudgetDecision({ budget: access.weeklyBudget, windowStartedAt: access.member.weekly_window_started_at, used: Number(access.member.weekly_used || 0) });
+        if (!weekly.ok) return weekly;
       }
+      const orgGrants = await fetchOrgGrants(organizationId, trx, { forUpdate: true });
+      selected = selectGrantsForConsumption(orgGrants, { resourceType, units: billableUnits });
+      if (!selected.ok) return { ...selected, code: "ORG_POOL_INSUFFICIENT" };
+      orgMember = access.member;
+    } else {
+      const grants = await fetchUserGrants(userId, trx, { forUpdate: true });
+      selected = selectGrantsForConsumption(grants, { resourceType, units: billableUnits });
+      if (!selected.ok) return selected;
     }
-    if (!selected.ok) return selected;
+    const usedOrganization = Boolean(orgMember);
 
     const usageEventId = publicId("usage");
     await trx
@@ -414,6 +440,15 @@ export async function consumeEntitlement({
           idempotency_key: idempotencyKey ? `${idempotencyKey}:${debit.grant.id}` : null,
           metadata,
         })
+        .execute();
+    }
+
+    if (orgMember) {
+      await trx
+        .updateTable("organization_members")
+        .set(weeklyWindowAfterCharge({ windowStartedAt: orgMember.weekly_window_started_at, used: Number(orgMember.weekly_used || 0), units: billableUnits }))
+        .where("organization_id", "=", organizationId)
+        .where("user_id", "=", userId)
         .execute();
     }
 

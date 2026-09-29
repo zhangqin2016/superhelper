@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { AdminShell } from "../../../../components/admin-shell";
 import { AdminEmpty } from "../../../../components/admin-empty";
 import { ConfigTabs } from "../../../../components/config-tabs";
+import { OrgStatusBadge, formatDate as orgDate } from "../../../../components/admin-enterprise-shared";
+import { Badge } from "../../../../components/ui/badge";
 import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
@@ -63,7 +65,9 @@ export default async function AdminUserDetailPage({ params }) {
     devices = [],
     smsCodes = [],
     usageEvents = [],
+    organizations = [],
   } = data;
+  const e = t.admin.enterprise;
 
   return (
     <AdminShell title={c.detailTitle.replace("{phone}", user.phoneE164)} subtitle={`${user.id} · ${user.status}`}>
@@ -85,6 +89,32 @@ export default async function AdminUserDetailPage({ params }) {
           </div>
         ))}
       </div>
+
+      {/* Where this person works as an organization. Organization quota is the
+          organization's, not part of the personal balance shown above. */}
+      <section className="table-card mt-6 p-6">
+        <h2 className="text-xl font-semibold">{e.userOrgs.title}</h2>
+        <p className="mb-4 mt-1 text-sm text-slate-500">{e.userOrgs.help}</p>
+        {organizations.length ? (
+          <SimpleTable
+            headers={["org", "role", "membership", "orgStatus", "joined"].map((key) => e.userOrgs.cols[key])}
+            rows={organizations.map((org) => (
+              <tr key={org.id} className="border-t border-slate-100">
+                <td className="px-4 py-2">
+                  <Link href={`/admin/enterprise/${encodeURIComponent(org.id)}`} className="font-semibold text-brand hover:underline">{org.name}</Link>
+                  <div className="font-mono text-xs text-slate-400">{org.id}</div>
+                </td>
+                <td className="px-4 py-2">{e.roles[org.role] || org.role}</td>
+                <td className="px-4 py-2"><Badge variant={org.membership_status === "active" ? "success" : "danger"}>{e.userOrgs.membership[org.membership_status] || org.membership_status}</Badge></td>
+                <td className="px-4 py-2"><OrgStatusBadge org={org} copy={e} /></td>
+                <td className="px-4 py-2">{orgDate(org.joined_at, locale)}</td>
+              </tr>
+            ))}
+          />
+        ) : (
+          <p className="text-sm text-slate-500">{e.userOrgs.empty}</p>
+        )}
+      </section>
 
       <div className="mt-6">
         <ConfigTabs tabs={[

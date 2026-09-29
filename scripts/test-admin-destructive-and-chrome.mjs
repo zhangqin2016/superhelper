@@ -15,7 +15,13 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let checks = 0;
 const check = async (name, fn) => { await fn(); checks += 1; console.log(`ok - ${name}`); };
 
-const DESTRUCTIVE = /^(delete|remove|rollback|revoke|purge|wipe|merge)/i;
+// Freezing an organization, taking quota back and granting it are as costly as
+// deleting: they were missing here, so a bare <form> could have wired them.
+const DESTRUCTIVE = /^(delete|remove|rollback|revoke|purge|wipe|merge|freeze|unfreeze|suspend|reduce|grant)/i;
+// Forms that ask before submitting: DangerForm itself, and wrappers that submit
+// only through it (proved below). Any other form-like element — a bare <form>,
+// or ActionForm, which submits on the first click — may not carry one.
+const CONFIRMING = new Set(["DangerForm", "EnterpriseDangerForm", "GrantQuotaForm"]);
 
 await check("every destructive action is wired through the one form that confirms", () => {
   const offenders = [];
@@ -25,14 +31,40 @@ await check("every destructive action is wired through the one form that confirm
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!entry.name.endsWith(".js")) continue;
+      const rel = path.relative(ROOT, full);
       const src = fs.readFileSync(full, "utf8");
-      for (const match of src.matchAll(/<form\s+action=\{(\w+)\}/g)) {
-        if (DESTRUCTIVE.test(match[1])) offenders.push(`${path.relative(ROOT, full)}: <form action={${match[1]}}>`);
+      // `action={x}` and `action={x.bind(null, id)}` alike: a bound action is the same action.
+      for (const match of src.matchAll(/<(\w+)\s+action=\{(\w+)/g)) {
+        const [, element, name] = match;
+        if (!DESTRUCTIVE.test(name) || CONFIRMING.has(element)) continue;
+        // A bare form is never allowed; a non-confirming wrapper is held to it in the admin console.
+        const console = rel.startsWith("web/app/admin/") || rel.startsWith("web/components/");
+        if (element === "form" || console) offenders.push(`${rel}: <${element} action={${name}}>`);
       }
     }
   };
   walk(path.join(ROOT, "web"));
   assert.deepEqual(offenders, [], `these destructive actions submit without confirmation:\n${offenders.join("\n")}`);
+});
+
+await check("the enterprise console freezes, takes back and grants only through the confirming form", () => {
+  const forms = fs.readFileSync(path.join(ROOT, "web/components/admin-enterprise-form.js"), "utf8");
+  const danger = forms.slice(forms.indexOf("export function EnterpriseDangerForm"), forms.indexOf("export function OwnerCredentials"));
+  assert.match(danger, /<DangerForm action=\{submit\} confirm=\{confirm\}/, "EnterpriseDangerForm submits through DangerForm, with the caller's question");
+  assert.ok(!/<form[\s>]/.test(danger), "and never through a bare form");
+  assert.ok(!/window\.confirm/.test(forms), "no hand-rolled confirm beside the shared one");
+  // Grants arrive as props, so the gate above cannot see their names: every
+  // form in the grants component must be the confirming one.
+  const grants = fs.readFileSync(path.join(ROOT, "web/components/admin-enterprise-grants.js"), "utf8");
+  const elements = [...grants.matchAll(/<(\w+)\s+action=\{/g)].map((m) => m[1]);
+  assert.ok(elements.length >= 3, "the grant form, reduce and revoke are all here");
+  assert.deepEqual([...new Set(elements)], ["EnterpriseDangerForm"], "each of them asks first");
+  assert.match(grants, /confirm=\{`\$\{g\.confirm \|\| ""\}\\n\$\{summary\}`\}/, "the grant is confirmed by its own summary: amount, unit, organization, expiry");
+  const detail = fs.readFileSync(path.join(ROOT, "web/app/admin/enterprise/[id]/page.js"), "utf8");
+  assert.match(detail, /<EnterpriseDangerForm action=\{freezeOrganizationAction\.bind/, "freezing asks first");
+  assert.match(detail, /<EnterpriseDangerForm action=\{unfreezeOrganizationAction\.bind/, "and so does lifting it");
+  assert.match(detail, /<GrantQuotaForm\s+action=\{grantOrganizationQuotaAction\.bind/, "a grant goes through the confirming grant form");
+  assert.match(detail, /reduceAction=\{reduceGrantAction\.bind[\s\S]*revokeAction=\{revokeGrantAction\.bind/, "reduce and revoke go through the confirming row actions");
 });
 
 await check("the shared form always asks, and names what is about to go", () => {

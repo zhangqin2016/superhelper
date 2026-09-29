@@ -1,12 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useI18n } from "../../../lib/use-i18n";
+import { enterpriseConsoleText } from "../../../lib/enterprise-console-i18n.mjs";
 
 export default function EnterpriseError({ reset }) {
-  return <section role="alert" className="rounded-lg border bg-white p-6 space-y-4">
-    <h1 className="text-xl font-semibold">暂时无法访问企业信息</h1>
-    <p className="text-sm text-slate-600">请确认使用此企业的有效账号登录。成员管理和用量报表需要企业管理员权限，额度池明细需要企业负责人权限；也可以稍后重试。</p>
-    <button onClick={reset} className="rounded-lg border px-4 py-2">重试</button>
-    <Link href="/account/login" className="ml-4 underline">切换登录账号</Link>
-  </section>;
+  const { locale } = useI18n();
+  const T = enterpriseConsoleText(locale).errorPage;
+  return (
+    <section role="alert" className="space-y-4 rounded-lg border border-slate-200 bg-white p-6">
+      <h1 className="text-xl font-semibold">{T.title}</h1>
+      <p className="text-sm leading-6 text-slate-600">{T.body}</p>
+      <div className="flex flex-wrap items-center gap-4">
+        <button type="button" onClick={reset} className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">{T.retry}</button>
+        <Link href="/account/login" className="text-sm underline">{T.switchAccount}</Link>
+      </div>
+    </section>
+  );
 }
