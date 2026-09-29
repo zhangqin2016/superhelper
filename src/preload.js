@@ -486,6 +486,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     ipcRenderer.invoke("filetree:reveal", { filePath, sessionId }),
   openLocalFile: (filePath, sessionId = "") =>
     ipcRenderer.invoke("filetree:open", { filePath, sessionId }),
+  previewUrl: (filePath) => ipcRenderer.invoke("files:preview-url", { filePath }),
   localMediaStatus: (filePath) =>
     ipcRenderer.invoke("files:local-media-status", { filePath }),
 

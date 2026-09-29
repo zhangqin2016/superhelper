@@ -95,8 +95,10 @@ app.whenReady().then(async () => {
     assert.equal(tabs.pdfCanvas, true, "the PDF rendered a page");
     assert.equal(tabs.pdfClose, false, "the pane owns closing the embedded reader");
     assert.equal(tabs.md, "报告标题", "the Markdown artifact rendered");
-    assert.equal(tabs.sandbox, "allow-same-origin", "HTML keeps the script-free sandbox");
-    assert.equal(tabs.scriptRan, "", "scripts in an HTML preview do not run");
+    // Inline HTML (no file) runs its scripts on an opaque origin: it works, and
+    // the app cannot be reached from it (nor its document from the app).
+    assert.ok(/allow-scripts/.test(tabs.sandbox) && !/allow-same-origin/.test(tabs.sandbox), `inline HTML: scripts on, opaque origin (${tabs.sandbox})`);
+    assert.equal(tabs.scriptRan, "", "an opaque page's document is out of the app's reach");
     assert.equal(tabs.visible, 1, "only the active tab is shown");
     assert.equal(tabs.activeIsHtml, true, "the last opened file is the active tab");
     assert.ok(tabs.frameFill.body > 600 && Math.abs(tabs.frameFill.frame - tabs.frameFill.body) <= 2, `the HTML page fills its tab (${JSON.stringify(tabs.frameFill)})`);

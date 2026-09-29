@@ -275,6 +275,8 @@ function registerFileHandlers(mainWindow, stagingManager) {
 
   ipcMain.handle("files:read-text", (_event, payload = {}) => readTextPreview(payload));
   ipcMain.handle("files:local-media-status", (_event, payload = {}) => inspectLocalMediaPath(payload.filePath || payload.path || payload));
+  // The origin an HTML artifact runs on in the preview pane (scripts on, app out of reach).
+  ipcMain.handle("files:preview-url", (_event, payload = {}) => require("./preview-protocol").previewUrlForPath(payload.filePath || ""));
 
   ipcMain.handle("files:clear-staging", () => {
     try {

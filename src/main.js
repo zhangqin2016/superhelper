@@ -17,12 +17,14 @@ const { wireExternalLinks } = require("./main/window-links");
 const { wireContextMenu } = require("./main/window-context-menu");
 const { registerBlobScheme, installBlobProtocol } = require("./main/blob-protocol");
 const { registerLocalMediaScheme, installLocalMediaProtocol } = require("./main/local-media-protocol");
+const { registerPreviewScheme, installPreviewProtocol } = require("./main/preview-protocol");
 const { createCollaborationOutboxTransport } = require("./main/collaboration/message-outbox-transport");
 
 // Custom scheme privileges must be declared before app `ready`; the request
 // handler itself is installed in whenReady() below.
 registerBlobScheme();
 registerLocalMediaScheme();
+registerPreviewScheme();
 
 let mainWindow = null;
 let runnerPoolRef = null;
@@ -175,6 +177,7 @@ app.whenReady().then(async () => {
 
   installBlobProtocol();
   installLocalMediaProtocol();
+  installPreviewProtocol();
   const appIcon = loadAppIconImage();
   if (appIcon && process.platform === "darwin" && app.dock) {
     const ok = app.dock.setIcon(appIcon);
