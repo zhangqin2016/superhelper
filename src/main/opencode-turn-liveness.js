@@ -38,7 +38,17 @@ function createOpencodeTurnLiveness(options = {}) {
   // session: real model work that produces no TURN output.
   const hasActiveCompaction = options.hasActiveCompaction || (() => false);
   // When the engine next retries the provider (epoch ms, 0 = not retrying).
-  const engineRetryNextAt = options.engineRetryNextAt || (() => 0);
+  const engineRetryAt = options.engineRetryNextAt || (() => 0);
+  // A retry scheduled within one no-progress window is engine work and is
+  // waited out; one scheduled farther away (a retry-after of hours for an
+  // exhausted quota) is an outage, and the turn ends as before so auto mode can
+  // move to a working model — following it held the turn silent for as long
+  // as the provider asked (2026-09-29 re-review). The engine retries at most 5
+  // times, so waiting is bounded either way.
+  const engineRetryNextAt = () => {
+    const next = Number(engineRetryAt()) || 0;
+    return next > 0 && next - now() <= Number(getConfig().responseTimeoutMs || 0) ? next : 0;
+  };
   const ingest = options.ingest || (() => {});
   const recoverStalledFinal = options.recoverStalledFinal || (() => Promise.resolve(null));
   const completeTurn = options.completeTurn || (() => {});

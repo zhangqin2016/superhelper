@@ -110,6 +110,18 @@ check("an engine retry moves the fuse to after the scheduled attempt; silence af
   assert.equal(events.noFirstResponse.length, 1, "silence for a full window AFTER the retry ends the turn");
 });
 
+// 2026-09-29 re-review: a retry scheduled farther away than the no-progress
+// window (retry-after of hours for an exhausted quota) is an outage — the turn
+// ends as before, so auto mode can fail over instead of waiting silently.
+check("a retry scheduled beyond the no-progress window is an outage, not engine work", () => {
+  const { liveness, timers, events, retry } = makeLiveness();
+  liveness.armResponseTimer();
+  timers.advance(10_000);
+  retry.nextAt = timers.now() + 3_600_000; // retry-after: 1 hour
+  timers.advance(80_000);
+  assert.equal(events.noFirstResponse.length, 1, "the fuse fires on time instead of following a one-hour retry");
+});
+
 check("the reducer records the engine's scheduled retry and clears it on any other status", () => {
   const { createOpencodeRuntimeState, reduceOpencodeRuntimeEvent, engineRetryNextAt } = require("../src/main/runtime/opencode-runtime-reducer.js");
   const state = createOpencodeRuntimeState();

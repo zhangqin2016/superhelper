@@ -2587,7 +2587,7 @@
       "id": "engine-retry-not-silence",
       "protects": "A provider that answers 429/5xx is not a silent model: while the engine has scheduled a retry, the first-response window is measured from that scheduled attempt, so only silence after it ends the turn as MODEL_NO_RESPONSE and marks the model silent.",
       "baseline": "2026-09-28 integration audit: the engine's session.status retry (with the provider's retry-after or its own backoff) was reduced as no progress, so 90s into a rate-limited turn the fuse ended it as MODEL_NO_RESPONSE and marked the model silent, steering auto mode away from a model that was only rate-limited.",
-      "failureFallback": "Unchanged for a model that is genuinely silent (no retry scheduled), for compaction, pending cards and tool leases; a stale retry status cannot defer forever because the window runs from the scheduled attempt; an engine that gives up ends the turn itself with the provider's real error. LILY_OPENCODE_FIRST_RESPONSE_TIMEOUT_MS still tunes or disables the fuse. Mutation-verified: ignoring the retry fails by name.",
+      "failureFallback": "Unchanged for a model that is genuinely silent (no retry scheduled), for compaction, pending cards and tool leases; a stale retry status cannot defer forever because the window runs from the scheduled attempt; an engine that gives up ends the turn itself with the provider's real error. LILY_OPENCODE_FIRST_RESPONSE_TIMEOUT_MS still tunes or disables the fuse. Mutation-verified: ignoring the retry fails by name. Only a retry scheduled within one no-progress window is followed; a farther retry-after (an exhausted quota) is treated as an outage and the turn ends as before, so auto mode can fail over.",
       "tests": [
         "scripts/test-first-response-watchdog.mjs",
         "scripts/test-compaction-summary-not-answer.mjs"
@@ -2705,7 +2705,7 @@
       "id": "watchdogs-honour-engine-work",
       "protects": "The no-progress watchdog, like the first-response fuse, treats the engine busy on this session (a running compaction, or a provider retry it scheduled) as work, not a stall; a tool's lease lasts at least the timeout it declared plus a minute; a subagent's progress refreshes its parent task tool's activity.",
       "baseline": "2026-09-28 audit: a retry-after longer than 10 minutes, or a long compaction, ended the turn as stalled; a model-declared 30-minute build lost its fixed 20-minute lease; a long quiet subagent run expired its parent task tool.",
-      "failureFallback": "Real silence after the engine work still ends the turn; compaction windows expire on their own; the default lease is unchanged for tools that declare no timeout. Mutation-verified: dropping the engine-busy extension and a fixed lease each fail by name.",
+      "failureFallback": "Real silence after the engine work still ends the turn; compaction windows expire on their own; the default lease is unchanged for tools that declare no timeout. Mutation-verified: dropping the engine-busy extension and a fixed lease each fail by name. Only a retry scheduled within one no-progress window is followed; a farther retry-after (an exhausted quota) is treated as an outage and the turn ends as before, so auto mode can fail over.",
       "tests": [
         "scripts/test-first-response-watchdog.mjs"
       ]
@@ -2714,9 +2714,10 @@
       "id": "context-limit-is-input-overflow",
       "protects": "CONTEXT_LIMIT is only wording about the INPUT not fitting (each provider's overflow phrasing named); parameter errors such as 'max_tokens is too large' or a tool name over its maximum length are not overflows and never teach a context window.",
       "baseline": "2026-09-28 audit: 'maximum.*length' and 'max.*tokens' classified parameter 400s as CONTEXT_LIMIT, non-retryable, and the overflow learner could record the largest accepted request as a new, much smaller window.",
-      "failureFallback": "OpenAI, Anthropic, Gemini, Qwen, DeepSeek, Moonshot overflows and 413 are still CONTEXT_LIMIT. Mutation-verified: restoring the broad patterns fails by name.",
+      "failureFallback": "OpenAI, Anthropic, Gemini, Qwen, DeepSeek, Moonshot overflows and 413 are still CONTEXT_LIMIT. Mutation-verified: restoring the broad patterns fails by name. The wording list is the engine's own (verbatim copy of opencode provider-error.ts, drift-checked against the vendored source) plus provider wording it does not name (DashScope, vLLM); parameter and rate-limit errors stay excluded.",
       "tests": [
-        "scripts/test-model-context-window-learning.mjs"
+        "scripts/test-model-context-window-learning.mjs",
+        "scripts/test-context-overflow-wording.mjs"
       ]
     },
     {

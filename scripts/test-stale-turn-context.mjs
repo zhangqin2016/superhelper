@@ -77,6 +77,20 @@ const messages = () => [
   assert.equal(layers.opensTurn(recovery), false, "a recovery continuation does not");
 }
 
+// A follow-up that names no task of its own ("按这个方案做", "全部实施") carries
+// no contract, so it continues the task in progress: that task's contract
+// stays whole. In the field engine DB 347 of 1021 follow-ups came right after a
+// specific task (code change, release, UI…) this way (2026-09-29 re-review).
+{
+  for (const followUp of ["按这个方案做", "全部实施。不要中断", "这个任务还没完成"]) {
+    const latest = engineText(followUp);
+    assert.equal(layers.opensTurn(latest), false, `"${followUp}" does not open a new task`);
+    const msgs = [user(first), assistant("方案：先改校验，再补测试。"), user(latest)];
+    await transform({}, { messages: msgs });
+    assert.equal(msgs[0].parts[0].text, first, `after "${followUp}", the task in progress keeps its whole contract`);
+  }
+}
+
 // Deterministic: a message strips identically on every later call, so the
 // provider's cached prefix stays stable.
 {
