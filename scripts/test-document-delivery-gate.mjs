@@ -9,10 +9,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   assessDocumentDelivery,
-  buildDocumentDeliveryRecoveryPrompt,
   safeDocumentDeliveryFallback,
   visualCoverage,
 } = require("../src/main/document-delivery-gate.js");
+const { buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-recovery-prompt.js");
 const { evaluateAnswerEvidence, shouldBufferAssistantAnswer } = require("../src/main/answer-evidence-finalizer.js");
 const { documentDeliveryTurnIntelligence } = require("../src/main/document-delivery-turn.js");
 

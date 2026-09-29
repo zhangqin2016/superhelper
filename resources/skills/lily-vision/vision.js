@@ -119,6 +119,21 @@ function request(payload) {
   });
 }
 
+// The host keeps its own copy of the receipt (LILY_VISION_RECEIPTS_DIR): the
+// printed line may be filtered out by whatever pipes this script's output.
+function recordReceipt(receipt) {
+  const dir = process.env.LILY_VISION_RECEIPTS_DIR;
+  if (!dir) return;
+  try {
+    const at = Date.now();
+    fs.mkdirSync(dir, { recursive: true });
+    const line = JSON.stringify({ ...JSON.parse(receipt), at }) + "\n";
+    fs.appendFileSync(path.join(dir, new Date(at).toISOString().slice(0, 10) + ".jsonl"), line);
+  } catch (err) {
+    console.error("识图回执记录失败:", err.message);
+  }
+}
+
 async function main() {
   if (!API_KEY) {
     console.error("请设置 VISION_API_KEY 或 DASHSCOPE_API_KEY 环境变量。");
@@ -149,6 +164,7 @@ async function main() {
     if (!isUrl) {
       const receipt = JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: path.resolve(imageSource) });
       console.log("LILY_VISION_RECEIPT " + receipt.replace(/[\u007f-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")));
+      recordReceipt(receipt);
     }
   } catch (err) {
     console.error("识图失败:", err.message);

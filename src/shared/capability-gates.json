@@ -2965,6 +2965,18 @@
         "scripts/test-artifact-registry.mjs",
         "scripts/test-turn-runtime-event-router.mjs"
       ]
+    },
+    {
+      "id": "vision-ledger-delivery",
+      "protects": "A page lily-vision really inspected counts whatever pipes its output: vision.js also records each inspection in the host-named ledger (LILY_VISION_RECEIPTS_DIR), and the document delivery gate reads the ledger's entries since the turn began besides the printed receipts (render receipts are located from them too). The 文档交付续检 prompt lists only the files that failed, says what each lacks, and asks only for the steps that complete it.",
+      "baseline": "2026-09-30: the model ran vision.js … | grep -v LILY_VISION_RECEIPT for all 30 pages; the gate counted 0 inspected, started a 文档交付续检 that did the same, and both answers ended 自动检查未全部完成（视觉检查）. The continuation listed every file, so three .md that had passed were converted, rendered and inspected again.",
+      "failureFallback": "Not looser: only this turn's entries, only the pages of the artifact's current render, an unseen page still fails. An unreadable ledger or torn line is skipped (logged) and the gate behaves as before; an item without a verdict keeps the full checklist. Mutation-verified: vision.js without the ledger, the gate without the ledger and the previous prompt each fail by name.",
+      "tests": [
+        "scripts/test-vision-ledger-delivery.mjs",
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-vision-inspection-receipt.mjs",
+        "scripts/test-render-document.mjs"
+      ]
     }
   ]
 }

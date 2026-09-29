@@ -66,6 +66,7 @@ test("expired selection refreshes before rejection, once, without widening the s
       },
       refreshRemoteConfigForSend: async () => { refreshed++; f.setStatus("ready"); return { ok: true }; },
       ensureSessionRunner() {}, mergeDisplayFileMetadata: x => x,
+      withLivePreflightSkip: (_ctx, _id, opts) => opts,
     },
   });
   const result = await TurnOrchestrator.prototype._startTurn.call({ ctx: { sessionManager: {} }, _state: () => ({}) },
@@ -84,6 +85,7 @@ test("failed catalog refresh and cancellation cannot dispatch or pick another mo
         diagnoseSendBlocker: () => { throw Error("must not dispatch an expired profile"); },
         refreshRemoteConfigForSend: async () => { refreshed++; return { ok: false }; },
         ensureSessionRunner: () => { throw Error("must not start an expired profile"); },
+        withLivePreflightSkip: (_ctx, _id, opts) => opts,
       },
     });
     const result = await TurnOrchestrator.prototype._startTurn.call({ ctx: { sessionManager: {} },

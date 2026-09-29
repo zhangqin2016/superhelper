@@ -86,7 +86,8 @@ if (haveLibreOffice && fs.existsSync(path.join(FIXTURES, "sample.docx"))) {
   assert(badRes.ok, "the render itself succeeds — LibreOffice tolerates the markup");
   assert(badRes.package?.checked === true && badRes.package.count === 1, `the renderer reports the foreign element: ${JSON.stringify(badRes.package)}`);
   assert(/w:rPr\/\w+:latin$/.test(badRes.package.violations[0].node), `the violation names the node: ${badRes.package.violations[0].node}`);
-  const { assessDocumentDelivery, buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-gate.js");
+  const { assessDocumentDelivery } = require("../src/main/document-delivery-gate.js");
+  const { buildDocumentDeliveryRecoveryPrompt } = require("../src/main/document-delivery-recovery-prompt.js");
   const verdict = (file, images) => assessDocumentDelivery({
     taskContract: { taskType: "document_work", semanticIntent: { operation: "create", outputMode: "artifact" } },
     artifacts: [{ path: file, ext: ".docx" }],

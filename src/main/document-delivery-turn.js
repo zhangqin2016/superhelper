@@ -1,6 +1,6 @@
 "use strict";
 
-const { buildDocumentDeliveryRecoveryPrompt } = require("./document-delivery-gate");
+const { buildDocumentDeliveryRecoveryPrompt } = require("./document-delivery-recovery-prompt");
 
 function normalizeExpectedArtifactPaths(values = []) {
   if (!Array.isArray(values)) return [];

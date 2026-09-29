@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lily-vision",
   "name": "识图",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "为无原生识图能力的模型提供图片识别。",
   "minAppVersion": "0.1.0",
   "runtime": "node",
@@ -12,7 +12,7 @@
   },
   "permissions": {
     "network": true,
-    "filesystem": "read",
+    "filesystem": "write",
     "subprocess": "entry-only"
   },
   "guideMd": {

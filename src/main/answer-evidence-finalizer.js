@@ -166,6 +166,8 @@ function evaluateAnswerEvidence({
   // text, image recognition). It is evidence exactly like a tool output: a
   // fully read quote's "52,800 元" is grounded in it.
   observedText = "",
+  // The host vision ledger's inspections this turn (document delivery gate).
+  visionInspections = [],
 } = {}) {
   const original = String(assistant || "").trim();
   const externalFact = isExternalFactContract(taskContract);
@@ -178,6 +180,7 @@ function evaluateAnswerEvidence({
       artifacts,
       tools,
       userText,
+      visionInspections,
     });
     const effectiveEvidenceSummary = withDocumentOutputEvidence(evidenceSummary, artifacts, documentDelivery);
     const assessment = assessFinalAnswerEvidence({

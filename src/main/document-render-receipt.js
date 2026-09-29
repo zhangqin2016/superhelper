@@ -31,14 +31,16 @@ function readReceipt(dir) {
   }
 }
 
-/** The render receipt for `artifactPath` among the page directories this turn looked at, if it is current. */
-function renderReceiptFor(artifactPath, tools = []) {
+/**
+ * The render receipt for `artifactPath` among the page directories this turn
+ * looked at, if it is current. `ledgerImages`: the pages the host's vision
+ * ledger recorded this turn, which the printed receipts may lack.
+ */
+function renderReceiptFor(artifactPath, tools = [], ledgerImages = []) {
   const dirs = new Set();
-  for (const tool of tools) {
-    for (const image of visionInspectionPaths(tool)) {
-      dirs.add(path.dirname(image));
-      if (dirs.size >= MAX_DIRS) break;
-    }
+  for (const image of inspectedImages(tools, ledgerImages)) {
+    dirs.add(path.dirname(image));
+    if (dirs.size >= MAX_DIRS) break;
   }
   let stat = null;
   try { stat = fs.statSync(artifactPath); } catch { return null; }
@@ -57,9 +59,9 @@ function renderReceiptFor(artifactPath, tools = []) {
   return null;
 }
 
-/** Every page image this turn's vision receipts name. */
-function inspectedImages(tools = []) {
-  return tools.flatMap((tool) => visionInspectionPaths(tool));
+/** Every page image this turn's vision receipts name, printed or in the ledger. */
+function inspectedImages(tools = [], ledgerImages = []) {
+  return [...new Set([...tools.flatMap((tool) => visionInspectionPaths(tool)), ...ledgerImages.map(String)])];
 }
 
 module.exports = { RECEIPT_NAME, inspectedImages, renderReceiptFor, samePath };
