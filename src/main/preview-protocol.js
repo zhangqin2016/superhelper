@@ -21,10 +21,12 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const fileKinds = require("../shared/file-kinds.mjs");
 
 const SCHEME = "lily-preview";
 
-// Web resource types the shared file-kind table does not carry.
+// Web resource types the shared file-kind table does not carry; everything
+// else (images, media, pdf, text) comes from the table.
 const WEB_MIME = {
   ".html": "text/html; charset=utf-8",
   ".htm": "text/html; charset=utf-8",
@@ -33,28 +35,21 @@ const WEB_MIME = {
   ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
-  ".txt": "text/plain; charset=utf-8",
-  ".md": "text/plain; charset=utf-8",
-  ".csv": "text/csv; charset=utf-8",
   ".xml": "application/xml",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
   ".ico": "image/x-icon",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
   ".otf": "font/otf",
   ".wasm": "application/wasm",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".pdf": "application/pdf",
 };
+
+function mimeFor(file) {
+  const ext = path.extname(file).toLowerCase();
+  if (WEB_MIME[ext]) return WEB_MIME[ext];
+  const mime = fileKinds.mimeOf(ext);
+  return mime.startsWith("text/") ? `${mime}; charset=utf-8` : mime;
+}
 
 function workspaceRoots() {
   // The project list the app keeps; userData is deliberately not a root here.
@@ -105,7 +100,7 @@ function resolvePreviewRequest(requestUrl, { roots = workspaceRoots() } = {}) {
   let stat;
   try { stat = fs.statSync(real); } catch { return { status: 404 }; }
   if (!stat.isFile()) return { status: 404 };
-  return { status: 200, file: real, mime: WEB_MIME[path.extname(real).toLowerCase()] || "application/octet-stream" };
+  return { status: 200, file: real, mime: mimeFor(real) };
 }
 
 /** Must run before app `ready`. */

@@ -17,6 +17,7 @@ const modules={
   './main/diagnostics/main-log-file':{startMainLogFile:noop},
   './main/blob-protocol':{registerBlobScheme:noop,installBlobProtocol:noop},
   './main/local-media-protocol':{registerLocalMediaScheme:noop,installLocalMediaProtocol:noop},
+  './main/preview-protocol':{registerPreviewScheme:noop,installPreviewProtocol:noop},
   './main/database-recovery-service':{DatabaseRecoveryService:class{close(){}}},
   './main/database-recovery-window':{openDatabaseRecoveryWindow:async options=>{
     events.push(options.allowRestore===false?'failure-window':'gate');

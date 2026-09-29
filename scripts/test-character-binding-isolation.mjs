@@ -919,6 +919,10 @@ await check("promoted turns reuse the frozen snapshot without reusing queue admi
   const originalFinalize = orchestrator._finalize;
   runners.delete(SESSION_A);
   orchestrator._finalize = () => {};
+  // With no live runner a preflight-skipping turn runs the full preflight
+  // (6c7d92ec); with no blocker it is refused where the runner is allocated.
+  const originalDiagnose = orchestrator.ctx.diagnoseSendBlocker;
+  orchestrator.ctx.diagnoseSendBlocker = () => null;
   const startedAfter = Date.now();
   try {
     const result = await orchestrator._startTurn(session, "queued long ago", [], {
@@ -928,12 +932,13 @@ await check("promoted turns reuse the frozen snapshot without reusing queue admi
       skipPreflight: true,
       skipVision: true,
     });
-    assert.equal(result.error, "RUNNER_ERROR");
+    assert.equal(result.error, "RUNNER_UNAVAILABLE");
     const state = orchestrator._state(SESSION_A);
     assert.ok(state.startedAt >= startedAfter);
     assert.equal(state.characterWorldsSnapshot, admitted.metadata.characterWorlds);
   } finally {
     orchestrator._finalize = originalFinalize;
+    orchestrator.ctx.diagnoseSendBlocker = originalDiagnose;
     runners.set(SESSION_A, runner);
     orchestrator._state(SESSION_A).phase = "idle";
   }
