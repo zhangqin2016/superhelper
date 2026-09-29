@@ -132,7 +132,7 @@ try {
   // A card the agent proposed sits under an answer already given: declining it
   // declines the schedule only — the request is not sent again.
   messages.set("agent-draft", { id: "agent-draft", meta: { scheduledDraft: {
-    status: "pending", source: "agent_tool", originalText: "没五分钟查看小米汽车销量",
+    status: "pending", source: "agent_tool", withAnswer: true, originalText: "没五分钟查看小米汽车销量",
     draft: { title: "小米汽车销量", prompt: "查看最新销量", scheduleText: "Every 5 minutes" },
   } } });
   const sentBefore = sent.length;

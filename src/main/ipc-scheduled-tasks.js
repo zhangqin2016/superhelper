@@ -110,7 +110,7 @@ function registerScheduledTaskHandlers(ctx) {
     // A card the agent proposed sits under an answer already given: declining it
     // only declines the schedule. (A card from the pre-engine check replaced the
     // answer, so declining it sends the message as an ordinary turn below.)
-    if (scheduledDraft.source === "agent_tool") {
+    if (scheduledDraft.withAnswer === true) {
       ctx.sessionManager.updateMessageMeta(scope.sessionId, messageId, (meta) => ({
         ...meta,
         scheduledDraft: { ...(meta.scheduledDraft || scheduledDraft), status: "rejected", rejectedAt: new Date().toISOString(), updatedAt: new Date().toISOString() },

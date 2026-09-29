@@ -856,6 +856,26 @@ messages.length = 0;
   sent.length = 0;
   messages.length = 0;
 }
+
+// As in ChatGPT the model decides, with no pre-check that replaces the answer.
+// The user's plain request is a safety net after the answer: a card appears
+// even when the agent proposed none; an ordinary question gets none.
+for (const [text, expectCard] of [["每天早上9点提醒我喝水", true], ["每天跑步有什么好处", false]]) {
+  const turn = await ctx.turnOrchestrator.sendUserMessage("s1", text, [], { skipPreflight: true, skipVision: true, skipDocument: true });
+  if (!turn.ok) throw new Error(`turn should start: ${JSON.stringify(turn)}`);
+  runner.finish("好的。");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  const done = sent.flatMap((entry) => entry.payload?.events || []).find((event) => event.type === "turn.completed" && event.turnId === turn.turnId);
+  const card = done?.payload?.record?.meta?.scheduledDraft || done?.payload?.scheduledDraft || null;
+  if (expectCard && (card?.source !== "intent_fallback" || card.withAnswer !== true)) {
+    throw new Error(`a plain scheduled request gets its card under the answer: ${JSON.stringify(card)}`);
+  }
+  if (!expectCard && card) throw new Error(`an ordinary question must get no schedule card: ${JSON.stringify(card)}`);
+  if (!String(done?.payload?.assistant || "").includes("好的")) throw new Error("the answer itself is delivered");
+  sent.length = 0;
+  messages.length = 0;
+}
 runner.sentPayloads.length = 0;
 
 const pdfCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取 PDF 表格并检查版面", [

@@ -2917,12 +2917,13 @@
     },
     {
       "id": "agent-schedule-propose",
-      "protects": "The agent can propose a scheduled task (lily_schedule_propose); the turn ends with the same pending 自动执行 confirmation card, under the answer it came with, and nothing is created until the user confirms. Declining an agent-proposed card declines the schedule only. The agent guide tells the model to call the tool and never to claim a task is registered or a card will appear without it.",
-      "baseline": "2026-09-29: '没五分钟查看最新的销量 小米汽车的' (每 typed as 没) passed the keyword pre-check by; the model understood it but had no scheduling tool, and — as the guide promised a card — told the user a task was registered and a card would appear. None did.",
-      "failureFallback": "The pre-engine schedule check and its standalone card are unchanged; an invalid or failed proposal yields no card (logged); a card from the pre-engine check still re-sends the request when declined. Mutation-verified: the previous finalizer (no card from the tool) and the previous renderer (card replaces the answer) each fail by name.",
+      "protects": "Whether a message asks for scheduled work is the model's call, made while it answers, as in ChatGPT: no pre-check replaces the answer with a card. The agent proposes (lily_schedule_propose); when it proposes nothing but the user plainly asked (the local schedule parser), the platform drafts the card as a safety net. Either way the pending 自动执行 card sits under the answer (withAnswer), nothing is created until the user confirms, declining declines only the schedule, and a scheduled run never proposes another schedule. The agent guide tells the model to call the tool and never to claim a task is registered or a card will appear without it.",
+      "baseline": "2026-09-29: '没五分钟查看最新的销量 小米汽车的' (每 typed as 没) passed the keyword pre-check by; the model understood it but had no scheduling tool and, as the guide promised a card, said one would appear. None did. Messages the pre-check did catch had their answer replaced by the card before the model ran.",
+      "failureFallback": "The composer's 自动执行 button and cards already in history (pre-engine, no withAnswer) behave as before; an invalid or failed proposal yields no card (logged). Mutation-verified: the previous input path (pre-check interception), the previous finalizer (no card from the tool) and the previous renderer (card replaces the answer) each fail by name.",
       "tests": [
         "scripts/test-schedule-proposal.mjs",
         "scripts/test-turn-orchestrator.mjs",
+        "scripts/test-assistant-ipc-routing.mjs",
         "scripts/test-scheduled-task-rejection.mjs",
         "scripts/test-agent-schedule-card.cjs"
       ]

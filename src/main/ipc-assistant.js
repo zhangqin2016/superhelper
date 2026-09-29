@@ -2,7 +2,6 @@
 const fs = require("node:fs");
 const { ipcMain } = require("electron");
 const { requireValidLicenseFresh } = require("./license-manager");
-const { looksLikeScheduledTaskIntent } = require("./scheduled-task-intent");
 const { ensureWebSystemLearningSkillForSession } = require("./web-system-learning-intent");
 const { ensureRoutingAvailable, resolveEngineRouting } = require("./character-worlds/assistant-routing");
 const { resolveCharacterWorldsAdjustment } = require("./character-worlds/adjustment-context");
@@ -45,43 +44,9 @@ function registerAssistantHandlers(ctx) {
         ? payload.displayFiles
         : [];
 
-    let userEchoed = false;
-    if (ctx.scheduledTaskManager && looksLikeScheduledTaskIntent(text, files)) {
-      // Show the user's message NOW — parseDraftSmart is a model call (seconds) and
-      // must not delay the message appearing. Reuse the echoed turnId so the card
-      // belongs to the same turn; downstream uses recordUser:false to avoid a dup.
-      const echoTurnId = turnOrchestrator.echoUserMessage(session.id, text, files, displayFiles);
-      userEchoed = true;
-      const draftResult = await ctx.scheduledTaskManager.parseDraftSmart({
-        text,
-        sessionId: session.id,
-        projectId: session.projectId,
-      });
-      if (draftResult?.ok) {
-        const scheduledDraft = {
-          status: "pending",
-          source: draftResult.source || "model",
-          originalText: text,
-          draft: draftResult.draft,
-          createdAt: new Date().toISOString(),
-        };
-        const result = await turnOrchestrator.completeLocalAssistantTurn(session.id, text, files, {
-          displayFiles,
-          assistant: "I understand this as an automated task. Please confirm to create it.",
-          scheduledDraft,
-          recordUser: false,
-          turnId: echoTurnId || undefined,
-        });
-        return {
-          ...attachRouting(result, session),
-          scheduledDraft: true,
-        };
-      }
-      // Recognized as a scheduled task but the schedule couldn't be parsed — the
-      // user message is already shown; fall through to the normal engine WITHOUT
-      // re-committing it (recordUser:false below).
-    }
-
+    // Whether a message asks for scheduled work is the model's call, made while
+    // it answers (lily_schedule_propose), as in ChatGPT — never a pre-check that
+    // replaces the answer. The turn ends with the confirmation card under it.
     const { engineText, requiredSuccessfulTools, webLearningIntent } = resolveEngineRouting(
       text, files, payload?.characterAuthoringKind,
       resolveCharacterWorldsAdjustment(ctx, session, payload?.characterWorldsAdjustmentHandle),
@@ -102,7 +67,7 @@ function registerAssistantHandlers(ctx) {
     }
 
     const result = await turnOrchestrator.sendUserMessage(session.id, text, files, {
-      recordUser: !userEchoed,
+      recordUser: true,
       spawnEngine: true,
       displayFiles,
       engineText,

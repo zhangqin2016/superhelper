@@ -452,7 +452,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   }
   // A pre-engine schedule card stands in for the answer; one the agent
   // proposed (lily_schedule_propose) sits under the answer it came with.
-  const agentDraft = message?.meta?.scheduledDraft?.source === "agent_tool";
+  const agentDraft = message?.meta?.scheduledDraft?.withAnswer === true;
   if (message?.meta?.scheduledDraft && !agentDraft) {
     appendScheduledDraftArticle(sessionId, message, beforeNode, key);
     return;

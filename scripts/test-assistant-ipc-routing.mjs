@@ -43,9 +43,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
       requireValidLicenseFresh: async () => ({ ok: true }),
     };
   }
-  if (request.endsWith("./scheduled-task-intent") || request === "./scheduled-task-intent") {
-    return { looksLikeScheduledTaskIntent: () => false };
-  }
   if (request.endsWith("./web-system-learning-intent") || request === "./web-system-learning-intent") {
     return {
       buildWebSystemLearningPrompt: (text) => text,
@@ -181,6 +178,18 @@ try {
   assert.equal(calls.sent[0].sessionId, "target-session");
   assert.equal(calls.sent[0].text, "send in background");
   assert.equal(calls.sent[0].options.displayFiles[0].name, "a.txt");
+
+  // As in ChatGPT, a message that reads like a schedule reaches the model; no
+  // pre-check replaces the answer with a card (the model proposes one while it
+  // answers). A manager that would draft is present and must not be asked.
+  ctx.scheduledTaskManager = { parseDraftSmart: async () => { throw new Error("the input path must not pre-parse schedules"); } };
+  const scheduleLike = await handlers.get("assistant:input")(null, { sessionId: "target-session", text: "每天早上9点提醒我喝水" });
+  assert.equal(scheduleLike.ok, true);
+  assert.equal(calls.sent.length, 2, "a schedule-like message is sent to the model as an ordinary turn");
+  assert.equal(calls.sent[1].text, "每天早上9点提醒我喝水");
+  assert.notEqual(calls.sent[1].options?.recordUser, false, "the user's message is recorded by the turn itself");
+  delete ctx.scheduledTaskManager;
+  calls.sent.pop();
 
   const missingSessionSend = await handlers.get("assistant:input")(null, {
     text: "this must never be routed to the currently active conversation",

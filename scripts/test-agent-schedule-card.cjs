@@ -37,7 +37,7 @@ app.whenReady().then(async () => {
         { id: "u1", role: "user", content: "没五分钟查看小米汽车销量", turnId: "t1" },
         { id: "a1", role: "assistant", content: answer, turnId: "t1",
           record: { turnId: "t1", terminal: "turn.completed", assistantText: answer, startedAt: 1, endedAt: 2 },
-          meta: { scheduledDraft: draft("agent_tool", "没五分钟查看小米汽车销量", "小米汽车销量", "每 5 分钟") } },
+          meta: { scheduledDraft: { ...draft("agent_tool", "没五分钟查看小米汽车销量", "小米汽车销量", "每 5 分钟"), withAnswer: true } } },
         { id: "u2", role: "user", content: "每天9点提醒我喝水", turnId: "t2" },
         { id: "a2", role: "assistant", content: "I understand this as an automated task. Please confirm to create it.", turnId: "t2",
           meta: { scheduledDraft: draft("", "每天9点提醒我喝水", "喝水提醒", "每天 09:00") } },

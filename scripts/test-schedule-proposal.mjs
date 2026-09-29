@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { buildScheduleProposalToolDefinition } = require("../src/main/mcp/schedule-proposal-tool-definition.js");
-const { scheduledDraftFromTurnTools } = require("../src/main/schedule-proposal.js");
+const { scheduledDraftForTurn, scheduledDraftFromTurnTools } = require("../src/main/schedule-proposal.js");
 const { STATIC_TOOL_DEFINITIONS } = require("../src/main/mcp/tool-broker-registry.js");
 const { isSideEffectFreeToolRun } = require("../src/main/tool-semantics.js");
 
@@ -43,5 +43,22 @@ assert.ok(draft.draft.nextRunAt && draft.draft.scheduleText);
 assert.equal(scheduledDraftFromTurnTools({ tools: [recorded({ title: "x", prompt: "y", schedule: { type: "interval", every: 5, unit: "minute" } }, "error")] }), null, "a failed call proposes nothing");
 assert.equal(scheduledDraftFromTurnTools({ tools: [recorded({ title: "x", prompt: "y", schedule: { type: "nope" } })] }), null, "an invalid proposal proposes nothing");
 assert.equal(scheduledDraftFromTurnTools({ tools: [{ name: "bash", status: "done", result: { content: "{\"ok\":true,\"proposal\":{}}" } }] }), null, "only the proposal tool counts");
+
+assert.equal(draft.withAnswer, true, "an agent card sits under its answer");
+
+// 4. As in ChatGPT, the model decides; the user's plain request is only a
+//    safety net AFTER the answer, never a pre-check that replaces it.
+const turn = (userText, extra = {}) => scheduledDraftForTurn({ tools: [], sessionId: "s1", projectId: "p1", userText, ...extra });
+const safetyNet = turn("每天早上9点提醒我喝水");
+assert.equal(safetyNet?.source, "intent_fallback", "a plain scheduled request the agent did not propose still gets its card");
+assert.equal(safetyNet.withAnswer, true);
+assert.equal(safetyNet.draft.schedule.type, "daily");
+for (const ordinary of ["每天跑步有什么好处", "帮我整理每周例会纪要", "这个天气页面要展示逐小时预报和每天趋势", "小米汽车最新销量是多少"]) {
+  assert.equal(turn(ordinary), null, `an ordinary question gets no card: ${ordinary}`);
+}
+assert.equal(turn("每天早上9点提醒我喝水", { scheduledRun: true }), null, "a scheduled run never proposes another schedule");
+const agentFirst = scheduledDraftForTurn({ tools: [recorded({ title: "喝水", prompt: "提醒喝水", schedule: { type: "daily", hour: 10, minute: 30 } })], sessionId: "s1", projectId: "p1", userText: "每天早上9点提醒我喝水" });
+assert.equal(agentFirst.source, "agent_tool", "the agent's proposal wins over the safety net");
+assert.equal(agentFirst.draft.schedule.hour, 10);
 
 console.log("schedule-proposal: ok");
