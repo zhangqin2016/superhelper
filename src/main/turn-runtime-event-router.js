@@ -242,6 +242,8 @@ function createTurnRuntimeEventRouter(options = {}) {
           tool.endedAt = now();
           if (Number.isFinite(tool.startedAt)) tool.durationMs = Math.max(0, tool.endedAt - tool.startedAt);
           const evidenceEvent = state.evidenceLedger?.recordTool?.(tool);
+          // Register generated files now, before the agent renames them (cover.png).
+          try { require("./generated-media-registration").registerGeneratedMediaFromTool(ctx, sessionId, tool); } catch (err) { log.warn("generated media registration failed open: %s", err?.message || err); }
           require("./skill-routing-shadow").recordInvocation(state, tool);
           try {
             const taskContract = state.taskContract || state.pendingTaskContract || null;

@@ -2929,6 +2929,17 @@
         "scripts/test-scheduled-task-rejection.mjs",
         "scripts/test-agent-schedule-card.cjs"
       ]
+    },
+    {
+      "id": "generated-media-follows-rename",
+      "protects": "A generated file is registered by content fingerprint the moment the tool that made it finishes (its complete generated_media marker), wherever its output_dir put it; a path that no longer exists resolves to the same content beside where it was, then in generated-assets/ — so display, open and reveal all find a file the agent renamed.",
+      "baseline": "2026-09-30: an image generated into output/城市轨道交通客流智能分析平台/images/ was renamed to cover.png by a later tool call; it was never registered and recovery searched generated-assets/ only, so 在文件夹中显示 said the file did not exist and the picture showed only from cache.",
+      "failureFallback": "Same kind + same size + same fingerprint only — never a guess by name or size. A failed tool registers nothing; no workspace or a registration error skips (logged) and behaves as before. Mutation-verified: the router without registration and recovery without the original directory each fail by name.",
+      "tests": [
+        "scripts/test-generated-media-follows-rename.mjs",
+        "scripts/test-artifact-registry.mjs",
+        "scripts/test-turn-runtime-event-router.mjs"
+      ]
     }
   ]
 }

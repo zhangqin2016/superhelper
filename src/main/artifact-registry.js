@@ -149,27 +149,36 @@ function findMatchingGeneratedMedia(workspacePath = "", artifact = {}) {
   const fingerprint = artifact.fingerprint || "";
   const bytes = Number(artifact.bytes || 0);
   if (!workspacePath || !kind || !fingerprint || !bytes) return "";
-  const dir = path.join(path.resolve(workspacePath), GENERATED_ASSETS_DIR);
-  let entries = [];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return "";
-  }
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const candidate = path.join(dir, entry.name);
-    const candidateExt = path.extname(candidate).toLowerCase();
-    if (mediaKindForExt(candidateExt) !== kind) continue;
-    const stat = statFile(candidate);
-    if (!stat || stat.size !== bytes) continue;
-    let candidateFingerprint = "";
+  const root = path.resolve(workspacePath);
+  // Where a moved file is found: beside where it was (a rename such as
+  // image-1-….png -> cover.png), then generated-assets/. Same kind, same size,
+  // same content fingerprint — never a guess by name.
+  const dirs = [...new Set([
+    artifact.currentPath ? path.dirname(absoluteFromKey(root, artifact.currentPath)) : "",
+    path.join(root, GENERATED_ASSETS_DIR),
+  ].filter((dir) => dir && isInsidePath(root, dir)))];
+  for (const dir of dirs) {
+    let entries = [];
     try {
-      candidateFingerprint = fileFingerprint(candidate, stat);
+      entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
-    if (candidateFingerprint === fingerprint) return candidate;
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const candidate = path.join(dir, entry.name);
+      const candidateExt = path.extname(candidate).toLowerCase();
+      if (mediaKindForExt(candidateExt) !== kind) continue;
+      const stat = statFile(candidate);
+      if (!stat || stat.size !== bytes) continue;
+      let candidateFingerprint = "";
+      try {
+        candidateFingerprint = fileFingerprint(candidate, stat);
+      } catch {
+        continue;
+      }
+      if (candidateFingerprint === fingerprint) return candidate;
+    }
   }
   return "";
 }
