@@ -88,27 +88,44 @@
   margin: 0 0 10px;
 }
 
-.markdown-code-frame > pre {
+/* The copy button owns the block's top-right corner: text never runs under it.
+   Two classes deep so the chat's own pre padding (same weight, earlier in the
+   cascade) does not take the reserved space back. */
+.markdown-body .markdown-code-frame > pre {
   margin: 0;
-  padding-top: 34px;
+  padding-inline-end: 48px;
+}
+
+.markdown-body pre.is-wrapped,
+.markdown-body pre.is-wrapped code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .markdown-code-copy {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
   z-index: 1;
-  height: 24px;
-  padding: 0 8px;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--copy-bg);
   color: var(--pre-text);
-  font-size: var(--text-sm);
-  font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.markdown-code-frame:hover .markdown-code-copy,
+.markdown-code-copy:focus-visible,
+.markdown-code-copy.is-copied,
+.markdown-code-copy.is-error {
+  opacity: 1;
 }
 
 .markdown-code-copy:hover {
@@ -117,9 +134,18 @@
   background: var(--copy-bg-hover);
 }
 
+.markdown-code-copy.is-copied { color: var(--accent); }
+
 .markdown-code-copy.is-error {
   border-color: var(--danger-border);
   color: var(--danger-text-soft);
+}
+
+/* Its tooltip opens leftward: the button sits at the block's inline end. */
+.markdown-code-copy[data-tip]::after {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  translate: none;
 }
 
 .markdown-task-list-item {

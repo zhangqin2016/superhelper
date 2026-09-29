@@ -603,6 +603,10 @@
   padding: 0;
   color: inherit;
   font-size: inherit;
+  /* The block's own line handling, not the inline-code nowrap above: that rule
+     reached every fenced block and joined all its lines into one (2026-09-03
+     to 09-29, a five-line report extract shown as one sideways line). */
+  white-space: inherit;
 }
 
 .assistant-turn-narrative.markdown-body blockquote,

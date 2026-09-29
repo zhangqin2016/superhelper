@@ -14,6 +14,10 @@ const codeCollapseSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-code-collapse.js", import.meta.url), "utf8")
   .replaceAll("export const", "const")
   .replaceAll("export function", "function");
+const uiIconsSource = fs
+  .readFileSync(new URL("../src/renderer/modules/ui-icons.js", import.meta.url), "utf8")
+  .replaceAll("export const", "const")
+  .replaceAll("export function", "function");
 const inlineCodeSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-inline-code.js", import.meta.url), "utf8")
   .replaceAll("export function", "function");
@@ -24,6 +28,7 @@ const source = fs
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";', "")
   .replace('import { t } from "../i18n/index.js";', "")
+  .replace('import { iconButton } from "./ui-icons.js";', "")
   .replace('import { mapPlainSegments } from "./markdown-math-segments.js";', "")
   .replace('import { renderStreamBlocks } from "./markdown-stream-blocks.js";', "")
   .replace('import { markLongInlineCode } from "./markdown-inline-code.js";', "")
@@ -107,7 +112,7 @@ vm.createContext(context);
 const linkTrimSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-link-trim.js", import.meta.url), "utf8")
   .replaceAll("export function", "function");
-vm.runInContext(`${linkTrimSource}\n${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
+vm.runInContext(`${linkTrimSource}\n${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${uiIconsSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();
@@ -184,6 +189,22 @@ assert.match(repaired, /\| --- \| --- \|/);
   );
   assert.match(shortTable.innerHTML, /<table>/);
   assert(!shortTable.innerHTML.includes(":--:"), "delimiter row must not render as a data row");
+}
+
+// Field regression 2026-09-29: a report extract in a fenced block had a
+// "数据快照 … | 来源：…" line. A lone pipe line was emitted twice, and lines
+// inside a fence were treated as table rows.
+{
+  const repair = context.window.__test.repairMarkdownTables;
+  const lone = "数据快照（UTC）：2026-09-28 | 来源：GitHub 公共 REST API";
+  assert.equal(repair(lone), lone, "a single pipe line is kept once");
+  assert.equal(repair(`前文\n${lone}\n后文`), `前文\n${lone}\n后文`, "a pipe line in prose is kept once");
+  const fenced = ["```", "开源 AI 生态洞察报告", lone, "| a | b |", "| c | d |", "```"].join("\n");
+  assert.equal(repair(fenced), fenced, "lines inside a fence pass through untouched");
+  const tilde = ["~~~text", "| a | b |", "| c | d |", "~~~", "| x | y |", "| 1 | 2 |"].join("\n");
+  assert.equal(repair(tilde), ["~~~text", "| a | b |", "| c | d |", "~~~", "| x | y |", "| --- | --- |", "| 1 | 2 |"].join("\n"), "after the fence closes, tables are repaired again");
+  const unclosed = ["```", "| a | b |", "| c | d |"].join("\n");
+  assert.equal(repair(unclosed), unclosed, "a still-streaming (unclosed) fence is left alone");
 }
 
 const table = fakeElement();

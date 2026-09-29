@@ -6,6 +6,7 @@ import { revealLocalFileInFolder } from "./file-reveal.js";
 import { trimAutolinkedPunctuation } from "./markdown-link-trim.js";
 import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";
 import { t } from "../i18n/index.js";
+import { iconButton } from "./ui-icons.js";
 import { mapPlainSegments } from "./markdown-math-segments.js";
 import { renderStreamBlocks } from "./markdown-stream-blocks.js";
 import { markLongInlineCode } from "./markdown-inline-code.js";
@@ -53,34 +54,47 @@ function pipeColumnCount(line = "") {
 const makeTableSeparator = (columnCount) => `| ${Array(Math.max(2, columnCount)).fill("---").join(" | ")} |`;
 
 /** Insert a GFM separator row when models omit it between header and body rows. */
+const FENCE_LINE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+// Lines inside a fenced block are code, never table rows: they pass through
+// untouched (a separator was once inserted into a code block's pipe lines).
 export function repairMarkdownTables(text = "") {
-  const lines = String(text).split("\n").map(normalizeShortSeparatorDashes);
+  const lines = String(text).split("\n");
   const out = [];
+  let fence = "";
   let i = 0;
+  const inTable = (line) => !fence && !FENCE_LINE_RE.test(line) && (isTableRowLine(line) || isTableSeparatorLine(line));
   while (i < lines.length) {
-    const line = lines[i];
-    if (!isTableRowLine(line) && !isTableSeparatorLine(line)) {
+    const raw = lines[i];
+    const opener = raw.match(FENCE_LINE_RE)?.[1] || "";
+    if (fence) {
+      if (opener && opener[0] === fence[0] && opener.length >= fence.length && !raw.trim().slice(opener.length).trim()) fence = "";
+      out.push(raw);
+      i++;
+      continue;
+    }
+    if (opener) {
+      fence = opener;
+      out.push(raw);
+      i++;
+      continue;
+    }
+    const line = normalizeShortSeparatorDashes(raw);
+    if (!inTable(line)) {
       out.push(line);
       i++;
       continue;
     }
     const block = [];
-    while (i < lines.length && (isTableRowLine(lines[i]) || isTableSeparatorLine(lines[i]))) {
-      block.push(lines[i]);
+    while (i < lines.length && inTable(normalizeShortSeparatorDashes(lines[i]))) {
+      block.push(normalizeShortSeparatorDashes(lines[i]));
       i++;
     }
-    if (!block.length) continue;
     out.push(block[0]);
-    if (block.length >= 2 && isTableSeparatorLine(block[1])) {
-      for (let j = 1; j < block.length; j++) out.push(block[j]);
-      continue;
-    }
-    if (block.length >= 2) {
+    if (block.length >= 2 && !isTableSeparatorLine(block[1])) {
       out.push(makeTableSeparator(pipeColumnCount(block[0])));
-      for (let j = 1; j < block.length; j++) out.push(block[j]);
-      continue;
     }
-    out.push(block[0]);
+    for (let j = 1; j < block.length; j++) out.push(block[j]);
   }
   return out.join("\n");
 }
@@ -368,8 +382,18 @@ function renderRichCodeBlock(text = "", lang = "") {
   return null;
 }
 
+// Text that is not code — an untagged block, a log, extracted document text —
+// wraps like prose. A single long line in a no-wrap block was only reachable
+// by scrolling sideways (the horizontal scrollbar is zero-height to keep
+// streaming layout stable), so the reader never saw most of it.
+const PLAIN_TEXT_LANGUAGES = new Set(["text", "txt", "plaintext", "plain", "log", "output", "console-output"]);
+
 function renderHighlightedCode(text = "", lang = "", highlighter = null) {
-  if (highlighter && lang && highlighter.getLanguage?.(lang)) {
+  if (!lang || PLAIN_TEXT_LANGUAGES.has(lang)) {
+    const languageClass = lang ? ` class="language-${escapeAttribute(lang)}"` : "";
+    return `<pre class="is-wrapped"><code${languageClass}>${escapeHtml(text)}</code></pre>`;
+  }
+  if (highlighter && highlighter.getLanguage?.(lang)) {
     try {
       const highlighted = highlighter.highlight(text, { language: lang }).value;
       return `<pre><code class="hljs language-${escapeAttribute(lang)}">${highlighted}</code></pre>`;
@@ -381,8 +405,7 @@ function renderHighlightedCode(text = "", lang = "", highlighter = null) {
       return `<pre><code class="hljs">${auto}</code></pre>`;
     } catch {}
   }
-  const languageClass = lang ? ` class="language-${escapeAttribute(lang)}"` : "";
-  return `<pre><code${languageClass}>${escapeHtml(text)}</code></pre>`;
+  return `<pre><code class="language-${escapeAttribute(lang)}">${escapeHtml(text)}</code></pre>`;
 }
 
 function renderDiffBlock(text = "") {
@@ -644,19 +667,17 @@ function wireCodeCopyButtons(element) {
 
     const frame = document.createElement("div");
     frame.className = "markdown-code-frame";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "markdown-code-copy";
-    button.textContent = "Copy";
-    button.setAttribute("aria-label", "Copy code");
+    const label = t("common.copy");
+    const button = iconButton("markdown-code-copy", "copy", label);
     button.addEventListener("click", async () => {
       const text = code.textContent || "";
       const ok = await copyText(text);
-      button.textContent = ok ? "Copied" : "Copy failed";
+      button.dataset.tip = ok ? t("common.copied") : t("common.copyFailed");
+      button.classList.toggle("is-copied", ok);
       button.classList.toggle("is-error", !ok);
       setTimeout(() => {
-        button.textContent = "Copy";
-        button.classList.remove("is-error");
+        button.dataset.tip = label;
+        button.classList.remove("is-copied", "is-error");
       }, 1400);
     });
 

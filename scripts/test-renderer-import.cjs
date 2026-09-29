@@ -2580,6 +2580,55 @@ app.whenReady().then(async () => {
         if (!host.querySelector(".markdown-code-copy")) {
           throw new Error("code blocks should render a copy action");
         }
+        // Field regression 2026-09-29: an untagged one-line extract (a report's
+        // header line) rendered as one no-wrap line reachable only sideways,
+        // with the Copy button drawn over its end. In a real answer body:
+        const answer = document.createElement("div");
+        answer.className = "assistant-turn-final markdown-body";
+        answer.style.width = "520px";
+        document.body.appendChild(answer);
+        const longLine = "开源 AI 生态洞察报告 数据快照（UTC）：2026-09-28T12:52:01.606980+00:00 | 来源：GitHub 公共 REST API（仓库搜索、Release 查询）| 覆盖 276 个仓库";
+        renderMarkdownWithCache(answer, [fence, longLine, fence, "", fence + "text", "log line " + "x".repeat(200), fence, "", fence + "js", "const veryLongName = " + "1 + ".repeat(80) + "1;", fence].join("\\n"));
+        const pres = [...answer.querySelectorAll("pre")];
+        if (pres.length !== 3) throw new Error("expected three code blocks, got " + pres.length);
+        const [untagged, plain, js] = pres;
+        for (const [name, pre] of [["untagged", untagged], ["text", plain]]) {
+          if (getComputedStyle(pre).whiteSpace !== "pre-wrap" || pre.scrollWidth > pre.clientWidth + 1) {
+            throw new Error(name + " text should wrap inside the block: " + getComputedStyle(pre).whiteSpace + " " + pre.scrollWidth + ">" + pre.clientWidth);
+          }
+        }
+        if (getComputedStyle(js).whiteSpace !== "pre") throw new Error("real code keeps its lines unwrapped");
+        // The inline-code nowrap rule once reached every fenced block's <code>
+        // and joined all its lines into one. A block keeps its lines:
+        for (const pre of pres) {
+          const ws = getComputedStyle(pre.querySelector("code")).whiteSpace;
+          if (ws !== getComputedStyle(pre).whiteSpace) throw new Error("a code block's <code> must follow the block's line handling, got " + ws);
+        }
+        const multi = document.createElement("div");
+        multi.className = "assistant-turn-final markdown-body";
+        multi.style.width = "520px";
+        document.body.appendChild(multi);
+        renderMarkdownWithCache(multi, [fence, "开源 AI 生态洞察报告", "数据快照 | 来源：GitHub", "一、执行摘要", fence, "", fence + "python", "def f():", "    return 1", fence].join("\\n"));
+        const lineHeight = (node) => parseFloat(getComputedStyle(node).lineHeight) || 20;
+        for (const [pre, lines] of [[multi.querySelectorAll("pre")[0], 3], [multi.querySelectorAll("pre")[1], 2]]) {
+          const code = pre.querySelector("code");
+          if (Math.round(code.getBoundingClientRect().height / lineHeight(code)) < lines) {
+            throw new Error("a " + lines + "-line block must show " + lines + " lines: " + code.getBoundingClientRect().height);
+          }
+          if ((code.textContent.match(/来源：GitHub/g) || []).length > 1) throw new Error("a pipe line inside a block must not be duplicated");
+        }
+        multi.remove();
+        for (const pre of pres) {
+          const button = pre.parentElement.querySelector(".markdown-code-copy");
+          const reserved = parseFloat(getComputedStyle(pre).paddingInlineEnd);
+          if (!button || reserved < button.getBoundingClientRect().width + 8) {
+            throw new Error("the copy button must have its own space, not cover the text (padding " + reserved + ")");
+          }
+          if (button.textContent.trim() || !button.querySelector("svg") || !button.getAttribute("aria-label") || button.dataset.tip !== button.getAttribute("aria-label")) {
+            throw new Error("the copy button is an icon with its label as name and tooltip");
+          }
+        }
+        answer.remove();
         if (!host.querySelector(".markdown-task-list-item")) {
           throw new Error("task list items should receive rich markdown styling");
         }
