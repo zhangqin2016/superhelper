@@ -198,13 +198,15 @@ class WorkspaceGit {
 
   async _run(paths, args, options = {}) {
     try {
-      return await execFileAsync(this.gitPath, args, {
+      const running = execFileAsync(this.gitPath, args, {
         cwd: paths.root,
         env: this._env(paths),
         timeout: options.timeout || 30_000,
         maxBuffer: options.maxBuffer || this.maxBuffer,
         encoding: options.encoding,
       });
+      if (options.input !== undefined) running.child.stdin.end(options.input);
+      return await running;
     } catch (error) {
       throw gitError(error, args);
     }
@@ -239,6 +241,11 @@ class WorkspaceGit {
       ["core.bare", "true"],
       ["core.worktree", paths.root],
       ["core.excludesFile", paths.exclude],
+      // The engine's own snapshot tuning for very large worktrees
+      // (opencode snapshot/index.ts): cached untracked scans, a compact index.
+      ["core.untrackedCache", "true"],
+      ["feature.manyFiles", "true"],
+      ["index.version", "4"],
       ["lily.versionVault", "1"],
     ]) {
       await this._run(paths, ["config", key, value]);
@@ -291,6 +298,46 @@ class WorkspaceGit {
     const paths = await this.ensure(workspacePath);
     const result = await this._run(paths, ["show", `${revision}:${normalizeRelative(relative)}`], { encoding: "buffer", maxBuffer: 32 * 1024 * 1024 });
     return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout || "");
+  }
+
+  /** Runs `git <args> -- <paths>` in argv-bounded batches; returns each batch's NUL-separated output paths. */
+  async _pathsQuery(paths, args, relativePaths, { okExitCodes = [0] } = {}) {
+    const out = [];
+    const unique = [...new Set(relativePaths.map(normalizeRelative).filter(isSafeRelativePath))];
+    for (let i = 0; i < unique.length; i += 400) {
+      const batch = unique.slice(i, i + 400);
+      let stdout = "";
+      try {
+        stdout = (await this._run(paths, [...args, "--", ...batch], { encoding: "buffer" })).stdout.toString("utf8");
+      } catch (error) {
+        const code = Number(/exit code (\d+)/i.exec(error.message)?.[1] ?? error.code);
+        if (!okExitCodes.includes(code)) throw error;
+      }
+      out.push(...stdout.split("\0").filter(Boolean).map(normalizeRelative));
+    }
+    return out;
+  }
+
+  /** Which of these paths the vault already tracks — scoped, never a tree walk. */
+  async trackedAmong(workspacePath, relativePaths) {
+    const paths = await this.ensure(workspacePath);
+    return new Set(await this._pathsQuery(paths, ["ls-files", "-z"], relativePaths));
+  }
+
+  /** Which of these untracked paths the workspace's ignore rules exclude (git add refuses them). */
+  async ignoredAmong(workspacePath, relativePaths) {
+    const paths = await this.ensure(workspacePath);
+    const unique = [...new Set(relativePaths.map(normalizeRelative).filter(isSafeRelativePath))];
+    if (!unique.length) return new Set();
+    let stdout = "";
+    try {
+      // NUL-separated on stdin: no quoting of non-ASCII names, no argv limit.
+      stdout = (await this._run(paths, ["check-ignore", "-z", "--stdin"], { encoding: "buffer", input: `${unique.join("\0")}\0` })).stdout.toString("utf8");
+    } catch (error) {
+      // check-ignore exits 1 when none of the paths is ignored.
+      if (Number(error.code) !== 1 && !/exit code 1\b/i.test(error.message)) throw error;
+    }
+    return new Set(stdout.split("\0").filter(Boolean).map(normalizeRelative));
   }
 
   async stage(workspacePath, relativePaths) {

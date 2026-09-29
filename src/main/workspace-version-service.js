@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   HISTORY_LIMIT,
+  MAX_FILE_BYTES,
+  MAX_TOTAL_BYTES,
   MAX_GIT_FILES,
   MAX_GIT_TOTAL_BYTES,
   collectSafeFiles,
@@ -99,7 +101,17 @@ class WorkspaceVersionService {
     return backend;
   }
 
+  /**
+   * What a turn needs before it starts. In git mode: nothing but a vault — the
+   * turn's version is built from the files the turn itself changed (below), so
+   * no whole-workspace `git status` is awaited before the message is sent (a
+   * multi-GB workspace spent 10+ s there on every turn, 2026-09-29). The local
+   * fallback (no git) keeps its bounded baseline.
+   */
   async captureBaseline(workspacePath) {
+    const scopedKey = normalizeWorkspace(workspacePath);
+    const scopedBackend = await this._backendFor(scopedKey);
+    if (scopedBackend.mode === "git") return { mode: "git", scoped: true, clean: true, paths: [], capturedAt: Date.now() };
     return this._withLock(workspacePath, async (key) => {
       const backend = await this._backendFor(key);
       if (backend.mode !== "git") {
@@ -210,6 +222,9 @@ class WorkspaceVersionService {
 
   async autoSaveTurn({ workspacePath, baseline, changedPaths = [], terminal = "" } = {}) {
     if (terminal !== "turn.completed") return { ok: true, saved: false, skipped: "turn_not_completed" };
+    if ((await this._backendFor(normalizeWorkspace(workspacePath))).mode === "git") {
+      return this._withLock(workspacePath, (key) => this._saveTurnChanges(key, changedPaths));
+    }
     return this._withMutation(workspacePath, async (key) => {
       if (!baseline?.clean) return { ok: true, saved: false, skipped: "workspace_was_not_clean" };
       const backend = await this._backendFor(key);
@@ -239,6 +254,46 @@ class WorkspaceVersionService {
     });
   }
 
+  /**
+   * A turn's version = the previous version + exactly the files this turn
+   * changed, the way Claude Code checkpoints the files its own tools edit and
+   * the engine's snapshot stages only changed paths. Cost follows what the turn
+   * wrote, never the size of the workspace; nothing else is scanned or hashed.
+   * A file over the per-file limit, or past the per-turn total, is skipped by
+   * name instead of failing the save. Runs under the lock only: saving reads
+   * the workspace, so it never makes a new message wait or be refused.
+   */
+  async _saveTurnChanges(key, changedPaths = []) {
+    const started = Date.now();
+    const changed = [...new Set(changedPaths.map((filePath) => relativePath(key, filePath) || String(filePath || "")).filter(isSafeRelativePath))];
+    if (changed.length === 0) return { ok: true, saved: false, skipped: "no_safe_changes" };
+    const tracked = await this.git.trackedAmong(key, changed);
+    const skipped = [];
+    const present = [];
+    const stageable = [];
+    let total = 0;
+    for (const relative of changed) {
+      const absolute = assertSafeExistingPath(key, relative);
+      const stat = absolute ? await fs.promises.lstat(absolute).catch(() => null) : null;
+      if (!stat) {
+        if (tracked.has(relative)) stageable.push(relative); // a deletion the vault can record
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      if (stat.size > MAX_FILE_BYTES || total + stat.size > MAX_TOTAL_BYTES) { skipped.push(relative); continue; }
+      total += stat.size;
+      present.push(relative);
+    }
+    const ignored = await this.git.ignoredAmong(key, present.filter((relative) => !tracked.has(relative)));
+    stageable.push(...present.filter((relative) => !ignored.has(relative)));
+    if (stageable.length === 0) return { ok: true, saved: false, skipped: "no_safe_changes", skippedFiles: skipped };
+    await this.git.stage(key, stageable);
+    const id = await this.git.commit(key, MESSAGES.task);
+    const version = id ? ((await this.git.history(key, 1))[0] || { id, timestamp: Date.now(), subject: MESSAGES.task }) : null;
+    console.info(`[workspace-version] turn save ${Date.now() - started}ms files=${stageable.length} skipped=${skipped.length} bytes=${total}`);
+    return { ok: true, saved: Boolean(id), mode: "git", version, skippedFiles: skipped };
+  }
+
   async previewRestore(workspacePath, revision) {
     return this._withLock(workspacePath, async (key) => {
       const backend = await this._backendFor(key);
@@ -252,18 +307,8 @@ class WorkspaceVersionService {
       const target = versions.find((version) => version.id === revision || version.id.startsWith(String(revision || "")));
       if (!target) return { ok: false, error: "VERSION_NOT_FOUND" };
       const targetFiles = await this.git.treeFiles(key, target.id);
-      const targetSet = new Set(targetFiles);
-      const current = [...new Set([
-        ...(await this.git.trackedFiles(key)),
-        ...(await this.git.status(key)).map((entry) => entry.path),
-      ])].filter(isSafeRelativePath);
-      const currentSet = new Set(current);
       const entries = [];
-      for (const relative of current) {
-        if (!targetSet.has(relative)) {
-          entries.push({ path: relative, kind: "deleted" });
-          continue;
-        }
+      for (const relative of targetFiles) {
         const absolute = assertSafeExistingPath(key, relative);
         if (!absolute) return { ok: false, error: "UNSAFE_VERSION_PATH" };
         if (!fs.existsSync(absolute)) {
@@ -276,8 +321,8 @@ class WorkspaceVersionService {
         ]);
         if (!currentBuffer.equals(targetBuffer)) entries.push({ path: relative, kind: "modified" });
       }
-      for (const relative of targetFiles) {
-        if (!currentSet.has(relative)) entries.push({ path: relative, kind: "added" });
+      for (const relative of await this._removableFor(key, targetFiles)) {
+        if (fs.existsSync(assertSafeExistingPath(key, relative) || "")) entries.push({ path: relative, kind: "deleted" });
       }
       return this._previewResult(backend.mode, target.id, entries, false);
     });
@@ -299,22 +344,30 @@ class WorkspaceVersionService {
     };
   }
 
-  async _applyGitRevision(key, revision) {
-    const targetFiles = await this.git.treeFiles(key, revision);
+  /**
+   * Files a restore to `targetFiles` removes: ones the vault KNOWS (tracked)
+   * that the target does not hold — what later versions added. A file the vault
+   * never versioned is not the vault's to delete: restore used to remove every
+   * file absent from the target, which with per-turn versions would include the
+   * user's own files that simply were never saved (Claude Code's rewind likewise
+   * only reverts what it tracked).
+   */
+  async _removableFor(key, targetFiles) {
     const targetSet = new Set(targetFiles);
+    return (await this.git.trackedFiles(key)).filter((relative) => !targetSet.has(relative) && isSafeRelativePath(relative));
+  }
+
+  async _applyGitRevision(key, revision, removable = null) {
+    const targetFiles = await this.git.treeFiles(key, revision);
     const prepared = [];
     for (const relative of targetFiles) {
       const absolute = assertSafeExistingPath(key, relative);
       if (!absolute) throw new Error("UNSAFE_VERSION_PATH");
       prepared.push({ relative, absolute, buffer: await this.git.readFile(key, revision, relative) });
     }
-    const currentFiles = [...new Set([
-      ...(await this.git.trackedFiles(key)),
-      ...(await this.git.status(key)).map((entry) => entry.path),
-    ])].filter(isSafeRelativePath);
+    const currentFiles = removable || await this._removableFor(key, targetFiles);
     let changed = 0;
     for (const relative of currentFiles) {
-      if (targetSet.has(relative)) continue;
       const absolute = assertSafeExistingPath(key, relative);
       if (!absolute) throw new Error("UNSAFE_VERSION_PATH");
       try {
@@ -369,14 +422,28 @@ class WorkspaceVersionService {
       const versions = await this.git.history(key, HISTORY_LIMIT);
       const target = versions.find((version) => version.id === revision || version.id.startsWith(String(revision || "")));
       if (!target) return { ok: false, error: "VERSION_NOT_FOUND" };
-      const restorePoint = await this._saveLocked(key, backend, "restore");
+      // The restore point holds exactly what the restore will overwrite or
+      // remove — the target's files and the ones the vault knows — so it needs
+      // no whole-workspace scan, and a large unrelated file cannot block it.
+      const targetFiles = await this.git.treeFiles(key, target.id);
+      const removable = await this._removableFor(key, targetFiles);
+      const touched = [...new Set([...targetFiles, ...removable])];
+      const known = await this.git.trackedAmong(key, touched);
+      const existing = touched.filter((relative) => known.has(relative) || fs.existsSync(assertSafeExistingPath(key, relative) || ""));
+      const ignored = await this.git.ignoredAmong(key, existing.filter((relative) => !known.has(relative)));
+      await this.git.stage(key, existing.filter((relative) => !ignored.has(relative)));
+      await this.git.commit(key, MESSAGES.restore);
+      const restorePoint = (await this.git.history(key, 1))[0] || null;
       let changed;
       let restoredVersion;
       try {
-        changed = await this._applyGitRevision(key, target.id);
+        changed = await this._applyGitRevision(key, target.id, removable);
         restoredVersion = await this.git.commit(key, MESSAGES.restored);
       } catch (error) {
-        try { await this._applyGitRevision(key, restorePoint.id); } catch (rollbackError) {
+        try {
+          const pointFiles = new Set(await this.git.treeFiles(key, restorePoint.id));
+          await this._applyGitRevision(key, restorePoint.id, targetFiles.filter((relative) => !pointFiles.has(relative)));
+        } catch (rollbackError) {
           error.code = "VERSION_RESTORE_ROLLBACK_FAILED";
           error.rollbackCode = errorCode(rollbackError);
         }

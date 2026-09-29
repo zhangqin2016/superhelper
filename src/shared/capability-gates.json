@@ -2884,6 +2884,15 @@
       "tests": [
         "scripts/test-general-claim-verification.mjs"
       ]
+    },
+    {
+      "id": "workspace-version-turn-cost",
+      "protects": "A turn's workspace version costs what the turn wrote: no whole-workspace scan before a message is sent, a per-turn version of exactly the files the turn changed, a save that never refuses the next message, and a restore that only touches files the vault knows.",
+      "baseline": "2026-09-29: a customer's 6.7 GB workspace awaited a full git status before every message and ended every turn with a tree walk plus git add of every file (12,059 ms on a 30k-file replica), refusing new messages meanwhile; restore deleted every file absent from the target, versioned or not.",
+      "failureFallback": "Files over the per-file / per-turn bounds are skipped by name, not a failed save; gitignored files are left out; the restore point holds whatever the restore overwrites or removes; the local (no-git) snapshot backend is unchanged. Mutation-verified: a pre-turn scan, a turn-blocking save, no size bound, ignoring .gitignore, deleting unknown files on restore, losing a deletion and a missing restore point each fail by name.",
+      "tests": [
+        "scripts/test-workspace-version-control.mjs"
+      ]
     }
   ]
 }

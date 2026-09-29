@@ -49,26 +49,33 @@ async function testGitIsolationAndRestore() {
     assert.equal(first.ok, true);
     fs.writeFileSync(path.join(workspace, "notes.txt"), "two\n");
     fs.writeFileSync(path.join(workspace, "new.txt"), "new\n");
+    // A turn's version holds exactly what the turn changed: notes.txt, not the
+    // user's own new.txt the turn never touched (2026-09-29: scoped versions).
     const baseline = await service.captureBaseline(workspace);
-    assert.equal(baseline.clean, false);
-    const skipped = await service.autoSaveTurn({
+    assert.equal(baseline.scoped, true, "git mode: no whole-workspace scan before a turn");
+    const turn = await service.autoSaveTurn({
       workspacePath: workspace,
       baseline,
       changedPaths: [path.join(workspace, "notes.txt")],
       terminal: "turn.completed",
     });
-    assert.equal(skipped.saved, false);
-
-    const second = await service.save(workspace);
-    assert.equal(second.ok, true);
+    assert.equal(turn.saved, true, "the turn's own change is versioned even with unrelated edits around it");
+    fs.writeFileSync(path.join(workspace, "agent.txt"), "made by the agent\n");
+    await service.autoSaveTurn({ workspacePath: workspace, baseline, changedPaths: [path.join(workspace, "agent.txt")], terminal: "turn.completed" });
     const history = await service.history(workspace);
-    assert.equal(history.versions.length, 2);
-    const restored = await service.restore(workspace, history.versions[1].id);
+    assert.equal(history.versions.length, 3);
+    fs.writeFileSync(path.join(workspace, "notes.txt"), "unsaved edit\n");
+    const restored = await service.restore(workspace, history.versions[2].id);
     assert.equal(restored.ok, true);
     assert.equal(fs.readFileSync(path.join(workspace, "notes.txt"), "utf8"), "one\n");
-    assert.equal(fs.existsSync(path.join(workspace, "new.txt")), false);
+    assert.equal(fs.existsSync(path.join(workspace, "agent.txt")), false, "a file a later version added is removed");
+    assert.equal(fs.readFileSync(path.join(workspace, "new.txt"), "utf8"), "new\n", "a file the vault never versioned is not the vault's to delete");
     assert.equal(fs.readFileSync(path.join(workspace, ".env"), "utf8"), "SECRET=do-not-track\n");
-    assert.equal((await service.status(workspace)).unprotectedCount, 0);
+    assert.deepEqual((await service.status(workspace)).unprotectedFiles.map((entry) => entry.path), ["new.txt"]);
+    // The restore point kept what the restore overwrote and removed.
+    assert.ok(restored.restorePoint, "restore reports its restore point");
+    assert.equal((await service.git.readFile(workspace, restored.restorePoint, "agent.txt")).toString(), "made by the agent\n");
+    assert.equal((await service.git.readFile(workspace, restored.restorePoint, "notes.txt")).toString(), "unsaved edit\n", "an unsaved edit the restore overwrote is kept in the restore point");
     assert.equal(fs.readFileSync(path.join(workspace, ".git", "HEAD"), "utf8"), userGitHead);
   } finally {
     removeWorkspace(workspace);
@@ -138,6 +145,57 @@ async function testGitBackendSupportsLargeWorkspace() {
     assert.equal(saved.ok, true);
     assert.equal(saved.mode, "git");
     assert.equal((await service.status(workspace)).protectedFileCount, 10_001);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}
+
+// 2026-09-29 (a customer's 6.7 GB workspace): every turn awaited a
+// whole-workspace `git status` before its message was sent and ended with a
+// tree walk + `git add` of every file; a save in progress refused the next
+// message. A turn now costs what it wrote.
+async function testTurnSaveIsScoped() {
+  const workspace = tempWorkspace();
+  try {
+    const service = new WorkspaceVersionService({writerLockPath:path.join(fs.realpathSync(workspace),".lily-work","writer.sqlite")});
+    for (let index = 0; index < 300; index += 1) fs.writeFileSync(path.join(workspace, `asset-${index}.txt`), "asset\n");
+    fs.writeFileSync(path.join(workspace, ".gitignore"), "scratch/\n");
+    fs.mkdirSync(path.join(workspace, "scratch"));
+    fs.writeFileSync(path.join(workspace, "scratch", "tmp.txt"), "tmp\n");
+    fs.writeFileSync(path.join(workspace, "report.md"), "v1\n");
+    fs.writeFileSync(path.join(workspace, "huge.bin"), Buffer.alloc(26 * 1024 * 1024));
+    const calls = [];
+    let blockedDuringSave = null;
+    const real = service.git;
+    service.git = new Proxy(real, { get(target, property) {
+      const value = target[property];
+      if (typeof value !== "function") return value;
+      return (...args) => {
+        calls.push(String(property));
+        if (property === "stage") blockedDuringSave = service.isMutating(workspace); // mid-save
+        return value.apply(target, args);
+      };
+    } });
+    const baseline = await service.captureBaseline(workspace);
+    assert.equal(calls.includes("status"), false, "no git status before a turn");
+    calls.length = 0;
+    const saving = service.autoSaveTurn({
+      workspacePath: workspace,
+      baseline,
+      changedPaths: ["report.md", "scratch/tmp.txt", "huge.bin", "gone.txt"].map((p) => path.join(workspace, p)),
+      terminal: "turn.completed",
+    });
+    const saved = await saving;
+    assert.equal(blockedDuringSave, false, "a turn save never refuses the next message");
+    assert.equal(saved.saved, true);
+    for (const scan of ["status", "trackedFiles"]) assert.equal(calls.includes(scan), false, `no ${scan} scan in a turn save`);
+    const files = await real.treeFiles(workspace, saved.version.id);
+    assert.deepEqual(files, ["report.md"], "only the turn's own file — not the 300 others, not the ignored one, not the oversized one");
+    assert.deepEqual(saved.skippedFiles, ["huge.bin"], "an oversized file is skipped by name, not a failed save");
+    fs.rmSync(path.join(workspace, "report.md"));
+    const deleted = await service.autoSaveTurn({ workspacePath: workspace, baseline, changedPaths: [path.join(workspace, "report.md")], terminal: "turn.completed" });
+    assert.equal(deleted.saved, true, "a deletion the turn made is versioned");
+    assert.deepEqual(await real.treeFiles(workspace, deleted.version.id), []);
   } finally {
     removeWorkspace(workspace);
   }
@@ -224,6 +282,7 @@ await testPolicy();
 await testGitIsolationAndRestore();
 await testAutomaticSaveAndLocalFallback();
 await testGitBackendSupportsLargeWorkspace();
+await testTurnSaveIsScoped();
 await testRestoreRollbackOnFailure();
 await testProjectBusyGuard();
 console.log(`workspace-version-control: ok (${crypto.randomUUID().slice(0, 8)})`);
