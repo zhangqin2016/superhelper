@@ -225,4 +225,33 @@ assert.doesNotMatch(productionSources, /publicEnterprise|authoritativeGovernment
   assert(!labels.includes("这是样例队史第二座世界冠军"), "long suffix-less CJK structured labels are sentences, not names");
 }
 
+// Field regression 2026-09-29: a lottery answer's source list named each
+// grounded link's publisher; the names were checked as entity claims and
+// failed the answer ("今日头条 / UC头条 / 百家号" absent from evidence).
+{
+  const { extractEntityClaims } = require("../src/main/entity-claim-evidence.js");
+  const answer = [
+    "## 来源",
+    "- 新浪彩票（开奖详情）：https://lotto.sina.cn/2026-09-28/detail-initkxuz3558002.d.html",
+    "- 今日头条（开奖公告）：https://m.toutiao.com/article/7690590072546017827/",
+    "- UC头条（26111期开奖统计）：https://mparticle.uc.cn/article.html?x=1",
+    "- 百家号（开奖复盘）：https://baijiahao.baidu.com/s?id=1877583242064848167",
+    "- 来源 - https://example.com/a",
+  ].join("\n");
+  const labels = extractEntityClaims(answer, { entityEvidenceRequired: true }).map((claim) => claim.label);
+  for (const source of ["新浪彩票", "今日头条", "UC头条", "百家号", "UC"]) {
+    assert(!labels.includes(source), `a source label beside its link is attribution, not a claim: ${source} in ${JSON.stringify(labels)}`);
+  }
+  // A link does not launder a claim: a label with digits or a sentence stays checked.
+  const claims = extractEntityClaims([
+    "- 中建集团营收 2.1 万亿：https://example.com/a",
+    "- 华为发布了新芯片，性能提升 40%：https://example.com/b",
+    "- 腾讯控股有限公司",
+  ].join("\n"), { entityEvidenceRequired: true }).map((claim) => claim.label);
+  assert(claims.some((label) => label.includes("腾讯")), "a line without a link is checked as before");
+  assert(claims.length >= 1, "claims on link lines with facts are not all waived");
+  const stated = extractEntityClaims("- 华为公司：营收下滑 https://example.com/x", { entityEvidenceRequired: true }).map((claim) => claim.label);
+  assert(stated.includes("华为公司"), "text after the name makes it a claim, link or not");
+}
+
 console.log("general-claim-verification: ok");

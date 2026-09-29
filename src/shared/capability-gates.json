@@ -2875,6 +2875,15 @@
       "tests": [
         "scripts/test-turn-orchestrator.mjs"
       ]
+    },
+    {
+      "id": "citation-label-not-claim",
+      "protects": "A source line - a short publisher label (optional parenthetical, trailing colon or dash) followed only by a link - is attribution, not an entity claim: its truth rests on the link, which the citation check grounds on its own. A label with digits, sentence punctuation or text after an inner separator stays a checked claim.",
+      "baseline": "2026-09-29: a 大乐透 answer's four grounded links were labelled 新浪彩票/今日头条/UC头条/百家号; three labels were read as entity claims absent from evidence (entity_claim_not_in_evidence), which fired an evidence-verify retry under a delivered answer. Field replay on the stored answer and tool output: before 3 unsupported, after 0.",
+      "failureFallback": "Links are still grounded by the citation check; entities on any other line are extracted as before; a judge timeout alone still yields semantic_support_unverified, which is not retried. Mutation-verified: the previous extractor fails the regression by name.",
+      "tests": [
+        "scripts/test-general-claim-verification.mjs"
+      ]
     }
   ]
 }

@@ -42,6 +42,24 @@ function isPlausibleEntityLabel(label, { structured = false } = {}) {
   return true;
 }
 
+// A source line — "- 今日头条（开奖公告）：https://…" — names WHO published a
+// link; whether that is true rests on the link, which the citation check
+// grounds on its own. Line shape only: a URL, and before it nothing but a
+// short label (an optional parenthetical, a trailing colon or dash). A label
+// carrying digits or sentence punctuation is a claim and stays checked.
+// Field case 2026-09-29: "今日头条 / UC头条 / 百家号" beside four grounded
+// links failed a lottery answer as entities absent from evidence.
+function isAttributionLine(rawLine, lineWithoutUrls) {
+  if (!/https?:\/\/\S+/i.test(rawLine)) return false;
+  const label = lineWithoutUrls
+    .replace(/^(?:[-*+]\s*|\d{1,3}[.)、]\s*)/, "")
+    .replace(/[\s:：|–—-]+$/u, "")
+    .replace(/[（(][^（()）]{0,20}[)）]\s*$/u, "")
+    .trim();
+  // An inner separator means text follows the name ("华为公司：营收下滑") — a claim.
+  return Boolean(label) && label.length <= 20 && !/[\d:：|]/.test(label) && !LABEL_PUNCT_RE.test(label);
+}
+
 /**
  * Entity-claim extraction is deliberately MECHANICAL: line shapes and
  * organization suffixes, no domain vocabulary. Whether the evidence actually
@@ -65,6 +83,7 @@ function extractEntityClaims(assistant = "", verificationPlan = null) {
       .replace(/__/g, "")
       .trim();
     if (!line) continue;
+    if (isAttributionLine(rawLine, line)) continue;
     const labels = [...line.matchAll(INLINE_NAMED_ORG_RE)].map((match) => match[0]);
     const lineMatch = line.match(LINE_ENTITY_RE);
     if (lineMatch) labels.push(lineMatch[1].trim());
