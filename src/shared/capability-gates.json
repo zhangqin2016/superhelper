@@ -2904,6 +2904,16 @@
         "scripts/test-turn-runtime-event-router.mjs",
         "scripts/test-task-center-status.mjs"
       ]
+    },
+    {
+      "id": "document-render-receipt",
+      "protects": "A document render is proven by the receipt render_document.py leaves beside its pages (source path, its mtime and size, the page images), whatever a calling script prints; this turn's vision receipts are matched to those pages for visual coverage; a receipt older than the file's last edit proves nothing; paths compare in NFC. Readable UTF-8 text (Markdown and other text deliveries) is verified by the gate itself.",
+      "baseline": "2026-09-29 long-task run: a script wrapped render_document.py and printed only 'xlsx pages 18', so eleven platform vision receipts matched no page image and the gate reported render/visual missing; Markdown deliveries always reported content_verification missing, a check nothing could satisfy. Every finished task started a 文档交付续检 that ended with the same verdict.",
+      "failureFallback": "Without a receipt (older render script, render elsewhere) the previous stdout-based evidence applies unchanged; coverage rules (every page up to 12, else first, last and 6) are unchanged; text that is not valid UTF-8 or is empty fails structure. A receipt-write failure is logged to stderr. Mutation-verified: the previous gate, the receipt-less renderer and a gate that ignores receipts each fail by name.",
+      "tests": [
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-render-document.mjs"
+      ]
     }
   ]
 }

@@ -41,6 +41,18 @@ if (fs.existsSync(path.join(FIXTURES, "sample.pdf"))) {
   for (const img of res.images) {
     assert(fs.existsSync(img) && fs.statSync(img).size > 0, `rendered image missing/empty: ${img}`);
   }
+  // The render receipt: the delivery gate's proof of this render, whatever a
+  // calling script prints (2026-09-29: a wrapper printed only "pages 18").
+  const receipt = JSON.parse(fs.readFileSync(path.join(out, ".lily-render-receipt.json"), "utf8"));
+  assert(receipt.kind === "document_render" && receipt.source === path.join(FIXTURES, "sample.pdf"), `receipt names its source: ${JSON.stringify(receipt)}`);
+  assert(JSON.stringify(receipt.images) === JSON.stringify(res.images.map((img) => path.resolve(img))), "receipt lists the page images");
+  const { assessDocumentDelivery } = require("../src/main/document-delivery-gate.js");
+  const delivered = assessDocumentDelivery({
+    taskContract: { taskType: "document_work", semanticIntent: { operation: "create", outputMode: "artifact" }, evidencePolicy: { required: true, requiredEvidenceKinds: ["document_output"] } },
+    artifacts: [{ path: path.join(FIXTURES, "sample.pdf"), ext: ".pdf" }],
+    tools: res.images.map((img) => ({ name: "bash", status: "done", result: `LILY_VISION_RECEIPT ${JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: img })}` })),
+  });
+  assert(delivered.ok, `a real render plus vision receipts verifies the delivery: ${JSON.stringify(delivered.missing)}`);
 }
 
 // Office path goes through LibreOffice → PDF → images. Skip only if LibreOffice

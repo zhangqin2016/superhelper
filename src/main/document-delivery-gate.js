@@ -8,6 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
+const { renderReceiptFor, inspectedImages: receiptInspectedImages } = require("./document-render-receipt.js");
 
 const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
@@ -43,7 +44,8 @@ function toolText(tool = {}) {
 }
 
 function normalizedPath(value = "") {
-  return String(value || "").replace(/\\\\/g, "\\").replace(/\\/g, "/").toLowerCase();
+  // NFC: macOS file names arrive decomposed from some tools, composed from others.
+  return String(value || "").normalize("NFC").replace(/\\\\/g, "\\").replace(/\\/g, "/").toLowerCase();
 }
 
 function artifactMentioned(text, artifact = {}) {
@@ -93,6 +95,17 @@ function imagePathMatches(left = "", right = "") {
   const bothAbsolute = /^(?:[a-z]:\/|\/)/i.test(a) && /^(?:[a-z]:\/|\/)/i.test(b);
   if (bothAbsolute) return a === b;
   return a === b || a.endsWith(`/${path.basename(b)}`) || b.endsWith(`/${path.basename(a)}`);
+}
+
+function textReadable(file) {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file));
+    if (text.includes("\uFFFD")) return { ok: false, reason: "replacement_characters" };
+    if (!text.trim()) return { ok: false, reason: "empty_text" };
+    return { ok: true, reason: "utf8_text_readable" };
+  } catch {
+    return { ok: false, reason: "invalid_utf8" };
+  }
 }
 
 function readFileSlice(file, length, position = 0) {
@@ -224,12 +237,16 @@ function requiresDocumentDelivery(taskContract = null, artifacts = []) {
 function assessArtifact(artifact, tools) {
   const structure = structureCheck(artifact);
   if (fileKinds.EXTENSIONS.textDocument.has(String(artifact.ext || path.extname(artifact.path || "")).toLowerCase())) {
-    // Text delivery has no Office page-rendering requirement. A file existing
-    // does not certify its content; the independent content checks stay pending.
+    // Text delivery has no page rendering. What the gate can certify about text
+    // it checks itself: the file decodes as UTF-8 with no replacement
+    // characters and has content. Whether what it SAYS holds is the evidence
+    // gate's job. (This used to report content_verification missing whatever
+    // the turn did, so every Markdown delivery ended "not fully checked".)
+    const readable = structure.ok ? textReadable(artifact.path) : { ok: false, reason: structure.reason };
     return {
       path: artifact.path, ext: artifact.ext || path.extname(artifact.path || ""),
-      ok: false, missing: structure.ok ? ["content_verification"] : ["structure"],
-      checks: { structure, rendered: false, pageCount: 0, visual: { applicable: false }, recalculated: false },
+      ok: readable.ok, missing: readable.ok ? [] : ["structure"],
+      checks: { structure: readable.ok ? structure : readable, rendered: false, pageCount: 0, visual: { applicable: false }, recalculated: false },
     };
   }
   const successful = tools.map((tool, index) => ({ tool, index })).filter(({ tool }) => successfulTool(tool));
@@ -237,10 +254,18 @@ function assessArtifact(artifact, tools) {
     const text = toolText(tool);
     return RENDER_COMMAND_RE.test(text) && artifactMentioned(text, artifact);
   });
-  const renderedImages = renderEntry ? [...collectImagePaths(renderEntry.tool.result ?? renderEntry.tool.output ?? "")] : [];
-  const pageCount = renderEntry ? parseRenderedPageCount(renderEntry.tool, renderedImages) : 0;
+  // The platform's render receipt proves the render whatever the calling
+  // script printed; its page list is what vision receipts are matched against.
+  const receipt = renderReceiptFor(String(artifact.path || ""), successful.map(({ tool }) => tool));
+  const renderedImages = receipt ? receipt.images
+    : renderEntry ? [...collectImagePaths(renderEntry.tool.result ?? renderEntry.tool.output ?? "")] : [];
+  const pageCount = receipt ? receipt.pages : renderEntry ? parseRenderedPageCount(renderEntry.tool, renderedImages) : 0;
   const inspectedImages = [];
-  if (renderEntry) {
+  if (receipt) {
+    for (const image of receiptInspectedImages(successful.map(({ tool }) => tool))) {
+      if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
+    }
+  } else if (renderEntry) {
     for (const { tool, index } of successful) {
       if (index <= renderEntry.index) continue;
       for (const image of visionInspectionPaths(tool)) {
@@ -267,8 +292,9 @@ function assessArtifact(artifact, tools) {
   });
   const missing = [];
   if (!structure.ok) missing.push("structure");
-  if (!renderEntry) missing.push("render");
-  if (renderEntry && !visual.ok) missing.push("visual_inspection");
+  const rendered = Boolean(receipt || renderEntry);
+  if (!rendered) missing.push("render");
+  if (rendered && !visual.ok) missing.push("visual_inspection");
   if (!recalculated) missing.push("formula_recalculation");
   return {
     path: artifact.path,
@@ -277,7 +303,7 @@ function assessArtifact(artifact, tools) {
     missing,
     checks: {
       structure,
-      rendered: Boolean(renderEntry),
+      rendered,
       pageCount,
       visual,
       recalculated,

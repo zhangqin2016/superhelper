@@ -40,8 +40,15 @@ try {
   fs.writeFileSync(textPath, "# Report\n\nTotal: 520000\n");
   const textArtifact = { path: textPath, ext: ".md", source: "file_change" };
   const textDelivery = assessDocumentDelivery({ taskContract: contract, artifacts: [textArtifact] });
-  assert.deepEqual(textDelivery.missing, ["content_verification"]);
+  // The gate checks readable UTF-8 text itself; it no longer reports a check
+  // that nothing could ever satisfy (every Markdown delivery ended "not fully checked").
+  assert.deepEqual(textDelivery.missing, [], "readable UTF-8 text is verified by the gate");
+  assert.equal(textDelivery.ok, true);
   assert.equal(textDelivery.retryRecommended, false, "text output must not enter Office render recovery");
+  const brokenText = path.join(workspace, "broken.md");
+  fs.writeFileSync(brokenText, Buffer.from([0x23, 0x20, 0xff, 0xfe, 0x0a]));
+  assert.deepEqual(assessDocumentDelivery({ taskContract: contract, artifacts: [{ path: brokenText, ext: ".md" }] }).missing, ["structure"],
+    "text that is not valid UTF-8 fails structure");
   const textAnswer = evaluateAnswerEvidence({ assistant: "Created report.md with total 520000.", taskContract: contract,
     artifacts: [textArtifact], tools: [], evidenceSummary: { counts: {} }, userText: "Create report.md" });
   assert(textAnswer.assistant.includes("Created report.md"), "text artifact delivery preserves the real answer");
@@ -267,6 +274,50 @@ try {
     assert.equal(assessDocumentDelivery({ taskContract: { taskType: "general" }, artifacts: [artifact] }).required,
       false, "references and scratch files do not turn ordinary questions into document tasks");
   }
+  // Field regression 2026-09-29: a script wrapped render_document.py and
+  // printed only "xlsx pages 18"; eleven platform vision receipts then matched
+  // no page image, so the gate reported render/visual missing and every
+  // finished task started a "文档交付续检". The render receipt that
+  // render_document.py leaves beside its pages is the evidence now.
+  {
+    const { RECEIPT_NAME } = require("../src/main/document-render-receipt.js");
+    const book = path.join(workspace, "02_经营分析模型.xlsx");
+    fs.writeFileSync(book, Buffer.concat([Buffer.from("PK\u0003\u0004"), Buffer.from("[Content_Types].xml")]));
+    const pagesDir = path.join(workspace, "verify6", "render_xlsx");
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const pages = Array.from({ length: 18 }, (_, i) => path.join(pagesDir, `page-${i + 1}.png`));
+    for (const page of pages) fs.writeFileSync(page, "png");
+    const writeReceipt = (source) => {
+      const stat = fs.statSync(book);
+      fs.writeFileSync(path.join(pagesDir, RECEIPT_NAME), JSON.stringify({ version: 1, kind: "document_render", source,
+        sourceMtimeMs: Math.floor(stat.mtimeMs), sourceBytes: stat.size, images: pages, pages: pages.length, renderedAtMs: Date.now() }));
+    };
+    const bookArtifact = { path: book, ext: ".xlsx", fileName: path.basename(book) };
+    const wrappedRender = { name: "bash", status: "done", input: { command: `python3 "$RD" ${book} render_xlsx 1.5 | python3 -c "print('xlsx pages', 18)"` }, result: { content: "xlsx pages 18 None" } };
+    const vision = (indexes) => indexes.map((i) => ({ name: "bash", status: "done", input: { command: "node vision.js" },
+      result: `===xlsx p${i}=== ok\nLILY_VISION_RECEIPT ${JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: pages[i - 1] })}` }));
+    const sampled = vision([1, 3, 5, 8, 11, 14, 17, 18]);
+    const verdict = (tools) => assessDocumentDelivery({ taskContract: contract, artifacts: [bookArtifact], tools });
+
+    const before = verdict([wrappedRender, ...sampled]);
+    assert.ok(before.missing.includes("render") || before.missing.includes("visual_inspection"), "without a receipt the wrapped render is unproven");
+
+    writeReceipt(book);
+    const after = verdict([wrappedRender, ...sampled]);
+    assert.ok(!after.missing.includes("render") && !after.missing.includes("visual_inspection"),
+      `the render receipt proves the render and the vision receipts cover it: ${JSON.stringify(after.missing)}`);
+    assert.equal(after.artifacts[0].checks.pageCount, 18);
+    assert.equal(after.artifacts[0].checks.visual.inspected, 8);
+
+    assert.ok(verdict([wrappedRender, ...vision([1, 2, 3])]).missing.includes("visual_inspection"),
+      "three of eighteen pages is not visual coverage");
+    writeReceipt(book.normalize("NFD"));
+    assert.ok(!verdict([wrappedRender, ...sampled]).missing.includes("render"), "a decomposed (NFD) path names the same file");
+
+    fs.appendFileSync(book, "edited after rendering");
+    assert.ok(verdict([...sampled]).missing.includes("render"), "a receipt older than the file's last edit proves nothing");
+  }
+
   console.log("document-delivery-gate: ok");
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

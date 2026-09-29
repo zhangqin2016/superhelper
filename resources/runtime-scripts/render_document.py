@@ -11,6 +11,11 @@ Usage: python render_document.py <file_path> <out_dir> [scale]
 Emits a single JSON object on stdout:
   {"ok": true, "images": ["<out_dir>/page-1.png", ...], "pages": N}
   {"ok": false, "error": "..."}
+
+A successful render also leaves <out_dir>/.lily-render-receipt.json naming the
+source file (path, mtime, size) and its page images. The delivery gate reads
+it, so a render counts whatever a calling script prints; a later edit of the
+source makes the receipt stale by its mtime/size.
 """
 
 import json
@@ -18,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -118,8 +124,34 @@ def main(argv):
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
 
+    _write_receipt(path, out_dir, images)
     print(json.dumps({"ok": True, "images": images, "pages": len(images)}))
     return 0
+
+
+RECEIPT_NAME = ".lily-render-receipt.json"
+
+
+def _write_receipt(source, out_dir, images):
+    try:
+        stat = os.stat(source)
+        receipt = {
+            "version": 1,
+            "kind": "document_render",
+            "source": os.path.abspath(source),
+            "sourceMtimeMs": int(stat.st_mtime * 1000),
+            "sourceBytes": stat.st_size,
+            "images": [os.path.abspath(image) for image in images],
+            "pages": len(images),
+            "renderedAtMs": int(time.time() * 1000),
+        }
+        target = os.path.join(out_dir, RECEIPT_NAME)
+        partial = target + ".partial"
+        with open(partial, "w", encoding="utf-8") as handle:
+            json.dump(receipt, handle, ensure_ascii=False)
+        os.replace(partial, target)
+    except Exception as exc:  # noqa: BLE001 — the render itself succeeded; say why the receipt did not
+        print(f"render receipt not written: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
