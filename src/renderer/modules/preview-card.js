@@ -1,14 +1,14 @@
 /**
- * The chat's card for a file that is read in the preview pane (HTML,
- * Markdown): name, size, "open on the right", reveal. The content itself is
- * shown in the pane, as ChatGPT and Claude show an artifact beside the chat;
- * where there is no pane the file opens in its system app.
+ * The chat's card for a file a turn produced or named. Readable files (HTML,
+ * Markdown, PDF, images) open in the preview pane beside the chat, as ChatGPT
+ * and Claude show an artifact; where there is no pane the file opens in its
+ * system app.
  */
 
 import { t } from "../i18n/index.js";
 import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { tryOpenInPreviewPane } from "./preview-pane.js";
-import { artifactDisplayName, bytesText } from "./turn-renderer-block-model.js";
+import { artifactDisplayName, artifactSourceUrl, bytesText } from "./turn-renderer-block-model.js";
 import { iconButton } from "./ui-icons.js";
 
 function tr(key, fallback) {
@@ -24,20 +24,34 @@ export function revealButton(block = {}) {
   return button;
 }
 
-const KIND_LABEL = { html: "HTML", markdown: "Markdown" };
+const KIND_LABEL = { html: "HTML", markdown: "Markdown", pdf: "PDF" };
 
-/** @param {"html"|"markdown"} kind */
-export function renderPreviewCard(block = {}, kind) {
+function extensionLabel(block = {}) {
+  const ext = String(block.ext || String(block.path || block.fileName || "").match(/\.([^./\\]+)$/)?.[1] || "")
+    .replace(/^\./, "");
+  return ext ? ext.toUpperCase() : "";
+}
+
+/**
+ * A file the turn produced or named, as one card: its own name first, its
+ * type and size below, the full path on hover. `kind` — "html", "markdown",
+ * "pdf" or "image" — adds "open on the right" (the preview pane); any other
+ * file is revealed in its folder.
+ * @param {object} block
+ * @param {"html"|"markdown"|"pdf"|"image"|""} [kind]
+ */
+export function renderFileCard(block = {}, kind = "") {
   const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
-  const canPreview = Boolean(block.path || block.url || block.html || block.text || block.data);
+  const canPreview = Boolean(kind) && Boolean(block.path || block.url || block.html || block.text || block.data);
   const open = () => {
-    if (tryOpenInPreviewPane({ kind, path: block.path || block.url || "", title: name, block })) return;
+    const src = kind === "image" ? artifactSourceUrl(block) : "";
+    if (tryOpenInPreviewPane({ kind, path: block.path || block.url || "", src, title: name, block })) return;
     if (block.path) void openLocalFile(block.path);
   };
 
   const figure = document.createElement("figure");
-  figure.className = "assistant-renderer-block assistant-renderer-artifact is-file is-compact is-previewable";
-  figure.dataset.previewKind = kind;
+  figure.className = `assistant-renderer-block assistant-renderer-artifact is-file is-compact${kind ? " is-previewable" : ""}`;
+  if (kind) figure.dataset.previewKind = kind;
   const caption = document.createElement("figcaption");
 
   // The file's own name leads; the path it lives at is the tooltip. A card
@@ -54,13 +68,16 @@ export function renderPreviewCard(block = {}, kind) {
   if (canPreview) title.addEventListener("click", open);
   const meta = document.createElement("span");
   meta.className = "assistant-renderer-meta";
-  meta.textContent = [KIND_LABEL[kind], bytesText(block.bytes)].filter(Boolean).join(" · ");
+  meta.textContent = [KIND_LABEL[kind] || extensionLabel(block), bytesText(block.bytes)].filter(Boolean).join(" · ");
   text.append(title, meta);
   caption.appendChild(text);
 
-  const openButton = iconButton("assistant-reveal-btn assistant-preview-open", "openInPane", tr("preview.openInPane", "Open on the right"), { onClick: open });
-  openButton.disabled = !canPreview;
-  caption.append(openButton, revealButton(block));
+  if (kind) {
+    const openButton = iconButton("assistant-reveal-btn assistant-preview-open", "openInPane", tr("preview.openInPane", "Open on the right"), { onClick: open });
+    openButton.disabled = !canPreview;
+    caption.appendChild(openButton);
+  }
+  caption.appendChild(revealButton(block));
 
   figure.appendChild(caption);
   return figure;

@@ -1,5 +1,5 @@
 import { t } from "../i18n/index.js";
-import { renderPreviewCard } from "./preview-card.js";
+import { renderFileCard } from "./preview-card.js";
 
 function tr(key, fallback, params) {
   const value = t(key, params);
@@ -29,7 +29,7 @@ function base64ToText(value = "") {
 /** The sandboxed, script-free HTML preview frame the preview pane shows. */
 export function createHtmlPreviewFrame(block = {}) {
   const frame = document.createElement("iframe");
-  frame.className = "assistant-html-preview";
+  frame.className = "preview-pane-frame";
   frame.title = displayName(block);
   frame.setAttribute("sandbox", "allow-same-origin");
   frame.referrerPolicy = "no-referrer";
@@ -47,5 +47,5 @@ export function createHtmlPreviewFrame(block = {}) {
 
 /** In the chat, an HTML file is a card; its preview opens in the pane. */
 export function renderHtmlBlock(block = {}) {
-  return renderPreviewCard(block, "html");
+  return renderFileCard(block, "html");
 }

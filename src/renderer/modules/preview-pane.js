@@ -60,9 +60,7 @@ const RENDERERS = {
   },
   async html(body, item) {
     const { createHtmlPreviewFrame } = await import("./html-renderer.js");
-    const frame = createHtmlPreviewFrame(item.block || { path: item.path, title: item.title });
-    frame.classList.add("preview-pane-frame");
-    body.appendChild(frame);
+    body.appendChild(createHtmlPreviewFrame(item.block || { path: item.path, title: item.title }));
     return null;
   },
   async markdown(body, item) {

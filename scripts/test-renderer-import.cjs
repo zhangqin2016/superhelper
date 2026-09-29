@@ -2334,24 +2334,22 @@ app.whenReady().then(async () => {
         if (!host.querySelector(".assistant-renderer-code code")) {
           throw new Error("code result block did not render code");
         }
-        if (!host.querySelector(".assistant-renderer-pdf canvas")) {
-          throw new Error("pdf result block did not render a PDF canvas");
+        // A PDF is a card in the chat, read in the preview pane.
+        if (host.querySelector("canvas.assistant-pdf-canvas, .assistant-renderer-pdf")) {
+          throw new Error("a pdf should be a card in the chat, not an inline page stack");
         }
-        if (!host.querySelector(".assistant-renderer-pdf .assistant-pdf-pages")) {
-          throw new Error("pdf result block should render as a continuous page stack");
+        const pdfCard = host.querySelector('.assistant-renderer-artifact.is-previewable[data-preview-kind="pdf"]');
+        if (!pdfCard || !pdfCard.querySelector(".assistant-preview-open") || !pdfCard.textContent.includes("PDF")) {
+          throw new Error("a pdf result block should render a card that opens in the preview pane");
         }
-        if (host.querySelectorAll(".assistant-renderer-pdf .assistant-pdf-controls [data-tip]").length !== 3) {
-          throw new Error("pdf result block should expose zoom and fit-width icon controls");
+        pdfCard.querySelector(".assistant-preview-open").click();
+        let pdfViewer = null;
+        for (let i = 0; i < 60 && !pdfViewer?.querySelector(".pdf-viewer-page canvas"); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          pdfViewer = document.getElementById("previewPane").querySelector(".pdf-viewer.is-embedded");
         }
-        const pdfViewerButton = host.querySelector(".assistant-pdf-open-viewer");
-        if (!pdfViewerButton) {
-          throw new Error("pdf result block should expose the in-app reader action");
-        }
-        pdfViewerButton.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        const pdfViewer = document.querySelector(".pdf-viewer");
-        if (!pdfViewer || !pdfViewer.querySelector(".pdf-viewer-scroll") || !pdfViewer.querySelector(".pdf-viewer-thumbs")) {
-          throw new Error("pdf reader action should open the in-app PDF viewer");
+        if (!pdfViewer || !pdfViewer.querySelector(".pdf-viewer-scroll") || !pdfViewer.querySelector(".pdf-viewer-page canvas")) {
+          throw new Error("opening the pdf card should render it in the preview pane's reader");
         }
         pdfViewer.querySelector(".pdf-viewer-close")?.click();
         (await import("./modules/preview-pane.js")).closePreviewPane();
@@ -2426,8 +2424,7 @@ app.whenReady().then(async () => {
         if (host.querySelector("iframe")) {
           throw new Error("referenced html should not render an iframe preview");
         }
-        if (Array.from(host.querySelectorAll(".assistant-renderer-pdf"))
-          .some((node) => node.textContent.includes("docs/referenced-only.pdf"))) {
+        if (host.querySelector("canvas.assistant-pdf-canvas")) {
           throw new Error("referenced pdf should not render a PDF preview");
         }
         const compactImage = Array.from(host.querySelectorAll(".assistant-renderer-artifact.is-compact"))

@@ -38,7 +38,7 @@
     "src/main/workspace-knowledge-store.js": 532,
     "src/main/workspace-share.js": 635,
     "src/renderer/modules/composer.js": 717,
-    "src/renderer/modules/markdown.js": 863,
+    "src/renderer/modules/markdown.js": 802,
     "src/renderer/modules/message.js": 949,
     "src/renderer/modules/model-settings.js": 551,
     "src/renderer/modules/project-tree.js": 812,

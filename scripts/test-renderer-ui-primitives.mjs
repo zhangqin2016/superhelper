@@ -32,7 +32,8 @@ const appText = fs.readFileSync(path.join(root, "src/renderer/app.js"), "utf8");
 const indexText = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
 const permissionSettingsText = fs.readFileSync(path.join(root, "src/renderer/modules/permission-settings.js"), "utf8");
 const turnBlockRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/turn-block-renderers.js"), "utf8");
-const pdfRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/pdf-renderer.js"), "utf8");
+const previewCardText = fs.readFileSync(path.join(root, "src/renderer/modules/preview-card.js"), "utf8");
+const uiIconsText = fs.readFileSync(path.join(root, "src/renderer/modules/ui-icons.js"), "utf8");
 const htmlRendererText = fs.readFileSync(path.join(root, "src/renderer/modules/html-renderer.js"), "utf8");
 const findBarText = fs.readFileSync(path.join(root, "src/renderer/modules/find-bar.js"), "utf8");
 const pdfViewerText = fs.readFileSync(path.join(root, "src/renderer/modules/pdf-viewer.js"), "utf8");
@@ -172,23 +173,25 @@ if (!primitiveText.includes(".dialog-btn")) {
 // artifacts flow in a bounded grid, while rich previews still span the full row.
 {
   const artifactsGrid = runtimeChatText.match(/\.assistant-turn-artifacts\s*\{[^}]*\}/s)?.[0] || "";
-  if (!artifactsGrid.includes("display: grid") || !artifactsGrid.includes("repeat(3, minmax(0, 1fr))")) {
-    throw new Error("assistant turn artifacts must render compact file references in a three-column grid");
+  // Columns follow the chat's own width (the preview pane narrows it), with a
+  // minimum card width, so many files flow side by side instead of a wall.
+  if (!artifactsGrid.includes("display: grid") || !/repeat\(auto-fill, minmax\(min\(100%, \d+px\), 1fr\)\)/.test(artifactsGrid)) {
+    throw new Error("assistant turn artifacts must flow file cards in a grid sized by the chat's width");
   }
   const fullSpan = runtimeChatText.match(/\.assistant-turn-artifacts\s*>\s*:not\(\.assistant-renderer-artifact\.is-compact\)\s*\{[^}]*\}/s)?.[0] || "";
   if (!fullSpan.includes("grid-column: 1 / -1")) {
     throw new Error("expanded artifact previews must span the full artifact grid");
   }
   const compactCaption = runtimeChatText.match(/\.assistant-renderer-artifact\.is-compact figcaption\s*\{[^}]*\}/s)?.[0] || "";
-  if (!compactCaption.includes("grid-template-columns: minmax(0, 1fr) auto auto")) {
-    throw new Error("compact artifact captions must keep filename, size, and reveal action in a stable grid");
+  if (!compactCaption.includes("grid-template-columns: minmax(0, 1fr)")) {
+    throw new Error("file cards must keep the name column shrinkable beside their actions");
   }
-  const compactPath = runtimeChatText.match(/\.assistant-renderer-artifact\.is-compact \.assistant-generated-file-path\s*\{[^}]*\}/s)?.[0] || "";
-  if (!compactPath.includes("text-overflow: ellipsis") || !compactPath.includes("white-space: nowrap")) {
-    throw new Error("compact artifact filenames must truncate to keep the grid dense");
+  const cardText = runtimeChatText.match(/\.assistant-preview-card-text > \*\s*\{[^}]*\}/s)?.[0] || "";
+  if (!cardText.includes("text-overflow: ellipsis") || !cardText.includes("white-space: nowrap")) {
+    throw new Error("file card names must truncate to keep the grid dense");
   }
-  if (!turnBlockRendererText.includes('title=${name}>${name}</code>')) {
-    throw new Error("compact artifact filenames must expose the full path in a title tooltip");
+  if (!previewCardText.includes("text.dataset.tip = name")) {
+    throw new Error("file cards must expose the full path as the name's tooltip");
   }
 }
 
@@ -314,20 +317,16 @@ for (const required of [
     throw new Error(`runtime chat artifact UI must stay unified: missing ${required}`);
   }
 }
-for (const [label, text] of [
-  ["turn-block-renderers", turnBlockRendererText],
-  ["pdf-renderer", pdfRendererText],
-  ["html-renderer", htmlRendererText],
-]) {
-  if (!text.includes("assistant-reveal-btn") || !text.includes("aria-label")) {
-    throw new Error(`${label} must render reveal-in-folder as an icon button with an accessible label`);
-  }
+// Reveal-in-folder is one shared icon button (preview-card.js) whose label is
+// its accessible name and tooltip (ui-icons.js); renderers use it, never text.
+if (!previewCardText.includes('iconButton("assistant-reveal-btn", "reveal"') || !uiIconsText.includes('setAttribute("aria-label", label)')) {
+  throw new Error("reveal-in-folder must be the shared icon button with an accessible label");
 }
-if (turnBlockRendererText.includes('button.textContent = t("file.reveal")')) {
+if (!turnBlockRendererText.includes("revealButton(block)") || !htmlRendererText.includes("renderFileCard(")) {
+  throw new Error("artifact renderers must use the shared file card and reveal button");
+}
+if (turnBlockRendererText.includes('button.textContent = t("file.reveal")') || htmlRendererText.includes('makeAction(t("file.reveal")')) {
   throw new Error("artifact reveal actions must not regress to large text buttons");
-}
-if (pdfRendererText.includes('makeAction(t("file.reveal")') || htmlRendererText.includes('makeAction(t("file.reveal")')) {
-  throw new Error("PDF/HTML reveal actions must use the shared icon affordance, not a text action button");
 }
 
 if (!indexText.includes('class="settings-actions connector-form-actions settings-form-actions"')) {

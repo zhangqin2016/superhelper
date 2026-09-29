@@ -4,9 +4,8 @@ import { t } from "../i18n/index.js";
 import { showToast } from "./toast.js";
 import { isEChartsBlock, renderEChartsBlock } from "./chart-renderer.js";
 import { renderDataTableBlock } from "./data-table-renderer.js";
-import { renderPdfBlock } from "./pdf-renderer.js";
 import { renderHtmlBlock } from "./html-renderer.js";
-import { renderPreviewCard, revealButton } from "./preview-card.js";
+import { renderFileCard, revealButton } from "./preview-card.js";
 import {
   artifactBlocksFromArtifacts,
   inferArtifactType,
@@ -129,7 +128,8 @@ function renderArtifact(block) {
     const mod = await import("./image-viewer.js");
     mod.openImageViewer?.(src, name);
   };
-  const mediaClass = isImage ? "is-image" : isVideo ? "is-video" : isAudio ? "is-audio" : "is-file";
+  if (!isMedia) return renderFileCard(block);
+  const mediaClass = isImage ? "is-image" : isVideo ? "is-video" : "is-audio";
   return el(html`
     <figure class="assistant-renderer-block assistant-renderer-artifact ${mediaClass}">
       ${isImage ? html`<img alt=${name} loading="lazy" src=${src} @click=${openViewer} />` : ""}
@@ -144,18 +144,11 @@ function renderArtifact(block) {
   `);
 }
 
+// Readable kinds open in the preview pane; the rest are revealed in their folder.
+const PANE_KINDS = new Set(["html", "markdown", "pdf", "image"]);
 function renderCompactArtifact(block) {
-  const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
-  const size = bytesText(block.bytes);
-  return el(html`
-    <figure class="assistant-renderer-block assistant-renderer-artifact is-file is-compact">
-      <figcaption>
-        <code class="assistant-generated-file-path" title=${name}>${name}</code>
-        ${size ? html`<span class="assistant-renderer-meta">${size}</span>` : ""}
-        ${revealButton(block)}
-      </figcaption>
-    </figure>
-  `);
+  const kind = inferArtifactType(block);
+  return renderFileCard(block, PANE_KINDS.has(kind) ? kind : "");
 }
 
 /** Read a Markdown artifact and render it into `preview` (the preview pane). */
@@ -238,8 +231,8 @@ const RENDERERS = new Map([
   ["compact-artifact", renderCompactArtifact],
   ["image", renderArtifact],
   ["file", renderArtifact],
-  ["markdown-artifact", (block) => renderPreviewCard(block, "markdown")],
-  ["pdf", renderPdfBlock],
+  ["markdown-artifact", (block) => renderFileCard(block, "markdown")],
+  ["pdf", (block) => renderFileCard(block, "pdf")],
   ["html", renderHtmlBlock],
   ["video", renderArtifact],
   ["audio", renderArtifact],
@@ -252,13 +245,13 @@ function rendererForBlock(block = {}) {
   const type = String(block.type || "").toLowerCase();
   const artifactType = type === "artifact" ? inferArtifactType(block) : String(block.artifactType || "").toLowerCase();
   if (type === "artifact" && artifactType === "chart") return RENDERERS.get("chart");
-  // HTML and Markdown are read in the preview pane: always a card here, which
-  // a mere reference and a delivered file share (both can be opened).
+  // HTML, Markdown and PDF are read in the preview pane: always a card here,
+  // which a mere reference and a delivered file share (both can be opened).
   if (type === "artifact" && artifactType === "html") return RENDERERS.get("html");
   if (type === "artifact" && artifactType === "markdown") return RENDERERS.get("markdown-artifact");
+  if (type === "artifact" && artifactType === "pdf") return RENDERERS.get("pdf");
   const displayMode = type === "artifact" ? artifactDisplayMode(block) : "primary";
   if (displayMode === "compact") return RENDERERS.get("compact-artifact");
-  if (type === "artifact" && artifactType === "pdf") return RENDERERS.get("pdf");
   return RENDERERS.get(type) || RENDERERS.get(artifactType);
 }
 

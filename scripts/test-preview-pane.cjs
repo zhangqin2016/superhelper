@@ -77,12 +77,16 @@ app.whenReady().then(async () => {
       const md = await waitFor(() => root.querySelector('.preview-pane-markdown h1'));
       const frame = root.querySelector('.is-html iframe');
       await settle(200);
+      // The page fills its tab (field report 2026-09-29: it stopped at 560px).
+      const frameBox = frame.getBoundingClientRect();
+      const bodyBox = frame.closest('.preview-pane-body').getBoundingClientRect();
       return { state: pane.previewPaneState(), labels: [...root.querySelectorAll('.preview-pane-tab-label')].map((n) => n.textContent),
         pdfEmbedded: Boolean(root.querySelector('.pdf-viewer.is-embedded')), pdfModal: Boolean(document.querySelector('body > .pdf-viewer')),
         pdfCanvas: Boolean(canvas), pdfClose: Boolean(root.querySelector('.pdf-viewer-close')),
         md: md?.textContent || '', sandbox: frame?.getAttribute('sandbox'), scriptRan: frame?.contentDocument?.body?.dataset?.ran || '',
         visible: [...root.querySelectorAll('.preview-pane-body')].filter((b) => !b.hidden).length,
-        activeIsHtml: pane.previewPaneState().active.startsWith('html:') };
+        activeIsHtml: pane.previewPaneState().active.startsWith('html:'),
+        frameFill: { frame: Math.round(frameBox.height), body: Math.round(bodyBox.height) } };
     `);
     assert.equal(tabs.error, undefined, tabs.error);
     assert.deepEqual(tabs.labels, ["cover.svg", "report.pdf", "报告.md", "page.html"], "one tab per file, the repeat reused its tab");
@@ -95,6 +99,7 @@ app.whenReady().then(async () => {
     assert.equal(tabs.scriptRan, "", "scripts in an HTML preview do not run");
     assert.equal(tabs.visible, 1, "only the active tab is shown");
     assert.equal(tabs.activeIsHtml, true, "the last opened file is the active tab");
+    assert.ok(tabs.frameFill.body > 600 && Math.abs(tabs.frameFill.frame - tabs.frameFill.body) <= 2, `the HTML page fills its tab (${JSON.stringify(tabs.frameFill)})`);
 
     // 3. Switching and closing tabs; closing the last closes the pane.
     const closing = await run(`
@@ -234,15 +239,24 @@ app.whenReady().then(async () => {
         { id: 'a', type: 'artifact', artifactType: 'html', path: '/ws/output/qa/diagram-preview.html', relativePath: 'output/qa/diagram-preview.html', bytes: 18432, source: 'tool_write' },
         { id: 'b', type: 'artifact', artifactType: 'markdown', path: '/ws/output/CAPABILITY-REPORT.md', relativePath: 'output/CAPABILITY-REPORT.md', bytes: 5120, source: 'tool_write' },
         { id: 'c', type: 'artifact', artifactType: 'html', path: '/ws/output/app/index.html', relativePath: 'output/app/index.html', bytes: 40960, source: 'tool_write' },
+        { id: 'd', type: 'artifact', artifactType: 'pdf', path: '/ws/output/05_经营分析报告.pdf', relativePath: 'output/05_经营分析报告.pdf', bytes: 416153, source: 'tool_output' },
+        { id: 'e', type: 'artifact', path: '/ws/output/02_经营数据.xlsx', relativePath: 'output/02_经营数据.xlsx', ext: '.xlsx', bytes: 103936, source: 'tool_output' },
+        { id: 'f', type: 'artifact', path: '/ws/output/04_经营分析报告.docx', relativePath: 'output/04_经营分析报告.docx', ext: '.docx', bytes: 235315, source: 'tool_write' },
       ]);
       await settle(200);
       const names = [...host.querySelectorAll('.assistant-preview-card-name')].map((n) => ({ text: n.textContent, cut: n.scrollWidth > n.clientWidth + 1 }));
+      const cards = [...host.querySelectorAll('.assistant-renderer-artifact')].map((c) => ({
+        name: c.querySelector('.assistant-preview-card-name')?.textContent || '',
+        meta: c.querySelector('.assistant-preview-card-text .assistant-renderer-meta')?.textContent || '',
+        opens: Boolean(c.querySelector('.assistant-preview-open')),
+      }));
       host.remove();
       pane.closePreviewPane();
-      return { names, paneOpen: true };
+      return { names, cards, paneOpen: true };
     `);
     assert.equal(flow.error, undefined, flow.error);
-    assert.deepEqual(flow.names.map((n) => n.text), ["diagram-preview.html", "CAPABILITY-REPORT.md", "index.html"], "cards lead with the file's own name");
+    assert.deepEqual(flow.names.map((n) => n.text), ["diagram-preview.html", "CAPABILITY-REPORT.md", "index.html", "05_经营分析报告.pdf", "02_经营数据.xlsx", "04_经营分析报告.docx"], "cards lead with the file's own name");
+    assert.deepEqual(flow.cards.map((c) => [c.meta.split(" · ")[0], c.opens]), [["HTML", true], ["Markdown", true], ["HTML", true], ["PDF", true], ["XLSX", false], ["DOCX", false]], "readable files open on the right; others show their type");
     assert.deepEqual(flow.names.filter((n) => n.cut).map((n) => n.text), [], "no card name is truncated beside the open pane");
 
     // 8. No pane (the standalone collaboration window): the old modals open.

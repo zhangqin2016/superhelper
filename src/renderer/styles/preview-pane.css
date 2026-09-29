@@ -166,15 +166,13 @@
   cursor: zoom-in;
 }
 
+/* The page fills its tab: the frame is the pane's own, sized by the tab body. */
 .preview-pane-frame {
   display: block;
   inline-size: 100%;
   block-size: 100%;
-  min-height: 0;
-  max-height: none;
   border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  background: var(--document-page-bg);
 }
 
 .preview-pane-markdown {

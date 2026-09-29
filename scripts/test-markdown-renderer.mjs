@@ -18,6 +18,11 @@ const uiIconsSource = fs
   .readFileSync(new URL("../src/renderer/modules/ui-icons.js", import.meta.url), "utf8")
   .replaceAll("export const", "const")
   .replaceAll("export function", "function");
+const codeFrameSource = fs
+  .readFileSync(new URL("../src/renderer/modules/markdown-code-frame.js", import.meta.url), "utf8")
+  .replace('import { t } from "../i18n/index.js";', "")
+  .replace('import { iconButton } from "./ui-icons.js";', "")
+  .replaceAll("export function", "function");
 const inlineCodeSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-inline-code.js", import.meta.url), "utf8")
   .replaceAll("export function", "function");
@@ -28,7 +33,7 @@ const source = fs
   .replace('import { revealLocalFileInFolder } from "./file-reveal.js";', "")
   .replace('import { isMermaidLanguage, looksLikeMermaidCode, normalizeCodeLanguage, sanitizeMermaidSource } from "./mermaid-detect.js";', "")
   .replace('import { t } from "../i18n/index.js";', "")
-  .replace('import { iconButton } from "./ui-icons.js";', "")
+  .replace('import { wireCodeCopyButtons } from "./markdown-code-frame.js";', "")
   .replace('import { mapPlainSegments } from "./markdown-math-segments.js";', "")
   .replace('import { renderStreamBlocks } from "./markdown-stream-blocks.js";', "")
   .replace('import { markLongInlineCode } from "./markdown-inline-code.js";', "")
@@ -112,7 +117,7 @@ vm.createContext(context);
 const linkTrimSource = fs
   .readFileSync(new URL("../src/renderer/modules/markdown-link-trim.js", import.meta.url), "utf8")
   .replaceAll("export function", "function");
-vm.runInContext(`${linkTrimSource}\n${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${uiIconsSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
+vm.runInContext(`${linkTrimSource}\n${segmentsSource}\n${streamBlocksSource}\n${codeCollapseSource}\n${inlineCodeSource}\n${uiIconsSource}\n${codeFrameSource}\n${source}\nwindow.__test = { appendStreamingText, renderStreamingMarkdown, renderMarkdownWithCache, renderMarkdown, repairMarkdownTables };`, context);
 
 function fakeElement() {
   const classes = new Set();
