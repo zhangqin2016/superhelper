@@ -2257,7 +2257,7 @@
       "id": "lily-pdf-form",
       "name": "PDF 表单填写",
       "description": "识别、填写、校验 PDF 表单字段，保留原始格式并输出可打开、可复查的填表结果。",
-      "latestVersion": "1.0.2",
+      "latestVersion": "1.0.3",
       "channel": "stable",
       "sourceType": "github",
       "github": {
@@ -2288,7 +2288,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "5ceec073a4319ddc97a7ff32effb4352eaa89c360aa7903a3fda2301dfd4f953"
+      "contentRevision": "f492183c559d9b1968e181c1045b0125933ef3e52bd08eaa4ff4ca5eaf75c294"
     },
     {
       "id": "lily-runtime-packs",
@@ -2570,5 +2570,5 @@
       ]
     }
   ],
-  "registryRevision": "2dbcf6e3719212f17f1bb5426a1d5b5844af336a288d5c5a81bf4d675f93efea"
+  "registryRevision": "5f7e45771d7a42b4ccd817ee6d82d4e7dfe85fbc30b2f3838ca099d5319bb9fc"
 }

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 /**
- * A Chinese value written into a PDF form field is verified to be VISIBLE.
+ * A Chinese value written into a PDF form field is DRAWN correctly by every reader.
  *
- * Acceptance 2026-09-17 DEF-02: pypdf writes the value correctly into /V, and
- * /NeedAppearances asks the reader to regenerate the field's appearance with a
- * font that can draw it. That is a hint, not a guarantee — a reader that ignores
- * it draws nothing. Reading /V back cannot tell the difference, so the output is
- * rasterised and the field boxes are checked for actual ink.
- * --flatten-cjk then repairs a blank field by drawing the value onto the page.
+ * pypdf builds each field's appearance with the form's own font (Helvetica,
+ * WinAnsi): a Chinese value became a literal "??????" in the appearance stream.
+ * /NeedAppearances only asks the reader to redraw — pdfium and macOS Preview
+ * did, our pdf.js preview, Firefox and printing did not (2026-09-29 field case;
+ * earlier: acceptance 2026-09-17 DEF-02). The fill now writes each CJK field's
+ * appearance itself with an embedded CJK font subset, as Acrobat and pdf-lib
+ * do, and verifies by TEXT: pdfium flattens the appearances the way a reader
+ * draws them and the field box must read back as the value — the old pixel
+ * check passed "??????" because a question mark is ink.
  * [gate: pdf-form-cjk-visible]
  * Run: node scripts/test-pdf-form-cjk-render.mjs
  */
@@ -29,8 +32,9 @@ function check(name, fn) { fn(); checks += 1; console.log(`ok - ${name}`); }
 
 check("verification is wired into the fill, and the repair is opt-in", () => {
   const source = fs.readFileSync(SCRIPT, "utf8");
-  assert.match(source, /def _verify_cjk_render/);
-  assert.match(source, /def _rect_has_ink/, "the check rasterises, it does not read /V back");
+  assert.match(source, /def _embed_cjk_appearances/, "the fill writes CJK appearances itself");
+  assert.match(source, /def _verify_text_render/, "the check reads what a reader draws as text");
+  assert.match(source, /FPDFPage_Flatten/);
   assert.match(source, /pypdfium2/);
   assert.match(source, /flatten_cjk=False/, "drawing onto the page is opt-in — a compliant reader would draw it twice");
   assert.match(source, /--flatten-cjk/);
@@ -85,25 +89,73 @@ if (!python) {
       assert.deepEqual(result.provided, ["city", "name"]);
     });
 
-    check("the field case: a Chinese value that renders blank is REPORTED, field by field", () => {
-      const result = run({ name: "星河科技", city: "上海" }, path.join(tmp, "cjk.pdf"));
+    // Independent of the script's own report: flatten with pdfium and read each
+    // field box back, and look inside the appearance streams for "?".
+    const probe = path.join(tmp, "probe.py");
+    fs.writeFileSync(probe, [
+      "import sys, json",
+      "import pypdfium2 as pdfium, pypdfium2.raw as raw",
+      "from pypdf import PdfReader",
+      "src = sys.argv[1]",
+      "r = PdfReader(src)",
+      "acro = r.trailer['/Root']['/AcroForm'].get_object()",
+      "boxes, aps = {}, {}",
+      "for a in r.pages[0]['/Annots']:",
+      "    a = a.get_object(); name = str(a['/T']); boxes[name] = [float(v) for v in a['/Rect']]",
+      "    n = a['/AP']['/N'].get_object(); aps[name] = n.get_data().decode('latin-1')",
+      "doc = pdfium.PdfDocument(src); page = doc[0]",
+      "raw.FPDFPage_Flatten(page.raw, raw.FLAT_NORMALDISPLAY); page.close()",
+      "tp = doc[0].get_textpage()",
+      "seen = {k: tp.get_text_bounded(left=b[0], bottom=b[1], right=b[2], top=b[3]).strip() for k, b in boxes.items()}",
+      "print(json.dumps({'need': bool(getattr(acro.get('/NeedAppearances'), 'value', False)), 'seen': seen, 'qmarks': {k: ('(??' in v) for k, v in aps.items()}}, ensure_ascii=False))",
+    ].join("\n"));
+    const inspectPdf = (file) => JSON.parse(execFileSync(python, [probe, file], { encoding: "utf8", timeout: 120_000, env }));
+
+    check("the field case: every reader draws the Chinese values, verified as text", () => {
+      const output = path.join(tmp, "cjk.pdf");
+      const result = run({ name: "星河科技（上海）有限公司", city: "马来西亚" }, output);
       assert.equal(result.ok, true);
       assert.equal(result.cjk, true);
-      assert.ok(result.cjkRender, "a CJK fill is verified, not assumed");
-      assert.equal(result.cjkRender.checked, 2, "every CJK field is checked");
-      assert.equal(result.cjkRender.verified, false, "the defect is detected rather than shipped silently");
-      assert.equal(result.cjkRender.blankFields.length, 2);
-      assert.deepEqual(result.cjkRender.blankFields.map((item) => item.field).sort(), ["city", "name"]);
-      assert.match(result.cjkRender.warning, /NeedAppearances/);
+      assert.equal(result.cjkRender.method, "flattened-text", "verified by what a reader draws, not by ink");
+      assert.equal(result.cjkRender.verified, true);
+      assert.equal(result.cjkRender.embeddedAppearances, 2, "both appearances written with an embedded CJK font");
+      const seen = inspectPdf(output);
+      assert.deepEqual(seen.seen, { name: "星河科技（上海）有限公司", city: "马来西亚" }, "flattened, each field reads back as its value");
+      assert.deepEqual(seen.qmarks, { name: false, city: false }, "no \"??????\" left in any appearance stream");
+      assert.equal(seen.need, false, "the appearances are authoritative: no reader is asked to redraw");
+      assert.equal(result.cjkRender.flattened, undefined, "nothing is drawn onto the page itself");
     });
 
-    check("--flatten-cjk repairs it, and the same rasteriser confirms the values are now visible", () => {
-      const output = path.join(tmp, "flat.pdf");
-      const result = run({ name: "星河科技", city: "上海" }, output, ["--flatten-cjk"]);
-      assert.equal(result.cjkRender.flattened, 2, "both values were drawn");
-      assert.equal(result.cjkRender.verified, true, "verified by re-rasterising, not by assertion");
-      assert.deepEqual(result.cjkRender.blankFields, []);
-      assert.ok(fs.statSync(output).size > 0);
+    // The document renderer the agent verifies with draws form fields: without
+    // pdfium's form environment every filled field rendered blank, so a correct
+    // form looked empty and a model "fixed" it by drawing values onto the page
+    // and dropping the form (2026-09-29).
+    check("the verification renderer draws filled form fields", () => {
+      const out = path.join(tmp, "render");
+      execFileSync(python, [path.join(ROOT, "resources/runtime-scripts/render_document.py"), path.join(tmp, "cjk.pdf"), out, "1"], { timeout: 180_000, env });
+      const ink = path.join(tmp, "ink.py");
+      fs.writeFileSync(ink, [
+        "import sys", "from PIL import Image",
+        "im = Image.open(sys.argv[1]).convert('L'); h = im.height",
+        "box = im.crop((62, int(h - 720), 298, int(h - 702)))",
+        "print(sum(1 for p in box.getdata() if p < 120))",
+      ].join("\n"));
+      const dark = Number(execFileSync(python, [ink, path.join(out, "page-1.png")], { encoding: "utf8", env }).trim());
+      assert.ok(dark > 20, `the "name" field's text is visible in the verification render (${dark} dark pixels)`);
+    });
+
+    check("no usable CJK font: the viewer is asked to redraw, and the fill says it is unverified", () => {
+      const output = path.join(tmp, "nofont.pdf");
+      const dataPath = path.join(tmp, "nofont.json");
+      fs.writeFileSync(dataPath, JSON.stringify({ name: "星河科技", city: "上海" }));
+      const result = JSON.parse(execFileSync(python, [SCRIPT, "fill", form, dataPath, output], {
+        encoding: "utf8", timeout: 180_000,
+        env: { ...env, LILY_RUNTIME_SCRIPTS: path.join(tmp, "no-helpers"), LILY_CJK_FONT_PATH: path.join(tmp, "missing.ttf") },
+      }));
+      assert.equal(result.ok, true, "the values are still written");
+      assert.deepEqual(result.cjkRender.leftToViewer, ["city", "name"]);
+      assert.equal(result.cjkRender.verified, false, "an appearance it could not write is not claimed");
+      assert.equal(inspectPdf(output).need, true, "the old hint stays for readers that redraw");
     });
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

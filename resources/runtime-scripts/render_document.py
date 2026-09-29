@@ -72,9 +72,17 @@ def _render_pdf(pdf, out_dir, scale):
 
     images = []
     doc = pdfium.PdfDocument(pdf)
+    # Draw form fields the way a viewer does. Without the form environment
+    # pdfium leaves every filled AcroForm field blank, so a correctly filled
+    # form looked empty to the verifier — and a model "fixed" it by drawing the
+    # values onto the page and dropping the form (2026-09-29).
+    try:
+        doc.init_forms()
+    except Exception:  # noqa: BLE001 — a document without forms renders as before
+        pass
     try:
         for index in range(len(doc)):
-            pil = doc[index].render(scale=scale).to_pil().convert("RGB")
+            pil = doc[index].render(scale=scale, may_draw_forms=True).to_pil().convert("RGB")
             dest = os.path.join(out_dir, f"page-{index + 1}.png")
             pil.save(dest)
             images.append(dest)

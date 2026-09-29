@@ -1192,9 +1192,9 @@
     },
     {
       "id": "pdf-form-cjk-visible",
-      "protects": "A Chinese value written into a PDF form is verified visible by rasterising the field, not assumed from /NeedAppearances.",
-      "baseline": "A Latin-only fill runs nothing extra and is byte-for-byte what it was; flattening is opt-in.",
-      "failureFallback": "When the rasteriser is unavailable the result says RASTERIZER_UNAVAILABLE rather than claiming verification; a failed probe reports unknown, never a false blank.",
+      "protects": "A Chinese value written into a PDF form is drawn correctly by every reader: the fill writes the field's appearance with an embedded CJK font subset and verifies the flattened field box reads back as the value; the verification renderer draws form fields.",
+      "baseline": "2026-09-29: pypdf's Helvetica appearance held a literal '??????' (our preview, Firefox, printing drew it; pdfium and macOS Preview redrew), the ink check passed it, and the renderer drew filled fields blank. A Latin-only fill is unchanged.",
+      "failureFallback": "No usable CJK font, or a value the font cannot fully draw: the field is left to the viewer with /NeedAppearances on and listed in leftToViewer, verified false; when pdfium is unavailable the old pixel check runs and says so. Mutation-verified: no embedding, ink-only verification, still asking viewers to redraw and a renderer without forms each fail by name.",
       "tests": [
         "scripts/test-pdf-form-cjk-render.mjs",
         "scripts/test-pdf-form.mjs"

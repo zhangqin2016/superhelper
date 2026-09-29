@@ -30,23 +30,29 @@ A form's default appearance font (usually Helvetica) cannot draw Chinese glyphs,
 so a Chinese value can render as boxes (tofu 遮挡) or as nothing at all. To
 prevent this:
 
-- The fill script sets `/NeedAppearances = true` on the output so the viewer
-  regenerates field appearances with its own CJK-capable font. This is set AFTER
-  the values are written (the fill step resets the flag) and is fail-open and
-  harmless for ASCII-only fills. The `fill` result includes `"cjk": true` when a
-  CJK value was written.
-- The script now DOES this check itself: after writing, it rasterises the output
-  and looks for ink inside each CJK field's box. The result carries
-  `cjkRender: {checked, verified, blankFields[], warning}`. `verified: false`
-  means a reader that ignores `/NeedAppearances` shows nothing there — that is the
-  defect, reported per field with its name and rectangle, not a guess.
-- To repair it, re-run `fill` with `--flatten-cjk`. The value is drawn onto the
-  page itself with the platform's verified CJK font, and the check is re-run to
-  confirm it is now visible. It is opt-in because a reader that DOES honour
-  `/NeedAppearances` would then draw the value twice.
-- Still look at the rendered PDF before delivering. The ink check proves
-  something was drawn in the box; only your eyes prove it is the right text, not
-  clipped, and not overlapping the form's own labels.
+- The fill script writes each CJK field's appearance ITSELF, with the platform's
+  verified CJK font embedded as a subset — the way Acrobat and pdf-lib do. The
+  field keeps its value, background, border and stays editable; every reader
+  (our preview, Chrome, Firefox, macOS Preview, printing) draws the same text.
+  `/NeedAppearances` is then off: nothing is left for a viewer to redraw. The
+  `fill` result includes `"cjk": true` when a CJK value was written.
+- It verifies what a reader actually draws: pdfium flattens the appearances onto
+  the page and each CJK field box is read back as TEXT, which must equal the
+  value. The result carries `cjkRender: {checked, verified, method:
+  "flattened-text", embeddedAppearances, blankFields[]}`; a mismatch is listed per
+  field with what was rendered.
+- Only when no usable CJK font exists (or a value has characters the font cannot
+  draw) is a field left to the viewer: it is listed in `cjkRender.leftToViewer`,
+  `/NeedAppearances` stays on, and `verified` is false. Say so to the user; do
+  not claim the form is correct.
+- NEVER hand-roll a repair: do not draw values onto the page with your own
+  script, and do not rewrite the PDF with `PdfWriter().add_page(...)` — that
+  drops the whole AcroForm, and the form's own "?" appearances then sit on TOP of
+  anything drawn underneath (2026-09-29 field case). Re-run this script instead;
+  `--flatten-cjk` remains only for a field listed in `blankFields`.
+- The document renderer draws form fields (pdfium form environment), so a
+  rendered page shows the filled values. Still look at it before delivering: it
+  proves the right text is drawn, not clipped, not overlapping the labels.
 - Do NOT build a fillable form with Chinese default values using reportlab's
   `canvas.acroForm`. Its PDF string escape is a 0-255 lookup table, so any CJK
   character raises `KeyError`. Fill an EXISTING form with this script, or produce
