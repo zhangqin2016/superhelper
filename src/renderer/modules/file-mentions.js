@@ -1,11 +1,14 @@
 /**
  * Turn inline file mentions in an answer (e.g. `output/chart.svg`) into a small
- * affordance: previewable files open in the OS default app (quick preview),
- * everything else reveals in its folder. Relative mentions are opened only when
+ * affordance that opens the file the same way a result card does (openFile):
+ * HTML, Markdown, PDF and images in the preview pane, other documents in their
+ * system app; archives and binaries reveal in their folder. Relative mentions are opened only when
  * they match a declared result block/artifact, so the renderer never guesses a
  * workspace base directory for arbitrary text.
  */
-import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
+import { revealLocalFileInFolder } from "./file-reveal.js";
+import { openFile, paneKindForPath } from "./preview-card.js";
+import { iconButton } from "./ui-icons.js";
 import { t } from "../i18n/index.js";
 import { EXTENSIONS as FILE_EXTENSIONS, bare } from "../../shared/file-kinds.mjs";
 
@@ -81,11 +84,6 @@ function actionPathForMention(pathText, pathMap) {
   return pathMap.get(raw) || "";
 }
 
-const ICON_PREVIEW =
-  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
-const ICON_FOLDER =
-  '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1z"/></svg>';
-
 /** Append a small preview/reveal button after each inline file mention in `root`. */
 export function enhanceFileMentions(root, sessionId = "", blocks = []) {
   if (!root) return;
@@ -97,19 +95,17 @@ export function enhanceFileMentions(root, sessionId = "", blocks = []) {
     const actionPath = actionPathForMention(info.path, pathMap);
     if (!actionPath) continue;
     code.dataset.fileAction = "1";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "file-mention-action";
-    btn.title = info.previewable ? t("file.preview") : t("file.reveal");
-    btn.innerHTML = info.previewable ? ICON_PREVIEW : ICON_FOLDER;
-    btn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (info.previewable) {
-        void openLocalFile(actionPath, sessionId);
-      } else {
-        void revealLocalFileInFolder(actionPath, sessionId);
-      }
+    const kind = info.previewable ? paneKindForPath(actionPath) : "";
+    const [icon, label] = kind
+      ? ["openInPane", t("preview.openInPane")]
+      : info.previewable ? ["openExternal", t("file.open")] : ["reveal", t("file.reveal")];
+    const btn = iconButton("file-mention-action", icon, label, {
+      onClick: (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (info.previewable) openFile({ path: actionPath, title: code.textContent.trim(), kind, sessionId });
+        else void revealLocalFileInFolder(actionPath, sessionId);
+      },
     });
     code.insertAdjacentElement("afterend", btn);
   }

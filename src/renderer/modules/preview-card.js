@@ -10,6 +10,7 @@ import { openLocalFile, revealLocalFileInFolder } from "./file-reveal.js";
 import { tryOpenInPreviewPane } from "./preview-pane.js";
 import { artifactDisplayName, artifactSourceUrl, bytesText } from "./turn-renderer-block-model.js";
 import { iconButton } from "./ui-icons.js";
+import { extensionOf, isBrowserImage } from "../../shared/file-kinds.mjs";
 
 function tr(key, fallback) {
   const value = t(key);
@@ -25,6 +26,25 @@ export function revealButton(block = {}) {
 }
 
 const KIND_LABEL = { html: "HTML", markdown: "Markdown", pdf: "PDF" };
+
+const PANE_KIND_BY_EXT = { ".html": "html", ".htm": "html", ".md": "markdown", ".markdown": "markdown", ".pdf": "pdf" };
+
+/** The preview-pane kind that reads this file ("" when the pane cannot). */
+export function paneKindForPath(filePath = "") {
+  const ext = extensionOf(filePath);
+  return PANE_KIND_BY_EXT[ext] || (isBrowserImage(ext) ? "image" : "");
+}
+
+/**
+ * Open a file the one way the app does, wherever it is named (a result card,
+ * a path in the answer): readable kinds in the preview pane beside the chat,
+ * anything else — or any window without a pane — in its system app.
+ */
+export function openFile({ path = "", title = "", kind = paneKindForPath(path), block = null, sessionId = "" } = {}) {
+  const src = kind === "image" ? artifactSourceUrl(block || { path }) : "";
+  if (kind && tryOpenInPreviewPane({ kind, path, src, title: title || path, ...(block ? { block } : {}) })) return;
+  if (path) void openLocalFile(path, sessionId);
+}
 
 function extensionLabel(block = {}) {
   const ext = String(block.ext || String(block.path || block.fileName || "").match(/\.([^./\\]+)$/)?.[1] || "")
@@ -43,11 +63,7 @@ function extensionLabel(block = {}) {
 export function renderFileCard(block = {}, kind = "") {
   const name = artifactDisplayName(block, tr("artifact.untitled", "Artifact"));
   const canPreview = Boolean(kind) && Boolean(block.path || block.url || block.html || block.text || block.data);
-  const open = () => {
-    const src = kind === "image" ? artifactSourceUrl(block) : "";
-    if (tryOpenInPreviewPane({ kind, path: block.path || block.url || "", src, title: name, block })) return;
-    if (block.path) void openLocalFile(block.path);
-  };
+  const open = () => openFile({ path: block.path || block.url || "", title: name, kind, block });
 
   const figure = document.createElement("figure");
   figure.className = `assistant-renderer-block assistant-renderer-artifact is-file is-compact${kind ? " is-previewable" : ""}`;

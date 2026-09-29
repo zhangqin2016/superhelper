@@ -582,6 +582,8 @@
   color: var(--text-primary);
 }
 
+.file-mention-action svg { width: 13px; height: 13px; }
+
 .assistant-turn-narrative.markdown-body pre,
 .assistant-turn-final.markdown-body pre {
   overflow: auto;

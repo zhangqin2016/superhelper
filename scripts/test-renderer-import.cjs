@@ -2226,13 +2226,45 @@ app.whenReady().then(async () => {
         if (!button) throw new Error("relative file mention with artifact mapping should render a preview action: " + html);
         button.click();
         await new Promise((resolve) => setTimeout(resolve, 30));
+        // A readable file named in the answer opens in the preview pane, the
+        // same way its result card does — at the artifact's absolute path.
+        const pane = await import("./modules/preview-pane.js");
+        const state = pane.previewPaneState();
+        const img = document.querySelector("#previewPane .preview-pane-image img");
+        if (!state.open || !state.tabs.includes("image:/tmp/lily-renderer-file-mention.svg")) {
+          throw new Error("an image mention should open in the preview pane at the artifact path: " + JSON.stringify(state));
+        }
+        if (!img || !String(img.getAttribute("src") || "").startsWith("app-file://media/")) {
+          throw new Error("the pane shows the image through app-file://: " + img?.getAttribute("src"));
+        }
+        if (!button.querySelector("svg") || button.textContent.trim() || !button.dataset.tip) {
+          throw new Error("the mention action is an icon with its label as tooltip");
+        }
+        pane.closePreviewPane();
         article.remove();
+        // A document the pane cannot read still opens in its system app.
+        const { enhanceFileMentions } = await import("./modules/file-mentions.js");
+        const docHost = document.createElement("div");
+        docHost.innerHTML = "<p>报告：<code>/tmp/lily-renderer-report.docx</code></p>";
+        document.body.appendChild(docHost);
+        enhanceFileMentions(docHost, "session_doc_mention");
+        const docButton = docHost.querySelector(".file-mention-action");
+        if (!docButton || !docButton.dataset.tip || docButton.dataset.tip === button.dataset.tip) {
+          throw new Error("a document mention offers open (not open-on-the-right): " + docButton?.dataset.tip);
+        }
+        docButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        if (pane.previewPaneState().open) throw new Error("a docx mention must not open the preview pane");
+        docHost.remove();
         return "file-mention-preview-path-regression: ok";
       }
     )()`);
     console.log(fileMentionPreviewPathResult);
-    if (!capturedOpenPaths.includes(":/tmp/lily-renderer-file-mention.svg")) {
-      throw new Error("file mention preview should open the artifact absolute path, got: " + JSON.stringify(capturedOpenPaths));
+    if (capturedOpenPaths.includes(":/tmp/lily-renderer-file-mention.svg")) {
+      throw new Error("a pane-readable mention must not also open the system app: " + JSON.stringify(capturedOpenPaths));
+    }
+    if (!capturedOpenPaths.some((entry) => entry.endsWith(":/tmp/lily-renderer-report.docx"))) {
+      throw new Error("a document mention should open in its system app, got: " + JSON.stringify(capturedOpenPaths));
     }
     const multiRendererResult = await win.webContents.executeJavaScript(`(
       async () => {
