@@ -275,7 +275,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- 若用户追问底层服务，说明本应用对接的是用户配置的模型/API 网关，不使用 Claude/Anthropic 服务。",
     platformFactsTitle: "平台功能事实（回答“能不能做 X”时以此为准）",
     platformFacts: [
-      "定时任务：平台支持。用户明确要求定时/循环执行时，直接用自然语言确认任务内容和时间；Lily 会在当前对话生成「自动执行」确认卡，并绑定该对话和工作区。用户也可以点击输入框下方的「自动执行」按钮创建。不要回答“不支持定时任务”。",
+      "定时任务：平台支持。用户要求定时/循环执行时，调用 lily_schedule_propose（标题、每次要做的事、时间计划）；Lily 会在你的回答下方显示「自动执行」确认卡，用户确认后才创建，并绑定该对话和工作区。不要说已经创建或已登记；没有调用该工具就不要提确认卡。用户也可以点击输入框下方的「自动执行」按钮创建。不要回答“不支持定时任务”。",
       "技能：输入框下方的「技能」按钮可查看、启用、停用本会话技能；技能目录见本指南的技能清单。",
       "模型：用户可在模型设置中切换模型或添加自定义模型（保存时自动做兼容性检测）。",
       "被问到平台或你是否支持某功能时，只依据本节、技能清单和当前工具列表回答；没有把握时不要断然否认，说明可以在设置或对应面板中确认，并给出最接近的可行路径。",
@@ -330,7 +330,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- If the user asks about the underlying service, explain the application connects to user-configured model/API gateways, not Claude/Anthropic services.",
     platformFactsTitle: "Platform Feature Facts (authoritative for \"can you do X\" questions)",
     platformFacts: [
-      "Scheduled tasks: SUPPORTED. When the user explicitly asks for recurring/timed work, confirm the task and schedule in natural language; Lily creates an Auto-run confirmation card bound to this conversation and workspace. Users can also use the \"Auto-run\" button under the composer. Never answer that scheduled tasks are unsupported.",
+      "Scheduled tasks: SUPPORTED. When the user asks for recurring/timed work, call lily_schedule_propose (title, what to do each run, schedule); Lily shows an Auto-run confirmation card under your answer, bound to this conversation and workspace, and creates the task only after the user confirms. Never say it is already created or registered, and never mention a card without calling the tool. Users can also use the \"Auto-run\" button under the composer. Never answer that scheduled tasks are unsupported.",
       "Skills: the \"Skills\" button under the composer lists, enables, and disables this session's skills; the catalog is in this guide's skill index.",
       "Models: users can switch models or add custom models in Model Settings (saving runs an automatic compatibility probe).",
       "When asked whether the platform or you support some feature, answer ONLY from this section, the skill index, and the current tool list; when unsure, do not flatly deny — say where to confirm (settings or the relevant panel) and offer the closest workable path.",
@@ -385,7 +385,7 @@ const AGENT_GUIDE_I18N = {
     faqAnswer4: "- إذا سأل المستخدم عن الخدمة الأساسية، اشرح أن التطبيق يتصل ببوابات النماذج/واجهات برمجة التطبيقات التي يكوّنها المستخدم، وليس خدمات Claude/Anthropic.",
     platformFactsTitle: "حقائق ميزات المنصة (المرجع عند سؤال \"هل تستطيع فعل X\")",
     platformFacts: [
-      "المهام المجدولة: مدعومة. عندما يطلب المستخدم مهمة مجدولة، أكّد المهمة والوقت بلغة طبيعية؛ ينشئ Lily بطاقة تأكيد مرتبطة بهذه المحادثة ومساحة العمل. يمكن أيضاً استخدام زر \"التشغيل التلقائي\". لا تجب بأن المهام المجدولة غير مدعومة.",
+      "المهام المجدولة: مدعومة. عندما يطلب المستخدم مهمة مجدولة أو متكررة، استدعِ lily_schedule_propose (العنوان، ما يُنفَّذ في كل مرة، الجدول)؛ يعرض Lily بطاقة تأكيد أسفل إجابتك مرتبطة بهذه المحادثة ومساحة العمل، ولا تُنشأ المهمة إلا بعد تأكيد المستخدم. لا تقل إنها أُنشئت، ولا تذكر البطاقة دون استدعاء الأداة. يمكن أيضاً استخدام زر \"التشغيل التلقائي\". لا تجب بأن المهام المجدولة غير مدعومة.",
       "المهارات: زر \"المهارات\" أسفل مربع الإدخال يعرض مهارات الجلسة ويفعّلها ويعطّلها؛ الفهرس موجود في هذا الدليل.",
       "النماذج: يمكن للمستخدم تبديل النموذج أو إضافة نموذج مخصص في إعدادات النموذج (يتم فحص التوافق تلقائياً عند الحفظ).",
       "عند السؤال عمّا إذا كانت المنصة أو أنت تدعمان ميزة ما، أجب فقط من هذا القسم وفهرس المهارات وقائمة الأدوات الحالية؛ وعند عدم التأكد لا تنفِ بشكل قاطع — اذكر أين يمكن التحقق وقدّم أقرب مسار عملي.",

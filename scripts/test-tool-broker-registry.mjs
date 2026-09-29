@@ -27,6 +27,8 @@ const PLATFORM_TOOLS = [
   "lily_intent_contract_commit",
   "lily_legal_article",
   "lily_legal_search",
+  // Proposes a schedule for the user to confirm; creates nothing itself.
+  "lily_schedule_propose",
   "runtime_pack_install",
   "runtime_pack_list",
 ];

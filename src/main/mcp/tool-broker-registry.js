@@ -13,6 +13,7 @@ const jsonFile = require("../json-file");
 const path = require("node:path");
 const { z } = require("zod");
 const { buildIntentContractToolDefinition } = require("./intent-contract-tool-definition");
+const { buildScheduleProposalToolDefinition } = require("./schedule-proposal-tool-definition");
 const { buildSystemTools } = require("./web-system-mcp");
 const { buildCharacterDraftTool } = require("../character-worlds/agent-draft-tools");
 const {
@@ -153,6 +154,10 @@ function describeToolAvailability(context, tool) {
 
 const STATIC_TOOL_DEFINITIONS = [
   buildIntentContractToolDefinition({
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+  }),
+  buildScheduleProposalToolDefinition({
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
   }),

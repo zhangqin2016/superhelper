@@ -24,13 +24,11 @@ import {
   COMMITTED_RENDER_CHUNK,
   committedMessagesForRender,
   copyActionText,
-  formatScheduledDraftDateTime,
   isCommittedRenderCurrent,
   isCurrentRetryTarget,
   liveInsertAnchorTurnId,
   mergeSwitchNotices,
   rewindActionTarget,
-  scheduledDraftPreviewModel,
   shouldShowRetryAction,
   shouldSkipCommittedAssistantForLiveTurn,
 } from "./message-committed-render-model.js";
@@ -74,10 +72,7 @@ import { confirmDialog } from "./confirm-dialog.js";
 import { renderLiveTaskStrip } from "./live-task-strip.js";
 import { showToast } from "./toast.js";
 import { renderAttachmentPreviews } from "./attachment-preview-card.js";
-import {
-  createScheduledDraftFromMessage,
-  rejectScheduledDraftFromMessage,
-} from "./scheduled-draft-actions.js";
+import { buildScheduledDraftCard } from "./scheduled-draft-card.js";
 
 const sessionViews = new Map();
 const renderedMessageKeys = new Map();
@@ -455,7 +450,10 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
     appendAgentBindingNotice(ensurePanel(sessionId).listEl, message, beforeNode, key);
     return;
   }
-  if (message?.meta?.scheduledDraft) {
+  // A pre-engine schedule card stands in for the answer; one the agent
+  // proposed (lily_schedule_propose) sits under the answer it came with.
+  const agentDraft = message?.meta?.scheduledDraft?.source === "agent_tool";
+  if (message?.meta?.scheduledDraft && !agentDraft) {
     appendScheduledDraftArticle(sessionId, message, beforeNode, key);
     return;
   }
@@ -466,6 +464,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed), sessionId);
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
   decorateAgentAnswerLabel(article, message); // only when record.meta.agent says an agent answered
+  if (agentDraft) article.appendChild(buildScheduledDraftCard({ sessionId, message, syncCommittedMessages, renderConversation }));
   appendArticleActions(article, sessionId, message);
   // One turn, one article: a committed card replaces whatever already stands
   // for this turn, in place, instead of being appended beside it.
@@ -586,80 +585,16 @@ function buildRetryAction(sessionId, message) {
 
 function appendScheduledDraftArticle(sessionId, message, beforeNode = null, key = "") {
   const v = ensurePanel(sessionId);
-  const preview = scheduledDraftPreviewModel(message);
-
   const article = document.createElement("article");
   article.className = "assistant-turn-article scheduled-draft-article";
-  article.dataset.messageId = preview.messageId;
+  article.dataset.messageId = message?.id || "";
   // Every article that stands for a turn declares it, so one rule covers them
   // all instead of each producer being named somewhere as a special case.
   const draftTurnId = message?.turnId || message?.record?.turnId || "";
   if (draftTurnId) article.dataset.turnId = draftTurnId;
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article
-
-  const shell = document.createElement("div");
-  shell.className = "scheduled-draft-chat-card";
-
-  const title = document.createElement("div");
-  title.className = "scheduled-draft-title";
-  title.textContent = preview.created
-    ? t("scheduled.cardCreatedTitle")
-    : preview.rejected
-      ? t("scheduled.cardRejectedTitle")
-      : t("scheduled.cardTitle");
-  shell.appendChild(title);
-
-  const rows = document.createElement("div");
-  rows.className = "scheduled-draft-rows";
-  appendScheduledDraftRow(rows, t("scheduled.previewTitle"), preview.title || t("scheduled.untitled"));
-  appendScheduledDraftRow(rows, t("scheduled.previewSchedule"), preview.scheduleText);
-  appendScheduledDraftRow(rows, t("scheduled.previewNextRun"), formatScheduledDraftDateTime(preview.nextRunAt));
-  appendScheduledDraftRow(rows, t("scheduled.previewScope"), t("scheduled.previewScopeValue"));
-  shell.appendChild(rows);
-
-  const actions = document.createElement("div");
-  actions.className = "scheduled-draft-actions";
-
-  if (preview.created || preview.rejected) {
-    const pill = document.createElement("span");
-    pill.className = "scheduled-draft-pill";
-    pill.textContent = preview.created ? t("scheduled.created") : t("scheduled.cardRejected");
-    actions.appendChild(pill);
-  } else {
-    const create = document.createElement("button");
-    create.type = "button";
-    create.className = "button-primary";
-    create.textContent = t("scheduled.cardCreate");
-    create.addEventListener("click", () => void createScheduledDraftFromMessage({
-      sessionId, messageId: message.id, button: create, syncCommittedMessages, renderConversation,
-    }));
-    actions.appendChild(create);
-    const reject = document.createElement("button");
-    reject.type = "button";
-    reject.className = "button-secondary";
-    reject.disabled = preview.rejecting;
-    reject.textContent = preview.rejecting ? t("scheduled.cardRejecting") : t("scheduled.cardReject");
-    reject.addEventListener("click", () => void rejectScheduledDraftFromMessage({
-      sessionId, messageId: message.id, button: reject, syncCommittedMessages, renderConversation,
-    }));
-    actions.appendChild(reject);
-  }
-  shell.appendChild(actions);
-
-  article.appendChild(shell);
+  article.appendChild(buildScheduledDraftCard({ sessionId, message, syncCommittedMessages, renderConversation }));
   mountTurnArticle(v.listEl, article, { kind: "sealed", beforeNode });
-}
-
-function appendScheduledDraftRow(container, label, value) {
-  if (!value) return;
-  const row = document.createElement("div");
-  row.className = "scheduled-draft-row";
-  const key = document.createElement("span");
-  key.textContent = label;
-  const val = document.createElement("strong");
-  val.textContent = value;
-  row.append(key, val);
-  container.appendChild(row);
 }
 
 function ensureLiveArticle(sessionId, liveTurn) {

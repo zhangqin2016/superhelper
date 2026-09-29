@@ -105,8 +105,20 @@ function registerScheduledTaskHandlers(ctx) {
     const message = ctx.sessionManager.findMessage(scope.sessionId, messageId);
     const scheduledDraft = message?.meta?.scheduledDraft;
     const originalText = String(scheduledDraft?.originalText || "").trim();
-    if (!scheduledDraft?.draft || !originalText) return { ok: false, error: "DRAFT_NOT_FOUND" };
+    if (!scheduledDraft?.draft) return { ok: false, error: "DRAFT_NOT_FOUND" };
     if (scheduledDraft.status !== "pending") return { ok: false, error: "DRAFT_NOT_PENDING" };
+    // A card the agent proposed sits under an answer already given: declining it
+    // only declines the schedule. (A card from the pre-engine check replaced the
+    // answer, so declining it sends the message as an ordinary turn below.)
+    if (scheduledDraft.source === "agent_tool") {
+      ctx.sessionManager.updateMessageMeta(scope.sessionId, messageId, (meta) => ({
+        ...meta,
+        scheduledDraft: { ...(meta.scheduledDraft || scheduledDraft), status: "rejected", rejectedAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      }));
+      const page = ctx.sessionManager.getConversationPage(scope.sessionId, { limit: 80 });
+      return { ok: true, conversation: page.conversation };
+    }
+    if (!originalText) return { ok: false, error: "DRAFT_NOT_FOUND" };
 
     // Mark before awaiting the normal dispatch: duplicate renderer clicks must
     // never create two normal turns for one rejected schedule interpretation.

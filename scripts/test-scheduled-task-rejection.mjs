@@ -129,6 +129,18 @@ try {
   assert.deepEqual(second, { ok: false, error: "DRAFT_NOT_PENDING" });
   assert.equal(sent.length, 1, "a repeated reject click must not dispatch a duplicate normal turn");
 
+  // A card the agent proposed sits under an answer already given: declining it
+  // declines the schedule only — the request is not sent again.
+  messages.set("agent-draft", { id: "agent-draft", meta: { scheduledDraft: {
+    status: "pending", source: "agent_tool", originalText: "没五分钟查看小米汽车销量",
+    draft: { title: "小米汽车销量", prompt: "查看最新销量", scheduleText: "Every 5 minutes" },
+  } } });
+  const sentBefore = sent.length;
+  const declined = await reject(null, { sessionId: "session-1", messageId: "agent-draft" });
+  assert.equal(declined.ok, true);
+  assert.equal(sent.length, sentBefore, "declining an agent-proposed card must not re-run the answered request");
+  assert.equal(messages.get("agent-draft").meta.scheduledDraft.status, "rejected");
+
   console.log("scheduled-task-rejection: ok");
 } finally {
   Module._load = originalLoad;

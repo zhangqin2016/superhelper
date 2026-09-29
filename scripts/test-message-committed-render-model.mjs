@@ -340,8 +340,12 @@ assert.match(messageSource, /shouldShowRetryAction\(message\)/);
 assert.match(messageSource, /isCurrentRetryTarget\(committed,\s*message\)/);
 assert.match(messageSource, /rewindActionTarget\(message\)/);
 assert.match(messageSource, /copyActionText\(message\)/);
-assert.match(messageSource, /formatScheduledDraftDateTime\(/);
-assert.match(messageSource, /scheduledDraftPreviewModel\(message\)/);
+// The schedule card is its own module (scheduled-draft-card.js), shared by the
+// standalone card and the one under an agent's answer; it uses these helpers.
+const cardSource = readFileSync(new URL("../src/renderer/modules/scheduled-draft-card.js", import.meta.url), "utf8");
+assert.match(cardSource, /formatScheduledDraftDateTime\(/);
+assert.match(cardSource, /scheduledDraftPreviewModel\(message\)/);
+assert.match(messageSource, /buildScheduledDraftCard\(/);
 assert.doesNotMatch(messageSource, /function formatScheduleDateTime\s*\(/);
 assert.doesNotMatch(messageSource, /const isScheduledDraft = Boolean/);
 assert.doesNotMatch(messageSource, /function orderCommittedMessages\s*\(/);

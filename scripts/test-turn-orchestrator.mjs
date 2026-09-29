@@ -824,6 +824,38 @@ messages.length = 0;
   sent.length = 0;
   messages.length = 0;
 }
+
+// Field regression 2026-09-29: "没五分钟查看小米汽车销量" (每 typed as 没)
+// passed the pre-engine schedule check by, and the model — with no tool to act
+// — told the user a task was registered. With lily_schedule_propose the turn
+// ends with the confirmation card under the answer; nothing is created yet.
+{
+  const proposalTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "没五分钟查看最新的销量 小米汽车的", [], { skipPreflight: true, skipVision: true, skipDocument: true });
+  if (!proposalTurn.ok) throw new Error(`proposal turn should start: ${JSON.stringify(proposalTurn)}`);
+  const proposal = { ok: true, proposal: { title: "小米汽车销量", prompt: "查看小米汽车最新销量，有新数据时汇报", schedule: { type: "interval", every: 5, unit: "minute" } }, pendingUserConfirmation: true };
+  ctx.turnOrchestrator.ingest("s1", [
+    { type: "tool.started", payload: { id: "sched_1", name: "lily_tool_broker_lily_schedule_propose", input: {} } },
+    { type: "tool.done", payload: { id: "sched_1", status: "done", result: { content: JSON.stringify(proposal) } } },
+  ]);
+  runner.finish("最新销量如上；已为你生成定时任务确认卡，确认后生效。");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  const events = sent.flatMap((entry) => entry.payload?.events || []);
+  const terminal = events.find((event) => event.type === "turn.completed" && event.turnId === proposalTurn.turnId);
+  const draft = terminal?.payload?.record?.meta?.scheduledDraft || terminal?.payload?.scheduledDraft;
+  if (draft?.source !== "agent_tool" || draft.status !== "pending" || draft.draft?.schedule?.type !== "interval" || draft.draft.schedule.every !== 5) {
+    throw new Error(`an agent-proposed schedule must end the turn with a pending card: ${JSON.stringify(draft)}`);
+  }
+  if (!draft.draft.nextRunAt || draft.originalText !== "没五分钟查看最新的销量 小米汽车的") {
+    throw new Error(`the card carries its next run and the user's words: ${JSON.stringify(draft)}`);
+  }
+  const committed = messages.find((message) => message.role === "assistant" && message.turnId === proposalTurn.turnId);
+  if (committed?.meta?.scheduledDraft?.source !== "agent_tool" && committed?.record?.meta?.scheduledDraft?.source !== "agent_tool") {
+    throw new Error(`the card is committed with the answer: ${JSON.stringify(committed?.meta || committed)}`);
+  }
+  sent.length = 0;
+  messages.length = 0;
+}
 runner.sentPayloads.length = 0;
 
 const pdfCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取 PDF 表格并检查版面", [

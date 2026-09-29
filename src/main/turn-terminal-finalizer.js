@@ -307,6 +307,11 @@ function createTurnTerminalFinalizer(options = {}) {
     const evidenceSummary = state.evidenceLedger?.summary?.() || null;
     const verificationPlan = state.taskContract?.externalFactPolicy?.verificationPlan || null;
     let effectiveEvidenceSummary = evidenceSummary;
+    // The agent proposed a schedule (lily_schedule_propose): the turn ends with its confirmation card.
+    if (type === "turn.completed" && !payload.scheduledDraft) {
+      const proposed = require("./schedule-proposal").scheduledDraftFromTurnTools({ tools: state.tools?.values?.() || [], sessionId, projectId: ctx.sessionManager?.findById?.(sessionId)?.projectId || "", userText: finalizerUserText });
+      if (proposed) payload = { ...payload, scheduledDraft: proposed };
+    }
     let record = turnArchive?.buildRecord?.(state, type, { ...payload, assistant }) || null;
     if (type === "turn.completed") record = attachDraftReceipts({ record, ctx, sessionId, turnId: completedTurnId, evidence: state.requiredToolResults, log });
     if (record && state.handoffInContext === false) record.meta = { ...(record.meta || {}), handoffInContext: false };
