@@ -99,6 +99,9 @@ try {
   assert.match(finalizer, /visionInspections: require\("\.\/vision-inspection-receipt"\)\.turnVisionInspections\(state\)/, "the terminal gate is given this turn's ledger");
   const { turnVisionInspections } = require("../src/main/vision-inspection-receipt.js");
   assert.deepEqual(turnVisionInspections({}), [], "no turn start: nothing, never an error");
+  process.env.LILY_VISION_LEDGER = "0";
+  assert.deepEqual(turnVisionInspections({ startedAt: turnStart }), [], "switched off: printed receipts only");
+  delete process.env.LILY_VISION_LEDGER;
   console.log("test-vision-ledger-delivery: ok");
 } finally {
   server.close();

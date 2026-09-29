@@ -106,6 +106,23 @@ const LEGACY_SELF_CHECK_SIGNATURES = [
   ],
 ];
 
+/**
+ * OUR recovery prompts as written before the tag: the document delivery check
+ * ("文档交付续检"). Its answer is kept; only the question is hidden. Stored
+ * history showed the whole platform prompt as if the user had typed it
+ * (2026-09-30). Fragments, all required, as above.
+ */
+const LEGACY_RECOVERY_SIGNATURES = [
+  ["[系统文档交付续检] 这是对刚生成文件的一次内部续接", "待验文件："],
+  ["[system document delivery continuation] this is an internal continuation for files just created", "artifacts to verify:"],
+];
+
+/** A recovery prompt from before the tag (its answer is the deliverable and stays). */
+function isLegacyRecoveryPromptText(text) {
+  const normalized = normalizedPromptText(text);
+  return LEGACY_RECOVERY_SIGNATURES.some((fragments) => fragments.every((fragment) => normalized.includes(fragment)));
+}
+
 function normalizedPromptText(value) {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -152,7 +169,7 @@ function isSelfCheckPromptText(text) {
  * and a 1,746-step engine session was discarded for a summary.)
  */
 function isPlatformAuthoredPromptText(text) {
-  if (isMarkedInternalPrompt(text) || isSelfCheckPromptText(text)) return true;
+  if (isMarkedInternalPrompt(text) || isSelfCheckPromptText(text) || isLegacyRecoveryPromptText(text)) return true;
   try {
     return require("./turn-recovery-context").isInternalRecoveryPromptText(text);
   } catch (err) {
@@ -171,6 +188,8 @@ module.exports = {
   isSelfCheckPrompt,
   ENGINE_AUTO_CONTINUE_PROMPTS,
   LEGACY_SELF_CHECK_SIGNATURES,
+  LEGACY_RECOVERY_SIGNATURES,
+  isLegacyRecoveryPromptText,
   isSelfCheckPromptText,
   markInternalPrompt,
   stripInternalPromptMarker,

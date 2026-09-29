@@ -62,6 +62,7 @@ const OPTION_KEYS = new Set([
   "queueVisibility",
   "expectedArtifactPaths",
   "documentDeliveryRecovery",
+  "continuesTurnId",
   "externalCommand",
   "sourceTurnId",
   "requiredSuccessfulTools",

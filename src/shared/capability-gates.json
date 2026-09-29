@@ -2977,6 +2977,19 @@
         "scripts/test-vision-inspection-receipt.mjs",
         "scripts/test-render-document.mjs"
       ]
+    },
+    {
+      "id": "delivery-check-continues-answer",
+      "protects": "A document delivery check continues the answer it checks, as Claude Code's Stop hook keeps the model working in the same turn: the round carries continuesTurnId (dispatch, queue, recovery envelope, record, turn.started) and is drawn inside that answer with no second speaker, only a 交付检查 divider; its reply reports only what it checked; its prompt is tagged recovery where it is built (question hidden, answer kept). History reads a check recorded the old way (superseding the answer) as the continuation it was, and an answer a real retry replaced never comes back from any source.",
+      "baseline": "2026-09-30: the check superseded the answer (deliverables, sources, tables) with a QA report; on reload the turn projection brought the superseded answer back, so two 已完成 answers stood together, and the internal check prompt showed as the user's message. A superseded answer crashed the engine history read (null.role), and the fallback was spread without await, returning an empty history.",
+      "failureFallback": "LILY_DELIVERY_CHECK_CONTINUES=0 restores replacing the answer; LILY_VISION_LEDGER=0 restores printed receipts only. A legacy prompt is recognised only when all its fixed fragments appear, so a user quoting its first sentence keeps their message. An engine read failure falls back to the local store with a log line. Mutation-verified: no superseded filter, no legacy continuation, ownership without the null skip, record without the link, dispatch still superseding, frame without the class, live turn without the link, legacy prompt not hidden and CSS keeping the speaker each fail by name.",
+      "tests": [
+        "scripts/test-delivery-check-continues-answer.mjs",
+        "scripts/test-delivery-check-continuation-ui.cjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-internal-prompt-provenance.mjs",
+        "scripts/test-vision-ledger-delivery.mjs"
+      ]
     }
   ]
 }

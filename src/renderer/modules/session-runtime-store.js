@@ -410,6 +410,8 @@ export function applyRuntimeEvent(event, opts = {}) {
   if (event.type === "turn.started") {
     if (isTerminalTurn(runtime, event.turnId)) return;
     const live = ensureLiveTurn(runtime, event);
+    // A delivery check is drawn inside the answer it continues.
+    if (event.payload?.continuesTurnId) live.continuesTurnId = String(event.payload.continuesTurnId);
     applyTurnStarted(runtime, live);
     return;
   }

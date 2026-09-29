@@ -1413,6 +1413,7 @@ class TurnOrchestrator {
     this._emit(session.id, "turn.started", {
       text: rawUserText,
       queueLength: state.queue.length,
+      ...(state.continuesTurnId ? { continuesTurnId: state.continuesTurnId } : {}),
       engine: {
         textChanged: engineText !== rawUserText,
         preflightTextChanged: text !== rawUserText,

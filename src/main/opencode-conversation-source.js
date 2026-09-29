@@ -1,5 +1,6 @@
 "use strict";
 const { messageText } = require("./conversation-message-text");
+const { withDeliveryCheckContinuations, withoutSupersededTurns } = require("./conversation-supersession");
 
 const { extractUserOriginalRequest, hasLayeredEngineText } = require("./engine-message-layers");
 const { isInternalRecoveryPromptText } = require("./turn-recovery-context");
@@ -37,7 +38,7 @@ function timestampMs(value) {
 // salvage case); a message that is entirely scaffold, or an unstripable
 // mid-text dump, is dropped as before.
 const { analyzeStatusScaffold, stripStatusScaffoldPrefix } = require("./status-scaffold");
-const { isMarkedInternalPrompt, isSelfCheckPromptText } = require("./internal-prompt-marker");
+const { isLegacyRecoveryPromptText, isMarkedInternalPrompt, isSelfCheckPromptText } = require("./internal-prompt-marker");
 
 function stripInternalContinuationTurns(conversation = []) {
   const list = Array.isArray(conversation) ? conversation.slice() : [];
@@ -100,7 +101,7 @@ function timeDistanceMs(a, b) {
 function isInjectedUserPromptText(text) {
   const value = String(text || "");
   if (!value.trim()) return false;
-  if (isMarkedInternalPrompt(value)) return true;
+  if (isMarkedInternalPrompt(value) || isLegacyRecoveryPromptText(value)) return true;
   if (isInternalOnlyUserPromptText(value)) return true;
   if (hasLayeredEngineText(value)) return true;
   return INJECTED_USER_PROMPT_MARKERS.some((marker) => value.includes(marker));
@@ -475,13 +476,13 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
 
   const fallback = async () => {
     const page = await (ctx.sessionManager.getConversationPageAsync || ctx.sessionManager.getConversationPage).call(ctx.sessionManager, session.id, opts);
-    if (page && Array.isArray(page.conversation)) {
-      page.conversation = stripInternalContinuationTurns(page.conversation);
-    }
     const projections = projectedConversationFor(ctx, session.id, {
       ...opts,
       includeOpen: true,
     });
+    if (page && Array.isArray(page.conversation)) {
+      page.conversation = stripInternalContinuationTurns(withDeliveryCheckContinuations(page.conversation, projections));
+    }
     if (!projections.length) {
       return {
         ...page,
@@ -490,7 +491,7 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
     }
     return {
       ...page,
-      conversation: mergeProjectionConversation(page.conversation || [], projections),
+      conversation: withoutSupersededTurns(mergeProjectionConversation(page.conversation || [], projections), page.conversation),
       source: page.source || "lily",
       projectionSource: "lily-projection",
     };
@@ -538,18 +539,18 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
   try {
     const page = await runner.getConversationPage(opts);
     // Metadata for an official PAGE lives in the local tail (three pages of slack), never the whole session.
-    const localConversation = stripInternalContinuationTurns(await (ctx.sessionManager.getRecentConversationAsync || ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }));
+    const projections = projectedConversationFor(ctx, session.id, {
+      ...opts,
+      includeOpen: true,
+    });
+    const localConversation = stripInternalContinuationTurns(withDeliveryCheckContinuations(await (ctx.sessionManager.getRecentConversationAsync || ctx.sessionManager.getRecentConversation || ctx.sessionManager.getConversation).call(ctx.sessionManager, session.id, { limit: Math.max(150, 3 * (Number.isInteger(opts.limit) ? opts.limit : 50)) }), projections));
     const metadata = buildMetadataIndex(localConversation);
     const mergedOfficial = require("./opencode-history-ownership").bindHistoryOwnership(mergeUserDisplayText(stripInternalContinuationTurns(page.conversation || []), localConversation).map((message) => {
       const keys = [metadataKey(message), ...(message.record?.meta?.opencode?.mergedAssistantMessageIds || [])];
       return mergeMetadata(message, keys.map(key => metadata.get(key)).find(Boolean));
     }), localConversation, mergeMetadata);
-    const projections = projectedConversationFor(ctx, session.id, {
-      ...opts,
-      includeOpen: true,
-    });
     const withProjections = mergeProjectionConversation(require("./running-round-history").withoutRunningRound(mergedOfficial, ctx, session.id), projections);
-    const conversation = mergeProjectionConversation(withProjections, localConversation);
+    const conversation = withoutSupersededTurns(mergeProjectionConversation(withProjections, localConversation), localConversation);
     return {
       ...page,
       projectId: session.projectId,
@@ -557,8 +558,9 @@ async function getConversationPageFromSource(ctx, sessionId, opts = {}) {
       projectionSource: projections.length ? "lily-projection" : undefined,
     };
   } catch (err) {
+    console.warn("[session] official history read failed, using the local store:", session.id, err?.message || err);
     return {
-      ...fallback(),
+      ...await fallback(),
       source: "lily-fallback",
       warning: "OPENCODE_MESSAGES_UNAVAILABLE",
       detail: String(err?.message || err),

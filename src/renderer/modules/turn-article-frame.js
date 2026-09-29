@@ -13,6 +13,10 @@ export function syncTurnArticleFrame(article, liveTurn, viewModel, ctx = {}, {
   article.classList.toggle("is-sealed", viewModel.articleClassFlags.isSealed);
   article.classList.toggle("is-live", viewModel.articleClassFlags.isLive);
   article.classList.toggle("is-working", viewModel.articleClassFlags.isWorking);
+  // A delivery-check round continues the answer above it: one answer, no second speaker.
+  article.classList.toggle("is-continuation", Boolean(liveTurn.continuesTurnId));
+  if (liveTurn.continuesTurnId) article.dataset.continuationLabel = t("message.deliveryCheck");
+  else delete article.dataset.continuationLabel;
   // Distinguish terminal outcomes so each reads as a designed state (not just a
   // recolored line): failed (danger), stalled (warning), interrupted-by-you
   // (calm neutral — it was intentional). Styled in runtime-chat.css.

@@ -2,7 +2,10 @@
 
 // Engine assistant IDs and host turn IDs are different identities. The engine's
 // parent user message is the authoritative bridge, including empty aborts.
+// mergeMetadata drops (null) an answer the host superseded; skipping it here
+// kept a superseded answer from crashing the engine read (which then fell back).
 function bindHistoryOwnership(messages, localMessages, mergeMetadata) {
+  messages = messages.filter(Boolean);
   const turnsByUser = new Map();
   const assistantsByTurn = new Map();
   for (const message of localMessages) {
@@ -21,7 +24,7 @@ function bindHistoryOwnership(messages, localMessages, mergeMetadata) {
     const owned = { ...message, turnId };
     const local = assistantsByTurn.get(turnId);
     return local ? mergeMetadata(owned, local) : owned;
-  });
+  }).filter(Boolean);
 }
 
 module.exports = { bindHistoryOwnership };

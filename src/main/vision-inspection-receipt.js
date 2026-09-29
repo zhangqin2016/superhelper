@@ -91,6 +91,7 @@ function ledgerInspections({ since = 0, dir = defaultLedgerDir(), now = Date.now
 
 /** Pages lily-vision inspected during the turn `state` describes (the turn's gate reads these). */
 function turnVisionInspections(state = {}) {
+  if (process.env.LILY_VISION_LEDGER === "0") return []; // printed receipts only, as before 2026-09-30
   try {
     return ledgerInspections({ since: Number(state.startedAt) || 0 });
   } catch (err) {

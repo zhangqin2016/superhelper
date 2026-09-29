@@ -222,6 +222,8 @@ function createTurnRecoveryRuntime(options = {}) {
         ? prepareDocumentDeliveryRecovery(failure)
         : null;
       if (strategy.kind === "document_verify_retry" && !documentRecovery) return false;
+      // LILY_DELIVERY_CHECK_CONTINUES=0: the check replaces the answer, as before 2026-09-30.
+      const checkContinues = Boolean(documentRecovery) && process.env.LILY_DELIVERY_CHECK_CONTINUES !== "0";
       const ranTools = [...(state.tools?.values?.() || [])];
       // A leaked tool call on a turn that already had side effects used to get
       // no rescue at all: replay would re-run the edits, so the guard refused
@@ -322,6 +324,7 @@ function createTurnRecoveryRuntime(options = {}) {
           skipPreflight: !strategy.preflight,
           expectedArtifactPaths: documentRecovery?.paths || [],
           documentDeliveryRecovery: Boolean(documentRecovery),
+          continuesTurnId: checkContinues ? sourceTurnId || "" : "",
           sourceTurnId: replaySourceTurnId,
           sourceTaskCore: replaySource?.taskCore || null,
           recovery: {
@@ -339,7 +342,8 @@ function createTurnRecoveryRuntime(options = {}) {
         },
       );
       if (!retried?.ok) log.warn("turn rescue retry not sent: %s", retried?.error || "unknown");
-      if (retried?.ok && deferAssistantRemoval) {
+      // A delivery check continues the answer it checks; everything else replaces its answer.
+      if (retried?.ok && deferAssistantRemoval && !checkContinues) {
         let superseded = null;
         try {
           superseded = await transcriptStore?.supersedeAssistantTurn?.(

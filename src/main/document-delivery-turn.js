@@ -7,10 +7,16 @@ function normalizeExpectedArtifactPaths(values = []) {
   return [...new Set(values.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+// continuesTurnId: the answer a delivery-check round continues. It is shown
+// inside that answer, as Claude Code's Stop hook keeps the model working in the
+// same turn; it never replaces the answer (2026-09-30: replacing swapped the
+// deliverables, sources and tables for a short QA report).
 function documentDeliveryDispatchOptions(opts = {}) {
+  const documentDeliveryRecovery = Boolean(opts.documentDeliveryRecovery);
   return {
     expectedArtifactPaths: normalizeExpectedArtifactPaths(opts.expectedArtifactPaths),
-    documentDeliveryRecovery: Boolean(opts.documentDeliveryRecovery),
+    documentDeliveryRecovery,
+    continuesTurnId: documentDeliveryRecovery ? String(opts.continuesTurnId || "") : "",
   };
 }
 
@@ -18,11 +24,13 @@ function applyDocumentDeliveryTurnState(state, opts = {}) {
   const delivery = documentDeliveryDispatchOptions(opts);
   state.expectedArtifactPaths = delivery.expectedArtifactPaths;
   state.documentDeliveryRecovery = delivery.documentDeliveryRecovery;
+  state.continuesTurnId = delivery.continuesTurnId;
 }
 
 function clearDocumentDeliveryTurnState(state) {
   state.expectedArtifactPaths = [];
   state.documentDeliveryRecovery = false;
+  state.continuesTurnId = "";
 }
 
 function prepareDocumentDeliveryRecovery(failure = {}) {

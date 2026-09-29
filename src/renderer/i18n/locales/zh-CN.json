@@ -2270,6 +2270,7 @@
   "message.rewind": "回退到此",
   "message.rewindTitle": "回退对话？",
   "message.rewindConfirm": "将撤销这一轮及其之后的所有改动与对话：文件会回滚到这轮之前，历史也截断到这里。之后你可以重新提问。",
+  "message.deliveryCheck": "交付检查",
   "message.rewindFailed": "回退失败，请重试。",
   "message.rewindBusy": "请先等当前回合结束再回退。",
   "message.reEdit": "重新编辑",

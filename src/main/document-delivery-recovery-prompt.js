@@ -4,6 +4,7 @@
 // file by file, and only the steps that complete it.
 const { answerLanguage } = require("../shared/script.mjs");
 const { missingLabels } = require("./document-delivery-gate");
+const { INTERNAL_PROMPT_KINDS, markInternalPrompt, stripInternalPromptMarker } = require("./internal-prompt-marker");
 
 // Each numbered step of the continuation, by the check it completes. The round
 // asks only for what the gate found missing: 2026-09-30 it listed every file,
@@ -23,7 +24,7 @@ const RECOVERY_STEPS = {
     ],
     finish: [
       "如果渲染、依赖修复、图像读取通道全部失败后仍不能完成，才明确说明未完成的检查，并列出具体失败的本地依赖/工具；不要把 OCR 或文本抽取描述成视觉检查。",
-      "最终直接交付同一文件，说明检查了什么、修了什么；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
+      "这段回复会接在原回答下方显示：只写本次补做了哪些检查、发现和修改了什么，不要重复原回答的交付清单、结论或来源；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
     ],
   },
   en: {
@@ -39,13 +40,30 @@ const RECOVERY_STEPS = {
     ],
     finish: [
       "Only after rendering, dependency repair, and image-reading routes all fail should you report the check as incomplete; include the exact missing or broken local dependency/tool and do not describe OCR or text extraction as visual inspection.",
-      "Deliver the same artifact directly and state what was checked and fixed. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
+      "This reply is shown under the original answer: state only which checks you completed and what you found and fixed; do not repeat the original answer's deliverables, conclusions or sources. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
     ],
   },
 };
 const ALL_CHECKS = ["render", "structure", "formula_recalculation", "visual_inspection"];
+// The first line of every continuation prompt: how a history reader knows a
+// turn was a delivery check (older ones were recorded as replacing the answer).
+const OPENERS = {
+  zh: "[系统文档交付续检] 这是对刚生成文件的一次内部续接，不是让你从头重做原任务。",
+  en: "[system document delivery continuation] This is an internal continuation for files just created, not a request to redo the original task from scratch.",
+};
 
+function isDeliveryCheckPrompt(text = "") {
+  const value = stripInternalPromptMarker(text).trimStart();
+  return Object.values(OPENERS).some((opener) => value.startsWith(opener.slice(0, opener.indexOf("]") + 1)));
+}
+
+// Tagged as the platform's own recovery prompt: the question is hidden from the
+// conversation, the answer to it is kept.
 function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
+  return markInternalPrompt(recoveryPromptText(assessment, userText), INTERNAL_PROMPT_KINDS.RECOVERY);
+}
+
+function recoveryPromptText(assessment = null, userText = "") {
   const all = (assessment?.artifacts || []).filter((item) => item?.path);
   // Files the gate passed are not re-verified. An item without a verdict (an
   // older caller) keeps the full checklist, as before.
@@ -76,7 +94,7 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
   ].map((text, index) => `${index + 1}. ${text}`);
   if (zh) {
     return [
-      "[系统文档交付续检] 这是对刚生成文件的一次内部续接，不是让你从头重做原任务。",
+      OPENERS.zh,
       "请只补完下面列出的检查；其他文件已通过，不要重新验收。目标是尽可能完成用户任务，不要把可修复的依赖或工具选择问题当作终点。保留原内容和原路径，只在看到确定的质量问题时修改源文件。",
       "待补检查：",
       listed,
@@ -89,7 +107,7 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
     ].join("\n");
   }
   return [
-    "[system document delivery continuation] This is an internal continuation for files just created, not a request to redo the original task from scratch.",
+    OPENERS.en,
     "Complete only the checks listed below; the other files passed and are not re-verified. The goal is to keep completing the user's task; repair recoverable dependency or tool-selection problems before declaring a gap. Preserve their content and paths; modify a source file only for a defect you actually observe.",
     "Checks to complete:",
     listed,
@@ -102,4 +120,4 @@ function buildDocumentDeliveryRecoveryPrompt(assessment = null, userText = "") {
   ].join("\n");
 }
 
-module.exports = { buildDocumentDeliveryRecoveryPrompt };
+module.exports = { buildDocumentDeliveryRecoveryPrompt, isDeliveryCheckPrompt };

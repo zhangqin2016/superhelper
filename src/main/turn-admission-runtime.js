@@ -39,6 +39,7 @@ function queueRecoveryEnvelope(item) {
       ? options.expectedArtifactPaths
       : [],
     documentDeliveryRecovery: Boolean(options.documentDeliveryRecovery),
+    continuesTurnId: typeof options.continuesTurnId === "string" ? options.continuesTurnId : "",
     externalCommand: options.externalCommand && typeof options.externalCommand === "object"
       ? options.externalCommand
       : null,

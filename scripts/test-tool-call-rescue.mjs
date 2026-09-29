@@ -393,8 +393,12 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   let captured = null;
   const originalSend = ctx.turnOrchestrator.sendUserMessage.bind(ctx.turnOrchestrator);
   const originalRemove = ctx.transcriptStore.removeLastAssistantMessage.bind(ctx.transcriptStore);
-  ctx.turnOrchestrator.sendUserMessage = async (...args) => { captured = args; return { ok: true }; };
-  ctx.transcriptStore.removeLastAssistantMessage = () => true;
+  ctx.turnOrchestrator.sendUserMessage = async (...args) => { captured = args; return { ok: true, turnId: "document-turn-check" }; };
+  let removed = 0;
+  ctx.transcriptStore.removeLastAssistantMessage = () => { removed += 1; return true; };
+  const originalSupersede = ctx.transcriptStore.supersedeAssistantTurn.bind(ctx.transcriptStore);
+  let supersededTurn = null;
+  ctx.transcriptStore.supersedeAssistantTurn = (_session, turnId) => { supersededTurn = turnId; return { ok: true }; };
   resetRescueStateForTests();
   const dispatched = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
     code: "DOCUMENT_DELIVERY_UNVERIFIED",
@@ -409,10 +413,31 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(captured[3].skipPreflight, false, "managed document runtime preflight remains enabled");
   assert.equal(captured[3].documentDeliveryRecovery, true);
   assert.deepEqual(captured[3].expectedArtifactPaths, [documentPath]);
+  // The check continues the answer it checks; it never replaces it (2026-09-30:
+  // replacing swapped the deliverables and sources for a short QA report).
+  assert.equal(captured[3].continuesTurnId, "document-turn-old", "the continuation names the answer it continues");
+  assert.equal(supersededTurn, null, "the checked answer is not superseded");
+  assert.equal(removed, 0, "nor removed");
+  assert.equal(flushEvents().some((event) => event.type === "assistant.supersedes"), false, "the renderer is not told to drop it");
+  // Kill switch: the check replaces the answer, as before.
+  process.env.LILY_DELIVERY_CHECK_CONTINUES = "0";
+  state.wasRescueAttempt = false;
+  resetRescueStateForTests();
+  await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
+    code: "DOCUMENT_DELIVERY_UNVERIFIED",
+    supersedesTurnId: "document-turn-old",
+    userText: "Create a polished report",
+    documentDelivery: { artifacts: [{ path: documentPath }], missing: ["visual_inspection"] },
+  });
+  delete process.env.LILY_DELIVERY_CHECK_CONTINUES;
+  assert.equal(captured[3].continuesTurnId, "", "switched off: no continuation link");
+  assert.equal(supersededTurn, "document-turn-old", "switched off: the answer is superseded as before");
+  flushEvents();
   state.tools.clear();
   state.wasRescueAttempt = false;
   ctx.turnOrchestrator.sendUserMessage = originalSend;
   ctx.transcriptStore.removeLastAssistantMessage = originalRemove;
+  ctx.transcriptStore.supersedeAssistantTurn = originalSupersede;
   flushEvents();
 }
 
