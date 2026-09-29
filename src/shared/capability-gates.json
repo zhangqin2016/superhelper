@@ -2893,6 +2893,17 @@
       "tests": [
         "scripts/test-workspace-version-control.mjs"
       ]
+    },
+    {
+      "id": "task-wait-resumes",
+      "protects": "A task that waited for the user runs again once nothing is left to answer (permission, question, hook), so it still reaches a terminal state; the task center shows 待确认 only for the turn in flight that is waiting, never for a stale lifecycle of another turn, and follows live lifecycle events rather than only the hydrated snapshot.",
+      "baseline": "2026-09-29: the agent asked a question, the user answered four seconds later, and the lifecycle stayed waiting_user (nothing paired markAwaitingUser; the store allows waiting_user only to running, so the terminal verifying was refused). The task center then showed '1 个会话等待确认' for a session working on a PPT.",
+      "failureFallback": "An open prompt still shows as waiting; an unknown outcome still asks for recovery; resuming with nothing awaited is a no-op. Mutation-verified: the old router, a resume that skips the lifecycle, and the old task-center status each fail by name.",
+      "tests": [
+        "scripts/test-task-wait-resume.mjs",
+        "scripts/test-turn-runtime-event-router.mjs",
+        "scripts/test-task-center-status.mjs"
+      ]
     }
   ]
 }

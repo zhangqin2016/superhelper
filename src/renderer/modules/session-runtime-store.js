@@ -525,6 +525,9 @@ export function applyRuntimeEvent(event, opts = {}) {
       break;
     case "task.lifecycle.updated":
       live.taskLifecycle = { ...(event.payload || {}), turnId: event.turnId };
+      // The session's task state follows the live turn, not only the snapshot
+      // it was hydrated from (a stale hydrated lifecycle held "待确认").
+      runtime.taskLifecycle = live.taskLifecycle;
       if (event.payload?.status === "waiting_user") {
         runtime.phase = "awaiting_user";
         live.phase = "awaiting_user";

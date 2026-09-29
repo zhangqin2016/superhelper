@@ -34,6 +34,7 @@ const router = createTurnRuntimeEventRouter({
   emit: (sessionId, type, payload, opts) => emitted.push({ sessionId, type, payload, opts }),
   taskRunRuntime: {
     markAwaitingUser: (...args) => taskCalls.push(["awaiting", ...args]),
+    markResumedFromUser: (...args) => taskCalls.push(["resumed", ...args]),
     markProgress: (...args) => taskCalls.push(["progress", ...args]),
     updateLivenessFromNotice: (...args) => taskCalls.push(["liveness", ...args]),
   },
@@ -59,6 +60,22 @@ router.applyDraft("session_1", {
 });
 assert.equal(state.phase, "streaming");
 assert.equal(state.pendingPermissions.size, 0);
+assert.equal(taskCalls.at(-1)[0], "resumed", "an answered permission returns the task to running");
+
+// Field regression 2026-09-29: an answered question left the lifecycle at
+// waiting_user for the rest of the turn. The task resumes only once NOTHING is
+// left to answer — never while a second prompt is still open.
+router.applyDraft("session_1", { type: "user_question.requested", payload: { requestId: "q_1" } });
+router.applyDraft("session_1", { type: "permission.requested", payload: { requestId: "permission_2", toolName: "Bash" } });
+router.applyDraft("session_1", { type: "user_question.resolved", payload: { requestId: "q_1" } });
+assert.notEqual(taskCalls.at(-1)[0], "resumed", "still waiting on a permission: not resumed");
+assert.equal(state.phase, "awaiting_user");
+router.applyDraft("session_1", { type: "permission.resolved", payload: { requestId: "permission_2" } });
+assert.equal(taskCalls.at(-1)[0], "resumed", "the last answer resumes the task");
+assert.equal(state.phase, "streaming");
+router.applyDraft("session_1", { type: "hook.requested", payload: { requestId: "h_1" } });
+router.applyDraft("session_1", { type: "hook.resolved", payload: { requestId: "h_1" } });
+assert.equal(taskCalls.at(-1)[0], "resumed", "a resolved hook resumes the task too");
 
 router.applyDraft("session_1", {
   type: "engine.notice",

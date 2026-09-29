@@ -67,7 +67,10 @@ function countArtifacts(runtime) {
 function statusForRuntime(runtime) {
   if (!runtime) return null;
   if (runtime.taskLifecycle?.status === "outcome_unknown") return "failed";
-  if (runtime.taskLifecycle?.status === "waiting_user") return "waiting";
+  // Waiting for the user is a property of the turn in flight: a lifecycle of
+  // another (finished) turn left "waiting_user" never means anyone is asked.
+  if (runtime.taskLifecycle?.status === "waiting_user"
+    && runtime.phase !== "idle" && runtime.taskLifecycle.turnId === runtime.turnId) return "waiting";
   if (runtime.phase !== "idle") {
     if (runtimeHasAwaitingInput(runtime)) return "waiting";
     if (runtime.phase === "stopping") return "stopping";

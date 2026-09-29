@@ -304,13 +304,13 @@ function createTurnRuntimeEventRouter(options = {}) {
         case "permission.resolved":
           state.pendingPermissions.delete(payload.requestId);
           state.pendingQuestions.delete(payload.requestId);
-          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
+          if (!hasPendingUserBlocks(state)) { endUserWait(state, now()); taskRunRuntime?.markResumedFromUser?.(sessionId); }
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "permission.resolved", payload);
           break;
         case "user_question.resolved":
           state.pendingQuestions.delete(payload.requestId);
-          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
+          if (!hasPendingUserBlocks(state)) { endUserWait(state, now()); taskRunRuntime?.markResumedFromUser?.(sessionId); }
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "user_question.resolved", payload);
           break;
@@ -323,7 +323,7 @@ function createTurnRuntimeEventRouter(options = {}) {
           break;
         case "hook.resolved":
           state.pendingHooks.delete(payload.requestId);
-          if (!hasPendingUserBlocks(state)) endUserWait(state, now());
+          if (!hasPendingUserBlocks(state)) { endUserWait(state, now()); taskRunRuntime?.markResumedFromUser?.(sessionId); }
           if (state.phase === "awaiting_user" && !hasPendingUserBlocks(state)) state.phase = "streaming";
           emit(sessionId, "hook.resolved", payload);
           break;
