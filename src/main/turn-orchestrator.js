@@ -730,7 +730,9 @@ class TurnOrchestrator {
       diagnoseSendBlocker: defaultDiagnoseSendBlocker,
       ensureSessionRunner: defaultEnsureSessionRunner,
       refreshRemoteConfigForSend,
+      withLivePreflightSkip,
     } = require("./ipc-utils");
+    opts = withLivePreflightSkip(this.ctx, session.id, opts);
     const diagnoseSendBlocker = this.ctx.diagnoseSendBlocker || defaultDiagnoseSendBlocker;
     const ensureSessionRunner = this.ctx.ensureSessionRunner || defaultEnsureSessionRunner;
     let ensured = null;

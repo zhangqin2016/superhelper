@@ -778,6 +778,52 @@ delete ctx.ensureSessionRunner;
 delete ctx.capabilityReadinessDeps;
 sent.length = 0;
 messages.length = 0;
+
+// Field regression 2026-09-29: an evidence-verify retry skips preflight to
+// continue on "the runner that answered a moment ago". That runner had left
+// the pool (a live-config refresh retires idle runners), so the retry found
+// none and showed "Unable to start the assistant process" under a delivered
+// answer. With no live runner, the turn runs full preflight instead.
+{
+  const originalGet = ctx.runnerPool.get;
+  let ensuredRunner = 0;
+  ctx.runnerPool.get = () => null;
+  ctx.diagnoseSendBlocker = () => null;
+  ctx.capabilityReadinessDeps = {
+    plan: () => ({ requiredPackIds: [], enhancementPackIds: [], fallbackCapabilityIds: [] }),
+    installed: () => new Set(),
+    installing: () => new Set(),
+    prepare: async () => ({ ok: true, readyPackIds: [], failedPackIds: [], unavailablePackIds: [], refreshRequired: false }),
+    refresh: () => {},
+  };
+  ctx.ensureSessionRunner = () => {
+    ensuredRunner += 1;
+    ctx.runnerPool.get = originalGet;
+    return { runner, project: ctx.projectManager.find(), coldStart: true, usedResume: false };
+  };
+  const retry = await ctx.turnOrchestrator.sendUserMessage("s1", "请核实上一条回答", [], {
+    spawnEngine: false,
+    skipPreflight: true,
+    skipVision: true,
+    skipDocument: true,
+    rescueAttempt: true,
+    recordUser: false,
+  });
+  if (!retry.ok || ensuredRunner !== 1 || !runner.isBusy()) {
+    throw new Error(`a preflight-skipping turn without a live runner must run full preflight: ${JSON.stringify({ retry, ensuredRunner })}`);
+  }
+  runner.finish("verified");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  ctx.eventBus.flush();
+  const failed = sent.flatMap((entry) => entry.payload?.events || []).filter((event) => event.type === "turn.failed");
+  if (failed.length) throw new Error(`the retry must not surface a start failure: ${JSON.stringify(failed[0])}`);
+  ctx.runnerPool.get = originalGet;
+  delete ctx.diagnoseSendBlocker;
+  delete ctx.ensureSessionRunner;
+  delete ctx.capabilityReadinessDeps;
+  sent.length = 0;
+  messages.length = 0;
+}
 runner.sentPayloads.length = 0;
 
 const pdfCapabilityTurn = await ctx.turnOrchestrator.sendUserMessage("s1", "提取 PDF 表格并检查版面", [

@@ -2866,6 +2866,15 @@
         "scripts/test-markdown-renderer.mjs",
         "scripts/test-renderer-import.cjs"
       ]
+    },
+    {
+      "id": "rescue-preflight-live-runner",
+      "protects": "A turn that skips preflight to continue on the runner that just answered (evidence-verify, source-coverage and similar retries) runs full preflight when that runner has left the pool, instead of failing to start.",
+      "baseline": "2026-09-29: an evidence-verify retry fired right after a delivered 大乐透 answer (the evidence judge had timed out); its runner had left the pool, so runnerPool.get returned nothing and the retry surfaced 'Unable to start the assistant process' under the good answer.",
+      "failureFallback": "A live runner is still reused without preflight exactly as before; when full preflight itself cannot start the engine, the existing RUNNER_ERROR handling applies. The withdrawal is logged. Mutation-verified: removing the check fails the regression by name.",
+      "tests": [
+        "scripts/test-turn-orchestrator.mjs"
+      ]
     }
   ]
 }

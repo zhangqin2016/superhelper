@@ -391,6 +391,20 @@ function ensureSessionRunner(ctx, sessionId, opts = {}) {
   }
 }
 
+/**
+ * Skipping preflight means "continue on the runner that answered a moment
+ * ago". When that runner has left the pool since (a live-config refresh
+ * retires idle runners; a resume reset or skill reload rebuilds them), the
+ * turn runs full preflight instead of failing: an evidence-verify retry right
+ * after a delivered answer surfaced as "Unable to start the assistant
+ * process" (2026-09-29).
+ */
+function withLivePreflightSkip(ctx, sessionId, opts = {}) {
+  if (!opts.skipPreflight || ctx?.runnerPool?.get?.(sessionId)) return opts;
+  console.warn("[runner]", sessionId, "no live runner for a preflight-skipping turn; running full preflight");
+  return { ...opts, skipPreflight: false };
+}
+
 function warmupActiveRunner(_ctx) {}
 
 function applyPermissionModeLive(ctx, modeId) {
@@ -449,6 +463,7 @@ module.exports = {
   wireRunner,
   ensureSessionRunner,
   warmupActiveRunner,
+  withLivePreflightSkip,
   applyPermissionModeLive,
   fileMetadataFromPayload,
   mergeDisplayFileMetadata,
