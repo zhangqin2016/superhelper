@@ -203,3 +203,12 @@ for (const file of ["web/app/pricing/pricing.css", "web/app/download/download.cs
 }
 
 console.log("site pricing/download: ok");
+
+// The compare table scrolls inside its card on a phone: the card must contain its
+// absolutely-positioned screen-reader labels, or they widen the page (2026-09-30:
+// +340px at 390px wide, found on the live site).
+{
+  const css = fs.readFileSync(new URL("../web/app/pricing/pricing.css", import.meta.url), "utf8");
+  const block = css.match(/\.pr-table-wrap\s*\{[^}]*\}/)?.[0] || "";
+  if (!/position:\s*relative/.test(block) || !/overflow-x:\s*auto/.test(block)) throw new Error("pricing compare table must scroll inside a positioned box");
+}

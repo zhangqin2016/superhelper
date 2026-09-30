@@ -343,6 +343,10 @@
 /* -------------------------------------------------------------- compare */
 
 .pr-table-wrap {
+  /* The containing block for the table's visually-hidden (.pr-sr, absolute)
+     labels: without it they escaped the scroll box and widened the whole
+     phone page by 340px. */
+  position: relative;
   overflow-x: auto;
   box-shadow: none;
 }
