@@ -177,6 +177,8 @@ function buildAgentSpawnEnv(options = {}) {
     LILY_MEDIA_RESULTS_DIR: require("./media-result-tracker").mediaResultsInbox(app.getPath("userData")),
     // Where lily-vision records each inspection for the document delivery gate.
     LILY_VISION_RECEIPTS_DIR: require("./vision-inspection-receipt").visionReceiptsDir(app.getPath("userData")),
+    // Where render_document.py records each render's receipt for the same gate.
+    LILY_RENDER_RECEIPTS_DIR: require("./document-render-receipt").renderReceiptsDir(app.getPath("userData")),
   };
 
   if (truthy(lilyEnv.LILY_TLS_SKIP_VERIFY)) {

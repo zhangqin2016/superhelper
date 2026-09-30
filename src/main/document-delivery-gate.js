@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
-const { renderReceiptFor, inspectedImages: receiptInspectedImages } = require("./document-render-receipt.js");
+const { inspectedByContent, renderReceiptFor, inspectedImages: receiptInspectedImages } = require("./document-render-receipt.js");
 
 const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
@@ -250,8 +250,9 @@ function requiresDocumentDelivery(taskContract = null, artifacts = []) {
   return DOCUMENT_OPERATIONS.has(operation) || outputMode === "artifact";
 }
 
-// `inspections`: the host vision ledger's entries for this turn ([{ path, at }]).
-function assessArtifact(artifact, tools, inspections = []) {
+// `inspections`: the host vision ledger's entries for this turn ([{ path, at }]);
+// `renders`: the render ledger's ([{ source, receipt, at }]).
+function assessArtifact(artifact, tools, inspections = [], renders = []) {
   let structure = structureCheck(artifact);
   if (fileKinds.EXTENSIONS.textDocument.has(String(artifact.ext || path.extname(artifact.path || "")).toLowerCase())) {
     // Text delivery has no page rendering. What the gate can certify about text
@@ -274,16 +275,23 @@ function assessArtifact(artifact, tools, inspections = []) {
   // The platform's render receipt proves the render whatever the calling
   // script printed; its page list is what vision receipts are matched against.
   const ledgerImages = inspections.map((entry) => entry.path);
-  const receipt = renderReceiptFor(String(artifact.path || ""), successful.map(({ tool }) => tool), ledgerImages);
+  const receipt = renderReceiptFor(String(artifact.path || ""), successful.map(({ tool }) => tool), ledgerImages, renders);
   structure = withPackageConformance(structure, receipt);
   const renderedImages = receipt ? receipt.images
     : renderEntry ? [...collectImagePaths(renderEntry.tool.result ?? renderEntry.tool.output ?? "")] : [];
   const pageCount = receipt ? receipt.pages : renderEntry ? parseRenderedPageCount(renderEntry.tool, renderedImages) : 0;
   const inspectedImages = [];
   if (receipt) {
-    for (const image of receiptInspectedImages(successful.map(({ tool }) => tool), ledgerImages)) {
+    const seen = receiptInspectedImages(successful.map(({ tool }) => tool), ledgerImages);
+    for (const image of seen) {
       if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
     }
+    // A page byte-identical to one inspected in ANOTHER render this turn (a PDF
+    // export beside its .docx) was inspected too. Within one render every page
+    // is still looked at: repeated identical pages do not vouch for each other.
+    const unseen = renderedImages.filter((rendered) => !inspectedImages.some((image) => imagePathMatches(rendered, image)));
+    const elsewhere = seen.filter((image) => !renderedImages.some((rendered) => imagePathMatches(rendered, image)));
+    if (unseen.length && elsewhere.length) inspectedImages.push(...inspectedByContent(unseen, elsewhere));
   } else if (renderEntry) {
     for (const { tool, index } of successful) {
       if (index <= renderEntry.index) continue;
@@ -335,7 +343,7 @@ function assessArtifact(artifact, tools, inspections = []) {
   };
 }
 
-function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [] } = {}) {
+function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [], renderReceipts = [] } = {}) {
   const required = requiresDocumentDelivery(taskContract, artifacts);
   if (!required) return { required: false, ok: true, status: "not_required", artifacts: [], missing: [] };
   const documents = documentArtifacts(artifacts).filter((artifact) =>
@@ -352,7 +360,8 @@ function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [
     };
   }
   const inspections = Array.isArray(visionInspections) ? visionInspections : [];
-  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : [], inspections));
+  const renders = Array.isArray(renderReceipts) ? renderReceipts : [];
+  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : [], inspections, renders));
   const missing = [...new Set(results.flatMap((item) => item.missing))];
   return {
     required: true,

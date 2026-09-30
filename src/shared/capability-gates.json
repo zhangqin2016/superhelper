@@ -2990,6 +2990,18 @@
         "scripts/test-internal-prompt-provenance.mjs",
         "scripts/test-vision-ledger-delivery.mjs"
       ]
+    },
+    {
+      "id": "render-ledger-content-match",
+      "protects": "Every render's receipt is found: render_document.py also records it in the host render ledger (LILY_RENDER_RECEIPTS_DIR, shared host-ledger reader with the vision ledger), so each file is counted by its own receipt. A rendered page byte-identical to a page inspected in another render this turn (a PDF export beside its .docx) counts as inspected; identical pages within one render do not vouch for each other; a file changed after rendering still needs a new render.",
+      "baseline": "2026-09-30: the check round inspected every .docx/.pptx page and confirmed the PDF exports rendered identically; the PDFs' receipts were never looked up (only folders of inspected pages were searched), one loop's output was read as every PDF's pages (0/38 inspected for a 7-page PDF), and the finished check still ended 自动检查未全部完成.",
+      "failureFallback": "An unreadable ledger or page skips (logged) and the gate falls back to the previous lookup; LILY_VISION_LEDGER=0 turns both ledgers off. Mutation-verified: the script not recording, the gate not reading the ledger, no byte match, and matching within one render each fail by name.",
+      "tests": [
+        "scripts/test-render-ledger-content-match.mjs",
+        "scripts/test-vision-ledger-delivery.mjs",
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-render-document.mjs"
+      ]
     }
   ]
 }

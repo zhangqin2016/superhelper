@@ -344,6 +344,7 @@ function createTurnTerminalFinalizer(options = {}) {
         artifacts: record?.artifacts || [],
         recoveryAttempt: Boolean(state.wasRescueAttempt),
         visionInspections: require("./vision-inspection-receipt").turnVisionInspections(state),
+        renderReceipts: require("./document-render-receipt").turnRenderReceipts(state),
       });
       assistant = guarded.assistant;
       evidenceGateAssessment = guarded.assessment;

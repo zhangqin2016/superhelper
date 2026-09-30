@@ -176,8 +176,31 @@ def _write_receipt(source, out_dir, images, package=None):
         with open(partial, "w", encoding="utf-8") as handle:
             json.dump(receipt, handle, ensure_ascii=False)
         os.replace(partial, target)
+        _record_in_ledger(receipt["source"], target, receipt["renderedAtMs"])
     except Exception as exc:  # noqa: BLE001 — the render itself succeeded; say why the receipt did not
         print(f"render receipt not written: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
+def _record_in_ledger(source, receipt_path, at_ms):
+    """Tell the host where this render's receipt is (LILY_RENDER_RECEIPTS_DIR).
+
+    The delivery gate used to find a receipt only beside pages it saw inspected;
+    a PDF whose pages were byte-identical to its inspected .docx render was
+    never looked up, and one loop's output was then read as every file's pages
+    (2026-09-30: a 7-page PDF counted as 38 pages, 0 inspected).
+    """
+    ledger = os.environ.get("LILY_RENDER_RECEIPTS_DIR")
+    if not ledger:
+        return
+    try:
+        os.makedirs(ledger, exist_ok=True)
+        day = time.strftime("%Y-%m-%d", time.gmtime(at_ms / 1000))
+        line = json.dumps({"version": 1, "kind": "document_render", "source": source,
+                           "receipt": os.path.abspath(receipt_path), "at": at_ms}, ensure_ascii=False)
+        with open(os.path.join(ledger, f"{day}.jsonl"), "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except Exception as exc:  # noqa: BLE001 — the receipt beside the pages still stands
+        print(f"render ledger not written: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
