@@ -1186,7 +1186,7 @@
   "usage.limits.resets": "تتجدد {when}",
   "usage.limits.extraCredits": "نقاط إضافية",
   "usage.limits.topUp": "شحن",
-  "usage.limits.extraAfterPlan": "تُستخدم تلقائياً بعد نفاد رصيد الخطة لهذا الأسبوع.",
+  "usage.limits.extraAfterPlan": "تُستخدم النقاط الإضافية تلقائياً بعد نفاد رصيد الخطة لهذا الأسبوع.",
   "usage.limits.extraOnly": "تستهلك النماذج الرسمية النقاط، كل نموذج بسعره.",
   "usage.limits.images": "متبقٍّ {n} عملية توليد صور",
   "usage.limits.videos": "متبقٍّ {n} عملية توليد فيديو",

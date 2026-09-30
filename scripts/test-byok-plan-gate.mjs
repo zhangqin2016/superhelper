@@ -250,7 +250,7 @@ for (const rel of ["src/renderer/modules/model-settings.js", "src/renderer/modul
 // ── 5. Localized copy exists in every locale ───────────────────────────────
 for (const locale of ["zh-CN", "en", "ar"]) {
   const messages = JSON.parse(read(`src/renderer/i18n/locales/${locale}.json`));
-  for (const key of ["byok.planRequired", "byok.viewPlans", "byok.lockedBadge", "byok.switchedNotice", "settings.accountPlanWeekRemaining", "settings.accountPlanResetsAt", "settings.accountPlanExpiresAt"]) {
+  for (const key of ["byok.planRequired", "byok.viewPlans", "byok.lockedBadge", "byok.switchedNotice", "usage.limits.plan", "usage.limits.used", "usage.limits.resets"]) {
     assert.ok(messages[key], `${locale} has ${key}`);
   }
   assert.match(messages["byok.switchedNotice"], /\{model\}/);

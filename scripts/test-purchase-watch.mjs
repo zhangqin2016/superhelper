@@ -111,7 +111,8 @@ function harness(replies) {
 // The hook: opened billing starts the watch; logout and account switch stop it.
 import fs from "node:fs";
 const src = fs.readFileSync(new URL("../src/renderer/modules/account-settings.js", import.meta.url), "utf8");
-assert.match(src, /window\.open\(result\.url[^\n]*\n\s*watchedAccount = currentAccountPhone;\n\s*purchaseWatch\.start\(shownEntitlements\);/);
+// Opening the shop starts the watch; opening the usage statement buys nothing.
+assert.match(src, /window\.open\(result\.url[^\n]*\n\s*if \(page !== "usage"\) \{\n\s*watchedAccount = currentAccountPhone;\n\s*purchaseWatch\.start\(shownEntitlements\);/);
 assert.match(src, /if \(!status\?\.loggedIn\) \{\n\s*purchaseWatch\.stop\(\);/);
 assert.match(src, /if \(watchedAccount !== currentAccountPhone\) purchaseWatch\.stop\(\);/);
 for (const locale of ["zh-CN", "en", "ar"]) {

@@ -80,14 +80,19 @@ function render() {
   const list = $("usageLimitsList");
   if (!list) return;
   const data = current;
-  const parts = [];
-  if (data) {
-    parts.push(...data.limits.map(limitRow));
-    if (data.signedIn && data.identity === "organization") parts.push(node("p", "usage-limits-note", t("usage.limits.organizationNote")));
-    if (data.signedIn && data.identity === "personal" && data.extraCredits !== null) parts.push(creditsBlock(data));
-    if (!parts.length) parts.push(node("p", "usage-limits-note", t(data.signedIn ? "usage.limits.none" : "usage.limits.signedOut")));
-  }
-  list.replaceChildren(...parts);
+  // Account parts (balance, top-up, statement) sit in .account-usage-balance,
+  // which the edition policy hides where there are no accounts (overseas).
+  const accountPart = document.querySelector(".usage-account-part");
+  const accounts = Boolean(accountPart) && !accountPart.hidden;
+  const account = [];
+  if (data?.signedIn && data.identity === "organization") account.push(node("p", "usage-limits-note", t("usage.limits.organizationNote")));
+  if (data?.signedIn && data.identity === "personal" && data.extraCredits !== null) account.push(creditsBlock(data));
+  if (data && !data.signedIn && !data.limits.length) account.push(node("p", "usage-limits-note", t("usage.limits.signedOut")));
+  if (data?.signedIn && !data.limits.length && !account.length) account.push(node("p", "usage-limits-note", t("usage.limits.none")));
+  const limits = data ? data.limits.map(limitRow) : [];
+  if (data && !limits.length && !accounts) limits.push(node("p", "usage-limits-note", t("usage.limits.none")));
+  list.replaceChildren(...limits);
+  $("usageCredits")?.replaceChildren(...account);
   const statement = $("usageStatementLink");
   if (statement) statement.hidden = !(data?.signedIn && data.identity === "personal" && purchaseEnabled());
   const status = $("usageLimitsStatus");

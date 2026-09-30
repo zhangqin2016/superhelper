@@ -706,7 +706,11 @@
                   <button id="usageRefresh" class="settings-action-btn" type="button" data-i18n="usage.limits.refresh">刷新</button>
                 </div>
                 <div id="usageLimitsList" class="usage-limits-list" aria-live="polite"></div>
-                <button id="usageStatementLink" type="button" class="settings-link-button usage-statement-link" data-i18n="usage.limits.statement" hidden>查看积分消耗明细</button>
+                <!-- Account credits: hidden with the account feature (overseas editions). -->
+                <div class="account-usage-balance usage-account-part">
+                  <div id="usageCredits" aria-live="polite"></div>
+                  <button id="usageStatementLink" type="button" class="settings-link-button usage-statement-link" data-i18n="usage.limits.statement" hidden>查看积分消耗明细</button>
+                </div>
               </section>
               <!-- Usage limits end -->
               <section class="account-section" id="accountOrgSelectCard" hidden>

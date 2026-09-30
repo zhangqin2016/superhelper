@@ -155,23 +155,23 @@ check("account site pages: the balance card and pack names say 积分", () => {
 
 check("desktop locales: balance, weekly budget and plan allowance are credits; usage stays Token", () => {
   const CREDIT_KEYS = [
-    "settings.accountTokens",
+    "usage.limits.extraCredits",
     "settings.accountDesc",
-    "settings.accountPlanWeekRemaining",
+    "usage.limits.extraAfterPlan",
     "orgIdentity.weekly",
     "orgIdentity.weeklyNoReset",
     "orgIdentity.weeklyLimited",
     "orgIdentity.weeklyLimitedNoReset",
   ];
-  const TOKEN_KEYS = ["settings.usage.tokensToday", "settings.usage.colTokens", "settings.usage.noTokens", "turn.footer.tokens"];
+  const TOKEN_KEYS = ["turn.footer.tokens"];
   for (const [file, locale] of Object.entries(DESKTOP_LOCALES)) {
     const messages = JSON.parse(read(`src/renderer/i18n/locales/${file}.json`));
     for (const key of CREDIT_KEYS) credit(`desktop ${file}`, locale, key, messages[key]);
     for (const key of TOKEN_KEYS) token(`desktop ${file}`, locale, key, messages[key]);
     assert.match(messages["orgIdentity.weekly"], /\{used\}.*\{budget\}.*\{time\}/, `${file}: weekly line keeps its placeholders`);
-    assert.match(messages["settings.accountPlanWeekRemaining"], /\{remaining\}/);
+    assert.match(messages["usage.limits.used"], /\{percent\}/, `${file}: the weekly allowance reads as a percentage`);
   }
-  assert.equal(JSON.parse(read("src/renderer/i18n/locales/zh-CN.json"))["settings.accountTokens"], "积分余额");
+  assert.equal(JSON.parse(read("src/renderer/i18n/locales/zh-CN.json"))["usage.limits.extraCredits"], "额外积分");
   assert.equal(JSON.parse(read("src/renderer/i18n/locales/zh-CN.json"))["settings.connectors.secret"], "应用专用密码 / Token", "an auth token is not a wallet amount");
 });
 

@@ -316,7 +316,7 @@ async function main() {
 
   fixtures.limits = limitsFixture({ signedIn: false, extraCredits: null });
   await openPage("usage");
-  const usageOut = await q(`return { text: document.getElementById("usageLimitsList").textContent,
+  const usageOut = await q(`return { text: document.getElementById("usageLimitsSection").textContent,
     credits: document.querySelectorAll(".usage-credits").length, statementHidden: document.getElementById("usageStatementLink").hidden };`);
   assert.match(usageOut.text, /登录账户后/, "signed out: one sentence with the way in");
   assert.equal(usageOut.credits, 0, "no balance while signed out");

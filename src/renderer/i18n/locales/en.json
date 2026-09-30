@@ -1185,7 +1185,7 @@
   "usage.limits.resets": "Resets {when}",
   "usage.limits.extraCredits": "Extra credits",
   "usage.limits.topUp": "Top up",
-  "usage.limits.extraAfterPlan": "Used automatically once this week's plan allowance runs out.",
+  "usage.limits.extraAfterPlan": "Extra credits are used automatically once this week's plan allowance runs out.",
   "usage.limits.extraOnly": "Official models use credits, each at its own rate.",
   "usage.limits.images": "{n} image generations left",
   "usage.limits.videos": "{n} video generations left",
