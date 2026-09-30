@@ -19,7 +19,7 @@ import { refreshLicenseStatus, refreshUpdateSettings } from "./license-update-se
 import { anySessionRunning } from "./session-runtime-store.js";
 import { activeSession, refreshStateLight } from "./session-chrome.js";
 import { confirmDialog } from "./confirm-dialog.js";
-import { refreshUsageSettings, initUsageSettings } from "./usage-settings.js";
+import { refreshUsageLimits, initUsageLimits } from "./usage-limits.js";
 import { initSupportSettings } from "./support-settings.js";
 import { initSupportDiagnosticsSettings } from "./support-diagnostics-settings.js";
 import { initThemeSettings, refreshThemeSelect } from "./theme-settings.js";
@@ -301,7 +301,7 @@ function refreshSettingsPanelData() {
     refreshUpdateSettings(),
     refreshMemorySettings(),
   ];
-  if (usageFeatureEnabled()) refreshers.push(refreshUsageSettings());
+  if (usageFeatureEnabled()) refreshers.push(refreshUsageLimits());
   if (accountFeatureEnabled()) refreshers.push(refreshAccountSettings());
   refreshInFlight = Promise.allSettled(refreshers)
     .then((results) => {
@@ -440,7 +440,7 @@ export async function initSettingsPanel() {
     }
   }
 
-  initUsageSettings();
+  initUsageLimits();
   if (accountFeatureEnabled()) initAccountSettings();
   initSupportSettings();
   initSupportDiagnosticsSettings();

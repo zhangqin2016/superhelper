@@ -75,6 +75,7 @@ try {
   assert.equal((await one("select count(*)::int n from wallet_grants where grant_type='plan_weekly' and user_id=$1", [buyer])).n, 1);
   for (const s of [a, b, c]) { assert.equal(s.plan.tier, "max"); assert.equal(s.plan.weekRemaining, 22000); }
   assert.equal(a.tokenBalance, 22000, "the balance a client reads includes the week");
+  assert.equal(a.extraTokenBalance, 0, "extra credits exclude the plan's week");
   assert.ok(Math.abs(new Date(a.plan.weekResetsAt) - (new Date(plan.starts_at).getTime() + WEEK)) < 1000);
 
   step("the week is spent before longer-lived credit");
@@ -94,6 +95,7 @@ try {
   const s2 = await summary(buyer);
   assert.equal(s2.plan.weekRemaining, 22000);
   assert.equal(s2.tokenBalance, 22000 + 50000, "last week's 12,000 leftover expired; the pack remains");
+  assert.equal(s2.extraTokenBalance, 50000, "the usage page shows the pack as extra credits");
   assert.equal((await one("select count(*)::int n from wallet_grants where grant_type='plan_weekly' and user_id=$1", [buyer])).n, 2);
 
   step("renewing continues the period instead of overlapping it");

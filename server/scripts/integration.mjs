@@ -203,6 +203,9 @@ try {
     payload: verifyPayload,
   });
   assert.equal(verified.statusCode, 200);
+  // The usage page draws the licence's weekly pool as a percentage.
+  const poolWeek = verified.json().license.credits;
+  assert.ok(poolWeek && Number.isFinite(poolWeek.total) && poolWeek.used === 0 && poolWeek.resetsAt, "verify carries this week's credit pool");
 
   const accountUserId = `usr_integration_${runId}`;
   const accountSessionId = `sess_integration_${runId}`;
@@ -247,6 +250,19 @@ try {
   assert.equal(billingLink.statusCode, 200);
   const billingToken = new URL(billingLink.json().url).searchParams.get("token");
   assert.match(billingToken, /^one_time_/);
+  assert.equal(new URL(billingLink.json().url).searchParams.get("next"), null, "the default link opens the shop");
+  const usageLinkPayload = { ...billingLinkPayload, page: "usage" };
+  const usageLink = await app.inject({
+    method: "POST",
+    url: "/api/account/billing-link",
+    headers: {
+      Authorization: `Bearer ${accountAccessToken}`,
+      ...signedHeaders({ method: "POST", pathname: "/api/account/billing-link", payload: usageLinkPayload, deviceId: activationPayload.deviceId, privateKey }),
+    },
+    payload: usageLinkPayload,
+  });
+  assert.equal(usageLink.statusCode, 200);
+  assert.equal(new URL(usageLink.json().url).searchParams.get("next"), "usage", "the usage page's link opens the usage charges");
 
   const consumedBillingLink = await app.inject({
     method: "POST",
@@ -688,9 +704,6 @@ try {
   });
   assert.equal(usageSummary.statusCode, 200);
   assert.equal(usageSummary.json().deviceId, activationPayload.deviceId);
-  // Estimated credits on the device usage page use the gateway's own rates.
-  assert.deepEqual(usageSummary.json().creditRates?.models?.["deepseek-v4-pro"], { inputCached: 450, input: 13000, output: 39000 });
-  assert.equal(usageSummary.json().creditRates?.default?.output, 39000);
 
   const skillEventPayload = {
     deviceId: activationPayload.deviceId,

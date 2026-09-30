@@ -3,7 +3,6 @@ import { $ } from "./dom.js";
 import { showToast } from "./toast.js";
 import { t } from "../i18n/index.js";
 import { loadOrganizations } from "./account-organizations.js";
-import { renderEntitlements as paintEntitlements } from "./account-entitlements.js";
 import { createPurchaseWatch } from "./purchase-watch.js";
 
 let accountLoggedIn = false;
@@ -141,11 +140,15 @@ function startSmsCooldown(seconds = 60) {
   }, 1000);
 }
 
-// The buy link follows the same policy as the account page's purchase button:
-// enterprise editions have no self-serve purchase, so they get the sentence alone.
+// The usage page (usage-limits.js) draws the balance; it re-reads when told.
 function renderEntitlements(entitlements) {
   shownEntitlements = entitlements ?? null;
-  paintEntitlements(entitlements, { onBuy: billingEnabled ? () => void openBilling() : null });
+  window.dispatchEvent(new CustomEvent("lily:entitlements-changed"));
+}
+
+/** Self-serve purchase follows the account page's policy (none in enterprise editions). */
+export function purchaseEnabled() {
+  return billingEnabled;
 }
 
 function setLoggedInUi(loggedIn) {
@@ -367,13 +370,14 @@ export async function refreshEntitlements() {
   }
 }
 
-async function openBilling() {
+/** Opens the website: the shop, or with `page: "usage"` the usage charges in the statement. */
+export async function openBilling({ page } = {}) {
   if (billingOpening || !accountLoggedIn) return;
   billingOpening = true;
   setLoggedInUi(accountLoggedIn);
   setStatus(t("settings.accountOpeningBilling"));
   try {
-    const result = await window.assistantClient.createAccountBillingLink();
+    const result = await window.assistantClient.createAccountBillingLink(page ? { page } : undefined);
     if (!result?.ok || !result.url) {
       const message = accountErrorMessage(result, "settings.accountBillingFailed");
       setStatus(message, "error");
@@ -381,8 +385,10 @@ async function openBilling() {
       return;
     }
     window.open(result.url, "_blank", "noopener,noreferrer");
-    watchedAccount = currentAccountPhone;
-    purchaseWatch.start(shownEntitlements);
+    if (page !== "usage") {
+      watchedAccount = currentAccountPhone;
+      purchaseWatch.start(shownEntitlements);
+    }
     setStatus(t("settings.accountBillingOpened"), "success");
     showToast(t("settings.accountBillingOpened"), "success");
   } finally {

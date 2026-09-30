@@ -315,6 +315,9 @@ export async function fetchEntitlementSummary(userId, trx = null) {
   const byok = await byokAllowedFor(userId, allGrants, database);
   return {
     ...summary,
+    // Credits beyond this week's plan allowance (top-ups, gifts): what the
+    // usage page shows next to the plan's percentage.
+    extraTokenBalance: summarizeEntitlements(personal.filter((grant) => grant.grant_type !== "plan_weekly")).tokenBalance,
     plan: plan ? { ...plan, ...(week ? { weekRemaining: Number(week.unit_remaining || 0), weekResetsAt: new Date(week.expires_at).toISOString() } : {}) } : null,
     byokAllowed: byok.allowed,
     byokReason: byok.reason,

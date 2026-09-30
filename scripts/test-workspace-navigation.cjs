@@ -325,7 +325,7 @@ function registerFixtureIpc() {
   register("updates:get-settings", { ok: true, settings: { autoCheck: false } });
   register("updates:get-state", { ok: true, state: { status: "idle" } });
   register("updates:kick-check", { ok: true, state: { status: "idle" } });
-  register("usage:get-summary", { ok: true, summary: {} });
+  register("usage:limits", { ok: true, signedIn: false, identity: "personal", limits: [], extraCredits: null });
   register("account:status", { ok: true, loggedIn: false });
   register("service:get-settings", { ok: true, settings: {} });
   register("mobile-pairing:status", { ok: true, enabled: false });

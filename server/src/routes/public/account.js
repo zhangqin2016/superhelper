@@ -12,6 +12,11 @@ import { requireSignedDeviceRequest, upsertDevice, upsertDevicePublicKey } from 
 import { registerDeviceSchema } from "./devices.js";
 
 const accountRequestSchema = registerDeviceSchema;
+// The website page a billing link opens: the shop (default) or the usage
+// charges in the statement.
+const billingLinkSchema = registerDeviceSchema.extend({
+  page: z.enum(["billing", "usage"]).optional(),
+});
 const consumeBillingLinkSchema = z.object({
   token: z.string().min(1),
 });
@@ -125,12 +130,12 @@ export function registerPublicAccountRoutes(app) {
       schema: {
         tags: ["public:account"],
         summary: "Create a one-time website billing link",
-        body: zodBody(accountRequestSchema),
+        body: zodBody(billingLinkSchema),
         response: { 200: okResponse({ url: { type: "string" }, expiresIn: { type: "number" } }) },
       },
     },
     async (request, reply) => {
-      const input = accountRequestSchema.parse(request.body);
+      const input = billingLinkSchema.parse(request.body);
       await upsertDevice(input);
       await upsertDevicePublicKey(input);
       if (!(await requireSignedDeviceRequest(request, reply, input))) return;
@@ -153,7 +158,7 @@ export function registerPublicAccountRoutes(app) {
       const base = String(config.webBaseUrl || "https://www.lilywb.cn").replace(/\/+$/, "");
       return reply.send({
         ok: true,
-        url: `${base}/account/billing?token=${encodeURIComponent(token)}`,
+        url: `${base}/account/billing?token=${encodeURIComponent(token)}${input.page === "usage" ? "&next=usage" : ""}`,
         expiresIn: 300,
       });
     },

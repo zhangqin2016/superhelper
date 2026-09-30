@@ -393,7 +393,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
     return ipcRenderer.invoke("account:sms-login", payload);
   },
   refreshAccountEntitlements: () => ipcRenderer.invoke("account:entitlements"),
-  createAccountBillingLink: () => ipcRenderer.invoke("account:billing-link"),
+  createAccountBillingLink: (options) => ipcRenderer.invoke("account:billing-link", options),
   logoutAccount: () => ipcRenderer.invoke("account:logout"),
   fetchAccountOrganizations: () => ipcRenderer.invoke("account:organizations"),
   getCurrentOrganizationId: () => ipcRenderer.invoke("account:current-organization"),
@@ -440,7 +440,7 @@ contextBridge.exposeInMainWorld("assistantClient", {
 
   getUpdateSettings: () => ipcRenderer.invoke("updates:get-settings"),
   getUpdateState: () => ipcRenderer.invoke("updates:get-state"),
-  getUsageSummary: () => ipcRenderer.invoke("usage:get-summary"),
+  getUsageLimits: (options) => ipcRenderer.invoke("usage:limits", options),
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   kickUpdateCheck: () => ipcRenderer.invoke("updates:kick-check"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),

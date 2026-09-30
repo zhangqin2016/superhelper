@@ -554,13 +554,14 @@ async function fetchAccountEntitlements(accessToken) {
   });
 }
 
-async function createBillingLink(accessToken) {
+/** `page: "usage"` opens the usage charges in the statement instead of the shop. */
+async function createBillingLink(accessToken, { page } = {}) {
   return serviceFetch("/api/account/billing-link", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${String(accessToken || "").trim()}`,
     },
-    body: JSON.stringify(devicePayload()),
+    body: JSON.stringify({ ...devicePayload(), ...(page === "usage" ? { page } : {}) }),
   });
 }
 

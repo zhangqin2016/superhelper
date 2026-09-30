@@ -108,7 +108,7 @@ function registerNoopHandlers() {
   handle("license:status", () => ({ ok: true, license: null }));
   handle("runtime-packs:location", () => ({ ok: true, locations: [] }));
   handle("assistant:memory:list", () => ({ ok: true, memories: [] }));
-  handle("usage:get-summary", () => ({ ok: true, summary: null }));
+  handle("usage:limits", () => ({ ok: true, signedIn: false, identity: "personal", limits: [], extraCredits: null }));
   handle("account:status", () => ({ ok: true, account: null }));
 }
 

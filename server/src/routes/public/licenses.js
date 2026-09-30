@@ -10,6 +10,7 @@ import {
   upsertDevicePublicKey,
 } from "../../services/device-identity.js";
 import { registerDeviceSchema } from "./devices.js";
+import { licenseWeekStatus } from "../../services/license-credits.js";
 
 const activateSchema = registerDeviceSchema.extend({
   licenseKey: z.string().min(8).max(120),
@@ -149,6 +150,16 @@ export function registerPublicLicenseRoutes(app) {
       .where("id", "=", binding.id)
       .execute();
 
+    // This week's credit pool, for the client's usage page. Optional: a
+    // failure here never fails the licence check.
+    let credits;
+    try {
+      const week = await licenseWeekStatus(db, license);
+      credits = { unlimited: week.unlimited, total: week.total, used: week.used, resetsAt: week.resetsAt };
+    } catch (error) {
+      request.log?.warn?.({ err: error }, "licence credit status unavailable");
+    }
+
     return reply.send({
       ok: true,
       trial: trialPayload(device),
@@ -159,6 +170,7 @@ export function registerPublicLicenseRoutes(app) {
         plan: license.plan,
         features: license.features || [],
         expiresAt: new Date(license.expires_at).toISOString(),
+        ...(credits ? { credits } : {}),
       },
     });
   });

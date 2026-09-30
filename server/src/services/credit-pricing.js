@@ -62,23 +62,3 @@ export function reserveCredits(estimatedInputTokens, rate = FALLBACK_RATE) {
  * 1,600 credits per million at today's flash rate with cache hits.
  */
 export const LEGACY_CREDITS_PER_MILLION_TOKENS = 1600;
-
-/**
- * The per-model rates a device's usage page estimates credits with, from the
- * enabled chat_model rules: { models: { [modelId]: rate }, default: rate }.
- * Mirrors choosePricingRule for a request with no gateway provider id (device
- * usage rows carry the client's connection id, not ours): global rules by
- * spec key, else the "default" rule, else FALLBACK_RATE. Pure.
- */
-export function usageCreditRates(rules = []) {
-  const plain = ({ inputCached, input, output }) => ({ inputCached, input, output });
-  const models = {};
-  let fallbackRule = null;
-  for (const rule of rules || []) {
-    if (rule?.enabled === false || rule?.feature !== "chat_model" || rule.provider || rule.model) continue;
-    const key = String(rule.spec_key || "");
-    if (key === "default") fallbackRule = rule;
-    else if (key) models[key] = plain(creditRateFor(rule));
-  }
-  return { models, default: plain(creditRateFor(fallbackRule)) };
-}

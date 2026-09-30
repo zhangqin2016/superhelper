@@ -80,6 +80,11 @@ async function consumeBillingLink(request) {
 
   const cleanUrl = new URL(request.url);
   cleanUrl.searchParams.delete("token");
+  // A link from the desktop usage page opens the usage charges in the
+  // statement; only this one known target, never an arbitrary path.
+  const toUsage = cleanUrl.searchParams.get("next") === "usage";
+  cleanUrl.searchParams.delete("next");
+  const target = toUsage ? "/account/bills?kind=usage" : "/account/billing";
   const response = await fetch(`${API_BASE}/api/account/billing-link/consume`, {
     method: "POST",
     cache: "no-store",
@@ -90,11 +95,11 @@ async function consumeBillingLink(request) {
   const json = await response?.json?.().catch(() => ({}));
   if (!response?.ok || !json?.webSessionToken) {
     cleanUrl.pathname = "/account/login";
-    cleanUrl.searchParams.set("next", "/account/billing");
+    cleanUrl.searchParams.set("next", target);
     return NextResponse.redirect(cleanUrl);
   }
 
-  const redirect = NextResponse.redirect(cleanUrl);
+  const redirect = NextResponse.redirect(toUsage ? new URL(target, cleanUrl) : cleanUrl);
   redirect.cookies.set("lily_user_session", json.webSessionToken, {
     httpOnly: true,
     sameSite: "lax",

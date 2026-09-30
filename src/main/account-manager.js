@@ -353,10 +353,10 @@ async function refreshEntitlements() {
   return { ok: true, entitlements: result.json?.entitlements || null };
 }
 
-async function createBillingLink() {
+async function createBillingLink(options = {}) {
   const token = await ensureAccessToken();
   if (!token.ok) return token;
-  const result = await serviceClient.createBillingLink(token.accessToken);
+  const result = await serviceClient.createBillingLink(token.accessToken, { page: options?.page });
   if (!result.ok) return result;
   return {
     ok: true,

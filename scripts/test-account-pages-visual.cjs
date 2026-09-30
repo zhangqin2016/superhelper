@@ -24,39 +24,8 @@ const captureDir = String(process.env.ACCOUNT_PAGES_CAPTURE_DIR || "").trim()
   ? path.resolve(process.env.ACCOUNT_PAGES_CAPTURE_DIR)
   : "";
 
-const { buildUsageSummary } = require(path.join(root, "src/main/usage-summary.js"));
-
-const dateKey = (offsetDays) => {
-  const d = new Date();
-  d.setDate(d.getDate() - offsetDays);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-
-// Mirrors the on-disk shape observed on 2026-09-24: a gateway model that
-// never reports input tokens (input 0, output large) next to a healthy one.
-function usageFixture() {
-  const gateway = { providerID: "lily-model-gateway", model: "DeepSeek-V4.1-Flash" };
-  const healthy = { providerID: "lily-model-direct", model: "deepseek-v4-flash" };
-  const days = [];
-  const byModel = [];
-  for (let i = 0; i < 12; i += 1) {
-    const date = dateKey(i);
-    const gatewayOut = i === 0 ? 123_800 : 40_000 + i * 3_000;
-    const healthyIn = i === 0 ? 0 : 138_000 + i * 1_000;
-    const healthyOut = i === 0 ? 0 : 7_700;
-    days.push({ date, inputTokens: healthyIn, outputTokens: gatewayOut + healthyOut, messageCount: 12, turnCount: 15 });
-    byModel.push({ date, ...gateway, inputTokens: 0, outputTokens: gatewayOut, messageCount: 10, turnCount: 12 });
-    if (i > 0) byModel.push({ date, ...healthy, inputTokens: healthyIn, outputTokens: healthyOut, messageCount: 2, turnCount: 3 });
-  }
-  const summary = buildUsageSummary({ days, byModel, historyDays: 30 });
-  const decorate = (row) => ({ ...row, label: row.model, connectionType: row.providerID === "unknown" ? "unknown" : "managed" });
-  return {
-    ...summary,
-    today: { ...summary.today, models: summary.today.models.map(decorate) },
-    history: summary.history.map((day) => ({ ...day, models: day.models.map(decorate) })),
-    modelTotals: summary.modelTotals.map(decorate),
-  };
-}
+// The usage page reads { limits, extraCredits, … } from main (usage-limits.js).
+const limitsFixture = (extra = {}) => ({ ok: true, signedIn: true, identity: "personal", limits: [], extraCredits: 0, hasPlan: false, images: 0, videos: 0, ...extra });
 
 const fixtures = {
   account: {
@@ -66,7 +35,7 @@ const fixtures = {
   },
   organizations: [{ id: "org_1", name: "示例科技有限公司" }],
   license: { activated: true, valid: true, license: { customer: "示例科技", plan: "team", expiresAt: "2027-01-01T00:00:00.000Z" } },
-  usage: { ok: true, deviceId: "dev-4f1c2a9e", source: "local", localReason: "syncing", summary: usageFixture() },
+  limits: limitsFixture(),
   policy: { region: "china", features: { account: true, usage: true } },
   searchProvider: "iqs",
   memoryCalls: [],
@@ -123,7 +92,7 @@ function registerFixtureIpc() {
   handle("account:organizations", () => ({ ok: true, organizations: fixtures.organizations }));
   handle("account:current-organization", () => ({ ok: true, organizationId: "" }));
   handle("license:status", () => ({ ok: true, ...fixtures.license }));
-  handle("usage:get-summary", () => fixtures.usage);
+  handle("usage:limits", () => fixtures.limits);
 }
 
 let win = null;
@@ -210,53 +179,64 @@ async function main() {
     return {
       orgPaddingTop: parseFloat(getComputedStyle(org).paddingTop),
       orgTitleLeft: rect("#accountOrgSelectCard h4").left,
-      usageTitleLeft: rect("#usageContent h4").left,
+      usageTitleLeft: rect("#usageLimitsSection h4").left,
       orgSelectWidth: rect("#accountOrgSelect").width,
-      emptyLines: document.querySelectorAll(".account-entitlements-empty").length,
-      tiles: document.querySelectorAll(".account-entitlement-card").length,
       cards: document.querySelectorAll("#settingsPageUsage .account-settings-card").length,
       refreshButtons: document.querySelectorAll("#accountRefreshBtn, #usageRefresh").length,
       refreshLabel: document.getElementById("usageRefresh").textContent.trim(),
-      sourceColor: getComputedStyle(document.getElementById("usageDataSource")).color,
-      todayMeta: document.querySelector("#usageTodayStats .usage-stat-meta").textContent,
-      toolbarFirst: document.querySelector(".usage-toolbar").firstElementChild.id,
-      rangeColor: getComputedStyle(document.getElementById("usageRangeTotals")).color,
+      bars: document.querySelectorAll(".usage-limit-bar").length,
+      credits: document.querySelector(".usage-credits-value")?.textContent.trim(),
+      hint: document.querySelector(".usage-credits-hint")?.textContent || "",
+      buy: document.querySelectorAll(".usage-credits-buy").length,
+      statementHidden: document.getElementById("usageStatementLink").hidden,
+      text: document.getElementById("settingsPageUsage").innerText,
     };
   `);
-  const warning = await probeColor("--warning-text-soft");
-  const primary = await probeColor("--text-primary");
   assert(usage.orgPaddingTop >= 16, `organization section needs breathing room, got ${usage.orgPaddingTop}px`);
   assert.equal(Math.round(usage.orgTitleLeft), Math.round(usage.usageTitleLeft), "section titles share one left edge");
   assert(usage.orgSelectWidth <= 440, `organization select must not span the page, got ${usage.orgSelectWidth}px`);
-  assert.equal(usage.emptyLines, 1, "zero credits collapse to one sentence");
-  const buyLink = await q(`return document.querySelectorAll(".account-entitlements-empty .settings-link-button").length;`);
-  assert.equal(buyLink, 1, "phone account with purchase enabled gets the buy link");
-  assert.equal(usage.tiles, 0, "zero credits render no tiles");
   assert.equal(usage.cards, 0, "usage page carries no nested cards");
   assert.equal(usage.refreshButtons, 1, "exactly one refresh control on the page");
   assert.equal(usage.refreshLabel, "刷新");
-  assert.notEqual(usage.sourceColor, warning, "routine sync note must not wear the warning color");
-  assert.match(usage.todayMeta, /输入未上报/, "gateway usage with input 0 reads as unreported, not zero");
-  assert.equal(usage.toolbarFirst, "usageRangeTotals", "range summary leads the toolbar");
-  assert.equal(usage.rangeColor, primary, "range summary is primary text, not a caption");
+  assert.equal(usage.bars, 0, "no plan, no bar");
+  assert.equal(usage.credits, "0", "extra credits show as a plain balance");
+  assert.match(usage.hint, /按各模型的价格扣除积分/);
+  assert.equal(usage.buy, 1, "phone account with purchase enabled can top up");
+  assert.equal(usage.statementHidden, false, "the charge-by-charge record is one click away");
+  assert.doesNotMatch(usage.text, /[¥￥]|Token|预估/, "no money, token tables or estimates on the usage page");
 
-  fixtures.account = {
-    ...fixtures.account,
-    entitlements: { tokenBalance: 2_500_000, imageGenerationsRemaining: 40, videoGenerationsRemaining: 3, membershipExpiresAt: "2027-01-01T00:00:00.000Z" },
-  };
+  fixtures.limits = limitsFixture({
+    limits: [
+      { kind: "plan", tier: "max", unlimited: false, percent: 42, resetsAt: "2026-10-02T02:00:00.000Z" },
+      { kind: "license", tier: "unlimited", unlimited: true, percent: null, resetsAt: "2026-10-03T00:00:00.000Z" },
+    ],
+    extraCredits: 12340, hasPlan: true, images: 40, videos: 0,
+  });
   await openPage("usage");
-  await capture("usage-with-credits");
-  const credits = await q(`
-    const tiles = [...document.querySelectorAll(".account-entitlement-card")];
-    const tops = new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().top)));
-    return { tiles: tiles.length, rows: tops.size, empty: document.querySelectorAll(".account-entitlements-empty").length,
-      values: tiles.map((tile) => tile.querySelector("strong").textContent.trim()) };
+  await capture("usage-with-plan");
+  const plan = await q(`
+    const rows = [...document.querySelectorAll(".usage-limit")];
+    return {
+      rows: rows.length,
+      labels: rows.map((row) => row.querySelector(".usage-limit-label").textContent),
+      values: rows.map((row) => row.querySelector(".usage-limit-value").textContent),
+      bars: [...document.querySelectorAll(".usage-limit-bar")].map((bar) => bar.value),
+      reset: rows[0].querySelector(".usage-limit-meta")?.textContent || "",
+      credits: document.querySelector(".usage-credits-value").textContent.trim(),
+      hint: document.querySelector(".usage-credits-hint").textContent,
+      lines: [...document.querySelectorAll(".usage-credits-line")].map((line) => line.textContent),
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
   `);
-  assert.equal(credits.tiles, 4);
-  assert.equal(credits.rows, 1, "credits sit on one stat row at desktop width");
-  assert.equal(credits.empty, 0);
-  assert.equal(credits.values[0], "2,500,000");
-  assert.match(credits.values[3], /^2027\/1\/1$/, "membership expiry follows the UI locale, compact for a tile");
+  assert.equal(plan.rows, 2);
+  assert.deepEqual(plan.labels, ["Lily Max 套餐", "授权码"]);
+  assert.deepEqual(plan.values, ["已用 42%", "不限量"]);
+  assert.deepEqual(plan.bars, [42], "an unlimited allowance draws no bar");
+  assert.match(plan.reset, /重置$/, "the reset time is shown");
+  assert.equal(plan.credits, "12,340");
+  assert.match(plan.hint, /套餐本周额度用完后/);
+  assert.deepEqual(plan.lines, ["图片生成剩余 40 次"], "only generations that exist are listed");
+  assert(plan.overflow <= 1, "no horizontal overflow");
 
   await openPage("license");
   await capture("license-valid");
@@ -303,15 +283,14 @@ async function main() {
   assert.equal(enterprise.nicknameValue, "张钦");
   assert.equal(enterprise.sameRow, true, "nickname input and save button share one row");
   assert.equal(enterprise.loggedInMentions, 0);
+  fixtures.limits = limitsFixture();
   await openPage("usage");
   const enterpriseUsage = await q(`return {
-    emptyLines: document.querySelectorAll(".account-entitlements-empty").length,
-    text: document.querySelector(".account-entitlements-empty")?.textContent || "",
-    buyLinks: document.querySelectorAll(".account-entitlements-empty .settings-link-button").length,
+    buy: document.querySelectorAll(".usage-credits-buy").length,
+    statementHidden: document.getElementById("usageStatementLink").hidden,
   };`);
-  assert.equal(enterpriseUsage.emptyLines, 1);
-  assert.equal(enterpriseUsage.buyLinks, 0, "no self-serve purchase link when the edition disables billing");
-  assert.match(enterpriseUsage.text, /管理员/, "enterprise empty state points at the admin instead of a dead end");
+  assert.equal(enterpriseUsage.buy, 0, "no self-serve top-up when the edition disables billing");
+  assert.equal(enterpriseUsage.statementHidden, true, "nor a website statement link");
   await openPage("account");
   const footerEnterprise = await q(`return { name: document.getElementById("accountMenuName").textContent, sub: document.getElementById("accountMenuSub").textContent, mono: document.querySelector("#accountMenuAvatar .account-avatar-monogram")?.textContent || "" };`);
   assert.deepEqual(footerEnterprise, { name: "张钦", sub: "zhangqin", mono: "张" }, "sidebar footer names the person, never \"已登录\" twice");
@@ -335,9 +314,13 @@ async function main() {
   assert.notEqual(signedOut.modesDisplay, "none");
   assert.notEqual(signedOut.headDisplay, "none");
 
+  fixtures.limits = limitsFixture({ signedIn: false, extraCredits: null });
   await openPage("usage");
-  const usageOut = await q(`return { entitlementsHidden: document.getElementById("accountEntitlementsSection").hidden };`);
-  assert.equal(usageOut.entitlementsHidden, true, "credits section disappears while signed out");
+  const usageOut = await q(`return { text: document.getElementById("usageLimitsList").textContent,
+    credits: document.querySelectorAll(".usage-credits").length, statementHidden: document.getElementById("usageStatementLink").hidden };`);
+  assert.match(usageOut.text, /登录账户后/, "signed out: one sentence with the way in");
+  assert.equal(usageOut.credits, 0, "no balance while signed out");
+  assert.equal(usageOut.statementHidden, true);
 
   await openPage("license");
   await capture("license-inactive");

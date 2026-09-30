@@ -347,8 +347,8 @@ function registerAll(ctx) {
     if (accountDisabled()) return { ok: true, organizationId: "" };
     return { ok: true, organizationId: require("./account-manager").setCurrentOrganizationId(organizationId) };
   });
-  ipcMain.handle("account:billing-link", () =>
-    personalAccountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink());
+  ipcMain.handle("account:billing-link", (_event, options) =>
+    personalAccountDisabled() ? disabledAccountResult() : require("./account-manager").createBillingLink(options));
   ipcMain.handle("account:logout", async () => {
     if (accountDisabled()) return { ok: true };
     const result = await require("./account-manager").logout();
@@ -460,7 +460,7 @@ function registerAll(ctx) {
     ipcMain.handle("collaboration:window-status", () => ({ ok: true, detached: manager.isOpen() }));
   }
 
-  ipcMain.handle("usage:get-summary", async () => require("./usage-settings").getUsageSettingsPublic());
+  ipcMain.handle("usage:limits", async (_event, options) => require("./usage-limits").getUsageLimitsPublic(options));
 
   ipcMain.handle("support:submit-feedback", async (_event, payload) => {
     const support = require("./support-contact");
