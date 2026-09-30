@@ -357,7 +357,7 @@ export const pricingCopy = {
     head: {
       eyebrow: "价格",
       title: "先免费用起来，需要更多就订阅。",
-      lead: "个人注册即送体验额度。自带模型选 Pro，开箱即用选 Max；团队按席位订阅企业版，统一管理成员与用量。",
+      lead: "个人注册即送体验额度。Pro 与 Max 功能完全相同，只是每周{unit}不同：用得少选 Pro，用得多选 Max；团队按席位订阅企业版，统一管理成员与用量。",
     },
     personal: {
       name: "免费试用",
@@ -397,15 +397,15 @@ export const pricingCopy = {
       tiers: {
         pro: {
           name: "Lily Pro",
-          tag: "自备模型",
-          desc: "已经有自己的模型接口，想用上 Lily 的全部个人功能。",
-          points: ["自备模型接口（自接 API Key）", "个人版基础功能全部支持"],
-          excludes: ["官方内置智能体"],
+          tag: "轻度使用",
+          desc: "与 Max 功能完全相同，每周{unit}少一些，适合日常轻度使用。",
+          points: ["开箱即用：官方模型，也可自接", "含官方内置智能体", "{unit}按周发放、每周重置", "不同模型按各自价格消耗{unit}，价格表见帮助与价格页"],
+          excludes: [],
         },
         max: {
           name: "Lily Max",
-          tag: "开箱即用",
-          desc: "不想配置模型，打开就能用官方模型完成工作。",
+          tag: "用量更大",
+          desc: "与 Pro 功能完全相同，每周{unit}更多，适合每天大量使用。",
           points: ["开箱即用：官方模型，也可自接", "含官方内置智能体", "{unit}按周发放、每周重置", "不同模型按各自价格消耗{unit}，价格表见帮助与价格页"],
           excludes: [],
         },
@@ -462,7 +462,7 @@ export const pricingCopy = {
       title: "方案对比",
       columns: ["方案", "价格", "模型", "官方内置智能体", "{unit}", "企业控制台", "起购"],
       rows: {
-        pro: ["自接 API Key", false, "按周发放、每周重置", false, "1 个账号"],
+        pro: ["官方模型，也可自接", true, "按周发放、每周重置", false, "1 个账号"],
         max: ["官方模型，也可自接", true, "按周发放、每周重置", false, "1 个账号"],
         standard: ["自接 API Key", false, "按周发放 · 企业内池化", true, "{n} 席起"],
         premium: ["官方模型，也可自接", true, "企业内{unit}池共享", true, "{n} 席起"],
@@ -528,7 +528,7 @@ export const pricingCopy = {
     head: {
       eyebrow: "Pricing",
       title: "Start free. Subscribe when you need more.",
-      lead: "Sign up and get trial credit. Bring your own model with Pro, or use it out of the box with Max; teams subscribe per seat and manage members and usage in one place.",
+      lead: "Sign up and get trial credit. Pro and Max have exactly the same features and differ only in weekly {unit}: Pro for lighter use, Max for heavier use; teams subscribe per seat and manage members and usage in one place.",
     },
     personal: {
       name: "Free trial",
@@ -568,15 +568,15 @@ export const pricingCopy = {
       tiers: {
         pro: {
           name: "Lily Pro",
-          tag: "Bring your model",
-          desc: "You already have a model API and want every personal feature of Lily.",
-          points: ["Bring your own model API (your API key)", "Every basic personal feature"],
-          excludes: ["Built-in official agents"],
+          tag: "Lighter use",
+          desc: "Every feature of Max, with fewer {unit} each week, for lighter everyday use.",
+          points: ["Ready to use: official models, or bring your own", "Built-in official agents", "{unit} are issued weekly and reset every week", "Each model uses {unit} at its own rate; see the price list in Help and on this page"],
+          excludes: [],
         },
         max: {
           name: "Lily Max",
-          tag: "Ready to use",
-          desc: "No model setup: open Lily and work with the official models.",
+          tag: "Heavier use",
+          desc: "Every feature of Pro, with more {unit} each week, for heavy daily use.",
           points: ["Ready to use: official models, or bring your own", "Built-in official agents", "{unit} are issued weekly and reset every week", "Each model uses {unit} at its own rate; see the price list in Help and on this page"],
           excludes: [],
         },
@@ -633,7 +633,7 @@ export const pricingCopy = {
       title: "Compare plans",
       columns: ["Plan", "Price", "Models", "Built-in official agents", "{unit}", "Enterprise console", "Minimum"],
       rows: {
-        pro: ["Your own API key", false, "Issued weekly, reset every week", false, "1 account"],
+        pro: ["Official models, or your own", true, "Issued weekly, reset every week", false, "1 account"],
         max: ["Official models, or your own", true, "Issued weekly, reset every week", false, "1 account"],
         standard: ["Your own API key", false, "Issued weekly, pooled within the organization", true, "From {n} seats"],
         premium: ["Official models, or your own", true, "Shared {unit} pool in the organization", true, "From {n} seats"],
@@ -699,7 +699,7 @@ export const pricingCopy = {
     head: {
       eyebrow: "الأسعار",
       title: "ابدأ مجاناً، واشترك حين تحتاج المزيد.",
-      lead: "سجّل واحصل على رصيد تجريبي. استخدم نموذجك الخاص مع Pro، أو ابدأ فوراً مع Max؛ وتشترك الفرق لكل مقعد وتدير الأعضاء والاستخدام من مكان واحد.",
+      lead: "سجّل واحصل على رصيد تجريبي. لـ Pro وMax الميزات نفسها تماماً، والفرق في {unit} الأسبوعية فقط: Pro للاستخدام الأخف وMax للاستخدام الأكثف؛ وتشترك الفرق لكل مقعد وتدير الأعضاء والاستخدام من مكان واحد.",
     },
     personal: {
       name: "تجربة مجانية",
@@ -739,15 +739,15 @@ export const pricingCopy = {
       tiers: {
         pro: {
           name: "Lily Pro",
-          tag: "نموذجك الخاص",
-          desc: "لديك واجهة نموذج خاصة وتريد كل الميزات الشخصية في Lily.",
-          points: ["واجهة نموذجك الخاص (مفتاح API خاص بك)", "كل الميزات الأساسية للنسخة الشخصية"],
-          excludes: ["الوكلاء الرسميون المدمجون"],
+          tag: "استخدام أخف",
+          desc: "كل ميزات Max، مع {unit} أسبوعية أقل، للاستخدام اليومي الخفيف.",
+          points: ["جاهز للاستخدام: نماذج رسمية، أو نموذجك الخاص", "الوكلاء الرسميون المدمجون", "تُمنح {unit} أسبوعياً وتتجدد كل أسبوع", "يستهلك كل نموذج {unit} بسعره الخاص؛ راجع قائمة الأسعار في المساعدة وفي هذه الصفحة"],
+          excludes: [],
         },
         max: {
           name: "Lily Max",
-          tag: "جاهز للاستخدام",
-          desc: "بلا إعداد للنماذج: افتح Lily واعمل بالنماذج الرسمية مباشرة.",
+          tag: "استخدام أكثف",
+          desc: "كل ميزات Pro، مع {unit} أسبوعية أكثر، للاستخدام اليومي المكثف.",
           points: ["جاهز للاستخدام: نماذج رسمية، أو نموذجك الخاص", "الوكلاء الرسميون المدمجون", "تُمنح {unit} أسبوعياً وتتجدد كل أسبوع", "يستهلك كل نموذج {unit} بسعره الخاص؛ راجع قائمة الأسعار في المساعدة وفي هذه الصفحة"],
           excludes: [],
         },
@@ -804,7 +804,7 @@ export const pricingCopy = {
       title: "مقارنة الخطط",
       columns: ["الخطة", "السعر", "النماذج", "الوكلاء الرسميون المدمجون", "{unit}", "لوحة تحكم المؤسسة", "الحد الأدنى"],
       rows: {
-        pro: ["مفتاح API خاص بك", false, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
+        pro: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
         max: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
         standard: ["مفتاح API خاص بك", false, "تُمنح أسبوعياً وتُجمع داخل المؤسسة", true, "من {n} مقاعد"],
         premium: ["نماذج رسمية، أو نموذجك الخاص", true, "رصيد {unit} مشترك داخل المؤسسة", true, "من {n} مقاعد"],
