@@ -4,14 +4,13 @@ const fs = require("node:fs");
 const jsonFile = require("./json-file");
 const path = require("node:path");
 const { userDataPath } = require("./config");
-const { DEFAULT_PRICING_ID } = require("./usage-cost-estimate");
 const { buildUsageSummary, DEFAULT_HISTORY_DAYS } = require("./usage-summary");
 const { localDateKey } = require("./local-date-key");
 
 const SCHEMA_VERSION = 2;
 const MAX_DAYS = 90;
 
-/** @type {{ schemaVersion: number, pricingId: string, days: Record<string, DayRecord> } | null} */
+/** @type {{ schemaVersion: number, days: Record<string, DayRecord> } | null} */
 let cached = null;
 
 function today() {
@@ -52,7 +51,6 @@ function readStore() {
     if (parsed && typeof parsed === "object" && parsed.days && typeof parsed.days === "object") {
       cached = {
         schemaVersion: SCHEMA_VERSION,
-        pricingId: parsed.pricingId || DEFAULT_PRICING_ID,
         days: parsed.days,
       };
       return cached;
@@ -60,7 +58,7 @@ function readStore() {
   } catch {
     // fall through
   }
-  cached = { schemaVersion: SCHEMA_VERSION, pricingId: DEFAULT_PRICING_ID, days: {} };
+  cached = { schemaVersion: SCHEMA_VERSION, days: {} };
   return cached;
 }
 
@@ -137,14 +135,9 @@ function getUsageSummary({ historyDays = DEFAULT_HISTORY_DAYS, pendingToday = nu
   return buildUsageSummary({ days, byModel, historyDays, pendingToday, pendingUsage });
 }
 
-function setPricingId(_pricingId) {
-  return DEFAULT_PRICING_ID;
-}
-
 module.exports = {
   addUsageDelta,
   mergeSessionRecord,
   getUsageSummary,
-  setPricingId,
   storePath,
 };

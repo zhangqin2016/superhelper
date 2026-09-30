@@ -57,11 +57,11 @@ test("natural-day window excludes old/future rows and preserves pending dates at
   assertBalanced(summary);
 });
 
-test("reference estimates retain sub-cent amounts and sum before rounding", () => {
+test("a 30-day range sums every day and carries no money estimate", () => {
   const summary = buildUsageSummary({ days: Array.from({ length: 30 }, (_, i) => total(1000, 0, dayAgo(i))) });
-  assert.equal(summary.today.referenceCostRmb, 0.002);
-  assert.equal(summary.rangeTotals.costRmb, 0.06);
-  assert.equal(summary.pricing.kind, "reference");
+  assert.equal(summary.rangeTotals.inputTokens, 30000);
+  assert.equal(summary.pricing, undefined);
+  assert.equal(summary.today.costRmb, undefined);
   assertBalanced(summary);
 });
 

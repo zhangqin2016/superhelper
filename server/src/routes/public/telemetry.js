@@ -4,6 +4,7 @@ import { db } from "../../db.js";
 import { publicId } from "../../services/ids.js";
 import { requireSignedDeviceRequest, upsertDevice } from "../../services/device-identity.js";
 import { usageDateKey } from "../../services/usage-date.js";
+import { usageCreditRates } from "../../services/credit-pricing.js";
 
 const registerDeviceSchema = z.object({
   deviceId: z.string().min(6).max(120),
@@ -139,6 +140,7 @@ export function registerPublicTelemetryRoutes(app) {
             historyDays: { type: "integer" },
             days: { type: "array", items: { type: "object" } },
             byModel: { type: "array", items: { type: "object" } },
+            creditRates: { type: "object", additionalProperties: true },
           }),
         },
       },
@@ -176,10 +178,22 @@ export function registerPublicTelemetryRoutes(app) {
       .orderBy("model", "asc")
       .execute();
 
+    // Rates for the page's estimated credits. Optional: without them the page
+    // shows tokens only, never a guessed price.
+    let creditRates;
+    try {
+      creditRates = usageCreditRates(await db.selectFrom("feature_pricing_rules")
+        .select(["feature", "provider", "model", "spec_key", "enabled", "metadata"])
+        .where("feature", "=", "chat_model").where("enabled", "=", true).execute());
+    } catch (error) {
+      request.log?.warn?.({ err: error }, "usage credit rates unavailable");
+    }
+
     return reply.send({
       ok: true,
       deviceId: input.deviceId,
       historyDays,
+      ...(creditRates ? { creditRates } : {}),
       byModel: byModel.map((row) => ({
         date: usageDateKey(row.usage_date),
         providerID: row.provider_id,

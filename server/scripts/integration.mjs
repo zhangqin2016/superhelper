@@ -688,6 +688,9 @@ try {
   });
   assert.equal(usageSummary.statusCode, 200);
   assert.equal(usageSummary.json().deviceId, activationPayload.deviceId);
+  // Estimated credits on the device usage page use the gateway's own rates.
+  assert.deepEqual(usageSummary.json().creditRates?.models?.["deepseek-v4-pro"], { inputCached: 450, input: 13000, output: 39000 });
+  assert.equal(usageSummary.json().creditRates?.default?.output, 39000);
 
   const skillEventPayload = {
     deviceId: activationPayload.deviceId,

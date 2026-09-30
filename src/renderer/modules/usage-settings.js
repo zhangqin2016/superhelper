@@ -21,15 +21,13 @@ function node(tag, className, text) {
   return element;
 }
 
-function formatCostRmb(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return t("settings.usage.notAvailable");
-  if (n > 0 && n < 0.01) return "< ¥0.01";
-  return "¥" + n.toFixed(2);
-}
-
-function cost(row) {
-  return formatCostRmb(row.referenceCostRmb ?? row.costRmb);
+/** Estimated credits (never money): a number, "no credits used" for the
+ *  user's own connection, or a dash when the page cannot know. */
+function credits(row) {
+  if (row?.creditState === "notCharged") return t("settings.usage.creditsNotCharged");
+  const n = Number(row?.estimatedCredits);
+  if (row?.estimatedCredits == null || !Number.isFinite(n) || n < 0) return "—";
+  return new Intl.NumberFormat(getLocale()).format(n);
 }
 
 function tokens(value) {
@@ -70,7 +68,7 @@ function modelTable(models, label) {
   if (!models.length) return node("p", "usage-empty", t("settings.usage.noTokens"));
   const table = node("table", "usage-model-table");
   table.setAttribute("aria-label", label);
-  const columns = ["colModels", "colConnection", "colTokens", "colShare", "colCost"];
+  const columns = ["colModels", "colConnection", "colTokens", "colShare", "colCredits"];
   const head = node("tr");
   for (const key of columns) {
     const cell = node("th", "", t("settings.usage." + key));
@@ -106,7 +104,7 @@ function modelTable(models, label) {
     bar.value = Math.max(0, Math.min(1, row.share || 0));
     bar.setAttribute("aria-label", t("settings.usage.colShare") + " " + modelName(row));
     cells[3].append(bar);
-    cells[4].append(node("span", "usage-number", cost(row)));
+    cells[4].append(node("span", "usage-number", credits(row)));
     tr.append(...cells);
     body.append(tr);
   }
@@ -148,8 +146,8 @@ function renderDays(summary, expanded) {
       (inputUnreported(row) ? "—" : tokens(row.inputTokens)) + " / " + tokens(row.outputTokens));
     inOut.dataset.label = t("settings.usage.colInOut");
     inOut.title = inOutTitle(row);
-    const fee = node("span", "usage-number", cost(row));
-    fee.dataset.label = t("settings.usage.colCost");
+    const fee = node("span", "usage-number", credits(row));
+    fee.dataset.label = t("settings.usage.colCredits");
     toggle.append(date, names, total, inOut, fee);
     details.append(toggle, modelTable(row.models, dateLabel));
     body.append(details);
@@ -209,7 +207,7 @@ function renderUsageSummary(data) {
   const grid = node("div", "usage-stat-grid");
   for (const [title, value, meta] of [
     ["tokensToday", tokens(summary.today.totalTokens), inOutText(summary.today)],
-    ["costToday", cost(summary.today), t("settings.usage.referenceOnly")],
+    ["creditsToday", credits(summary.today), t("settings.usage.creditsEstimateOnly")],
   ]) {
     const stat = node("div", "usage-stat-card");
     stat.append(node("span", "usage-stat-label", t("settings.usage." + title)),
@@ -217,12 +215,10 @@ function renderUsageSummary(data) {
     grid.append(stat);
   }
   $("usageTodayStats").replaceChildren(grid);
-  $("usageRangeTotals").textContent = t("settings.usage.rangeSummary", {
-    days: summary.historyDays, tokens: tokens(summary.rangeTotals.totalTokens), cost: cost(summary.rangeTotals),
-  });
-  $("usagePricingNote").textContent = t("settings.usage.pricingNote", {
-    input: summary.pricing.inputPerMillion, output: summary.pricing.outputPerMillion,
-  });
+  const range = { days: summary.historyDays, tokens: tokens(summary.rangeTotals.totalTokens) };
+  $("usageRangeTotals").textContent = summary.rangeTotals.estimatedCredits == null
+    ? t("settings.usage.rangeSummaryTokens", range)
+    : t("settings.usage.rangeSummary", { ...range, credits: credits(summary.rangeTotals) });
   renderDays(summary, expanded);
   $("usageModelsView").replaceChildren(modelTable(summary.modelTotals, t("settings.usage.byModel")));
   syncView();

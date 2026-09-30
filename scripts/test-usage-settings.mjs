@@ -10,7 +10,7 @@ const { buildUsageSummary } = require("./usage-summary.js");
 const date = require("./local-date-key.js").localDateKey();
 const detail = { date, providerID: "actual", model: "same", inputTokens: 100 };
 
-function harness({ remote, snapshot, models = [], local = [] }) {
+function harness({ remote, snapshot, models = [], local = [], runtime = [] }) {
   const module = { exports: {} };
   let localReads = 0;
   const mocks = {
@@ -23,7 +23,7 @@ function harness({ remote, snapshot, models = [], local = [] }) {
     "./model-selection-catalog": { listModelSelectionPublic: () => {
       if (models instanceof Error) throw models;
       return { models };
-    } },
+    }, listRuntimeModelIds: () => runtime },
   };
   vm.runInNewContext(fs.readFileSync(file, "utf8"), { module, require: id => mocks[id] || require(id) });
   return { read: module.exports.getUsageSettingsPublic, localReads: () => localReads };
@@ -74,4 +74,54 @@ test("server and catalog failures retain local and pending usage without inventi
   assert.equal(data.summary.rangeTotals.inputTokens, 107);
   assert.equal(data.summary.modelTotals.length, 2);
   assert.equal(data.summary.modelTotals[0].connectionType, "unknown");
+});
+
+// Estimated credits (2026-09-30): only a connection routed through the Lily
+// gateway is charged in credits; the user's own connection is not; the rates
+// are the server's, and an offline refresh keeps the last ones it sent.
+test("credits: gateway rows are estimated at the server's rate, own connections are not charged", async () => {
+  const rows = [
+    { date, providerID: "gw", model: "deepseek-v4-pro", inputTokens: 1_000_000, outputTokens: 100_000 },
+    { date, providerID: "own", model: "kimi-k3", inputTokens: 500_000, outputTokens: 10_000 },
+  ];
+  const creditRates = { models: { "deepseek-v4-pro": { inputCached: 450, input: 13000, output: 39000 } },
+    default: { inputCached: 450, input: 13000, output: 39000 } };
+  let online = true;
+  const h = harness({ snapshot: stable,
+    remote: async () => { if (!online) throw Error("offline"); return { ok: true, json: { days: rows, byModel: rows, creditRates } }; },
+    local: rows,
+    models: [
+      { providerID: "gw", modelID: "deepseek-v4-pro", label: "DeepSeek V4 Pro", managed: true },
+      { providerID: "own", modelID: "kimi-k3", label: "Kimi", managed: false },
+    ],
+    runtime: [
+      { providerID: "gw", env: { LILY_OPENCODE_BASE_URL: "https://lilywb.cn/llm/deepseek/v1", LILY_OPENCODE_API_KEY: "$LILY_GATEWAY_TOKEN" } },
+      { providerID: "own", env: { LILY_OPENCODE_BASE_URL: "https://api.moonshot.cn/v1", LILY_OPENCODE_API_KEY: "sk-own" } },
+    ],
+  });
+  const check = (data) => {
+    const byProvider = Object.fromEntries(data.summary.modelTotals.map(row => [row.providerID, row]));
+    assert.equal(byProvider.gw.creditState, "estimated");
+    assert.equal(byProvider.gw.estimatedCredits, 13000 + 3900, "all input priced uncached: at or above the real charge");
+    assert.equal(byProvider.own.creditState, "notCharged");
+    assert.equal(byProvider.own.estimatedCredits, null);
+    assert.equal(data.summary.today.estimatedCredits, 16900, "a day sums only what Lily charges");
+    assert.equal(data.summary.rangeTotals.estimatedCredits, 16900);
+    assert.equal(data.summary.credits.available, true);
+  };
+  check(await h.read());
+  online = false;
+  const offline = await h.read();
+  assert.equal(offline.source, "local");
+  check(offline);
+});
+
+test("credits: without server rates nothing is guessed", async () => {
+  const h = harness({ snapshot: stable, remote: async () => response(),
+    models: [{ providerID: "actual", modelID: "same", label: "Actual", managed: true }],
+    runtime: [{ providerID: "actual", env: { LILY_OPENCODE_BASE_URL: "https://lilywb.cn/llm/deepseek/v1" } }] });
+  const data = await h.read();
+  assert.equal(data.summary.modelTotals[0].creditState, "unknown");
+  assert.equal(data.summary.today.estimatedCredits, null);
+  assert.equal(data.summary.credits.available, false);
 });

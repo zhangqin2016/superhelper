@@ -77,11 +77,10 @@ test("provider/model identity survives real local persistence and signed upload"
   ]);
   const summary = reloadStore().getUsageSummary();
   assert.equal(summary.rangeTotals.inputTokens, 240);
-  assert.equal(summary.pricingId, "deepseek_standard");
   assert.equal(summary.byModel.length, 2);
 });
 
-test("legacy daily totals migrate to unknown identity without changing prices or totals", t => {
+test("legacy daily totals migrate to unknown identity without changing totals", t => {
   const { store, reloadStore } = clientFixture(t);
   fs.writeFileSync(store.storePath(), JSON.stringify({ schemaVersion: 1, days: {
     [today]: { inputTokens: 50, outputTokens: 10, messageCount: 2, turnCount: 1 },
@@ -99,7 +98,6 @@ test("legacy daily totals migrate to unknown identity without changing prices or
   assert.deepEqual(structuredClone(summary.byModel.map(r => [r.providerID, r.model])), [
     ["unknown", "unknown"], ["unknown", "shared-name"], ["vendorA", "shared-name"],
   ]);
-  assert.equal(summary.pricingId, before.pricingId);
 });
 
 test("retry retains its report ID and local persistence deduplicates even after reload", async t => {

@@ -7,6 +7,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow } = require("electron");
 const { buildUsageSummary } = require("../src/main/usage-summary");
+const { applyCreditEstimates } = require("../src/main/usage-credits");
 const { localDateKey } = require("../src/main/local-date-key");
 
 const root = path.resolve(__dirname, "..");
@@ -16,7 +17,7 @@ const date = localDateKey();
 const prior = new Date(); prior.setDate(prior.getDate() - 1);
 const yesterday = localDateKey(prior);
 const hostile = '<img src=x onerror="window.usageInjected=1">';
-const summary = buildUsageSummary({
+const built = buildUsageSummary({
   days: [{ date, inputTokens: 2400000, outputTokens: 43000, messageCount: 1 }, { date: yesterday, inputTokens: 1000, outputTokens: 2 }],
   byModel: [
     { date, providerID: "selection", model: "selected-but-never-used", messageCount: 1 },
@@ -25,10 +26,20 @@ const summary = buildUsageSummary({
     { date, providerID: "connection-" + "long-id-".repeat(10), model: hostile, inputTokens: 100000, outputTokens: 3000 },
   ],
 });
-for (const row of [...summary.modelTotals || [], ...summary.today.models || []]) {
-  row.label = row.model === "model-actual" ? "Configured model name" : row.model;
-  row.connectionType = row.providerID === "unknown" ? "unknown" : row.providerID === "lily-managed-one" ? "managed" : "custom";
-}
+// As usage-settings decorates rows: the Lily-gateway connection is charged in
+// credits, the user's own connections are not, unattributed history is unknown.
+const decorate = row => ({ ...row,
+  label: row.model === "model-actual" ? "Configured model name" : row.model,
+  connectionType: row.providerID === "unknown" ? "unknown" : row.providerID === "lily-managed-one" ? "managed" : "custom",
+  billedInCredits: row.providerID === "unknown" ? null : row.providerID === "lily-managed-one" });
+const decorated = { ...built, modelTotals: built.modelTotals.map(decorate),
+  today: { ...built.today, models: built.today.models.map(decorate) },
+  history: built.history.map(day => ({ ...day, models: day.models.map(decorate) })) };
+const rates = { models: { "model-actual": { inputCached: 450, input: 13000, output: 39000 } }, default: { inputCached: 450, input: 13000, output: 39000 } };
+const summary = applyCreditEstimates(decorated, rates);
+const noRates = applyCreditEstimates(decorated, undefined);
+// 2,100,000 in × 13,000 + 35,000 out × 39,000 per million = 28,665 credits.
+assert.equal(summary.today.estimatedCredits, 28665);
 
 let win;
 app.whenReady().then(async () => {
@@ -70,6 +81,11 @@ app.whenReady().then(async () => {
   await check(`document.querySelector('.usage-day').open && document.querySelectorAll('.usage-day .usage-model-row').length >= 3`, "daily disclosure shows model connections");
   await check(`!window.usageInjected && !document.querySelector('#usageContent img') && document.querySelector('#usageContent').textContent.includes(${JSON.stringify(hostile)})`, "untrusted model IDs must render as text");
   await check(`document.querySelector('#usageContent').textContent.includes('历史记录未记录模型')`, "unknown historical attribution is explicit");
+  await check(`document.querySelector('#usageTodayStats').textContent.includes('今日预估积分') && document.querySelector('#usageTodayStats').textContent.includes('28,665')`, "today shows estimated credits");
+  await check(`document.querySelector('#usageContent').textContent.includes('不扣积分')`, "the user's own connection says it uses no credits");
+  await check(`!/[¥￥]|参考费用|元/.test(document.querySelector('#usageContent').textContent)`, "no money estimate anywhere on the page");
+  await check(`document.querySelector('#usageRangeTotals').textContent.includes('预估 28,665 积分')`, "the range line carries estimated credits");
+  await check(`document.querySelector('.usage-footnote p').textContent.includes('不消耗 Lily 积分')`, "the basis note explains own connections");
   await run(`document.querySelector('[data-usage-view="models"]').click()`);
   await check(`!document.querySelector('#usageModelsView').hidden && document.querySelector('#usageDatesView').hidden`, "model view toggles exclusively");
   await check(`document.querySelectorAll('#usageModelsView .usage-model-row').length === 4`, "model aggregate includes both connections and unknown history");
@@ -103,6 +119,9 @@ app.whenReady().then(async () => {
     if (artifacts) fs.writeFileSync(path.join(artifacts, `usage-models-${width}-${locale}-${theme}.png`), (await win.webContents.capturePage()).toPNG());
     await run(`document.querySelector('[data-usage-view="dates"]').click()`);
   }
+  await run(`window.assistantClient.getUsageSummary = async () => (${JSON.stringify({ ok: true, source: "server", summary: noRates })}); await window.localeModule.setLocale('zh-CN', {persist:false}); await window.usageModule.refreshUsageSettings();`);
+  await check(`!document.querySelector('#usageRangeTotals').textContent.includes('积分') && document.querySelector('#usageTodayStats').textContent.includes('—')`, "without server rates: tokens only, no guessed number");
+  await run(`window.assistantClient.getUsageSummary = async () => window.usageFixture; await window.usageModule.refreshUsageSettings();`);
   await run(`await window.localeModule.setLocale('en', {persist:false}); window.assistantClient.getUsageSummary = async () => { throw Error('offline'); }; await window.usageModule.refreshUsageSettings();`);
   await check(`document.querySelector('#usageStatus').textContent.includes('Could not refresh') && document.querySelectorAll('.usage-day').length === 2`, "refresh failure retains last data with an explicit status");
   await check(`!document.querySelector('#usageRefresh').disabled`, "failure releases refresh control");

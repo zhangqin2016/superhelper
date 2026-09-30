@@ -1,10 +1,7 @@
 "use strict";
 
-const { DEFAULT_PRICING_ID, PRICING, estimateCostRmb } = require("./usage-cost-estimate");
 const { localDateKey } = require("./local-date-key");
 
-/** Fixed estimate basis for user-facing cost display. */
-const USAGE_PRICING_ID = DEFAULT_PRICING_ID;
 const DEFAULT_HISTORY_DAYS = 30;
 const COUNTERS = ["inputTokens", "outputTokens", "messageCount", "turnCount"];
 
@@ -35,7 +32,6 @@ function daySummary(date, day) {
   const inputTokens = count(day.inputTokens);
   const outputTokens = count(day.outputTokens);
   const totalTokens = inputTokens + outputTokens;
-  const price = PRICING[USAGE_PRICING_ID];
   return {
     date,
     inputTokens,
@@ -43,8 +39,6 @@ function daySummary(date, day) {
     totalTokens,
     messageCount: count(day.messageCount),
     turnCount: count(day.turnCount),
-    costRmb: estimateCostRmb(inputTokens, outputTokens, USAGE_PRICING_ID),
-    referenceCostRmb: (inputTokens * price.inputPerMillion + outputTokens * price.outputPerMillion) / 1_000_000,
   };
 }
 
@@ -189,11 +183,8 @@ function buildUsageSummary({
   );
   Object.assign(rangeTotals, daySummary(undefined, rangeTotals));
   delete rangeTotals.date;
-  const price = PRICING[USAGE_PRICING_ID];
 
   return {
-    pricingId: USAGE_PRICING_ID,
-    pricing: { kind: "reference", currency: "CNY", inputPerMillion: price.inputPerMillion, outputPerMillion: price.outputPerMillion },
     today: rangeDays[0],
     history: rangeDays.slice(1),
     rangeTotals,
@@ -206,7 +197,6 @@ function buildUsageSummary({
 }
 
 module.exports = {
-  USAGE_PRICING_ID,
   DEFAULT_HISTORY_DAYS,
   buildUsageSummary,
   daySummary,

@@ -6,16 +6,12 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = module.createRequire(import.meta.url);
 
-const { buildUsageSummary, normalizeUsageDateKey, USAGE_PRICING_ID } = require(path.join(
+const { buildUsageSummary, normalizeUsageDateKey } = require(path.join(
   __dirname,
   "../src/main/usage-summary.js",
 ));
-const { estimateCostRmb } = require(path.join(__dirname, "../src/main/usage-cost-estimate.js"));
 const { localDateKey } = require(path.join(__dirname, "../src/main/local-date-key.js"));
 
-if (USAGE_PRICING_ID !== "deepseek_standard") {
-  throw new Error(`usage pricing must be deepseek_standard, got ${USAGE_PRICING_ID}`);
-}
 
 function daysAgo(n) {
   const date = new Date();
@@ -39,9 +35,10 @@ if (summary.today.inputTokens !== 2000 || summary.today.outputTokens !== 1000) {
   throw new Error(`pending today merge failed: ${JSON.stringify(summary.today)}`);
 }
 
-const expectedTodayCost = estimateCostRmb(2000, 1000, "deepseek_standard");
-if (summary.today.costRmb !== expectedTodayCost) {
-  throw new Error(`today cost ${summary.today.costRmb}, want ${expectedTodayCost}`);
+// Money is not a usage unit any more: credits are estimated per model from
+// the server's rates (usage-credits), never from a client price table.
+if ("costRmb" in summary.today || "referenceCostRmb" in summary.today || "pricing" in summary) {
+  throw new Error(`usage summary must not carry a money estimate: ${JSON.stringify(summary.today)}`);
 }
 
 if (summary.history.length !== 2) {
