@@ -4,7 +4,7 @@ import { Search, UserPlus } from "lucide-react";
 import { requireEnterpriseOrganization, requireEnterpriseData, roleAtLeast } from "../../../../../lib/enterprise-page";
 import { getI18n } from "../../../../../lib/i18n.mjs";
 import {
-  consoleErrorMessage, enterpriseConsoleText, fill, formatBudget, formatDate, formatDateTime, formatNumber, personDetail, personLabel,
+  consoleErrorMessage, enterpriseConsoleText, fill, formatCreditBudget, formatDate, formatDateTime, formatNumber, personDetail, personLabel,
 } from "../../../../../lib/enterprise-console-i18n.mjs";
 import {
   addMemberAction, patchMemberAction, provisionAccountsAction, removeMemberAction, resetAccountPasswordAction,
@@ -185,7 +185,7 @@ export default async function OrgMembersPage({ params, searchParams }) {
       <header>
         <h2 className="text-xl font-semibold">{M.title}</h2>
         <p className="mt-1 text-sm text-slate-500">{M.intro}</p>
-        <p className="mt-1 text-sm text-slate-600">{fill(M.defaultBudget, { value: formatBudget(org.default_member_weekly_budget, locale) })}</p>
+        <p className="mt-1 text-sm text-slate-600">{fill(M.defaultBudget, { value: formatCreditBudget(org.default_member_weekly_budget, locale) })}</p>
       </header>
 
       <EnterpriseCard title={M.addTitle} description={M.addIntro}>

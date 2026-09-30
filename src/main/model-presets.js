@@ -581,10 +581,65 @@ function findPresetById(presetId) {
   return getAllPresets().find((p) => p.id === presetId) || null;
 }
 
+/** BYOK plan-gate verdict — byok-policy is the only interpreter; fail-open. */
+function byokDecision() {
+  try {
+    return require("./account-manager").byokDecision();
+  } catch {
+    return require("./byok-policy").decideByok({});
+  }
+}
+
+function byokRefusal() {
+  const decision = byokDecision();
+  return decision.allowed ? null : { ok: false, error: "BYOK_PLAN_REQUIRED", byok: decision };
+}
+
 function getActivePresetId() {
+  const selectedId = loadUserChoice()?.activePresetId;
+  let presets = getAllPresets();
+  // A plan-locked custom model is never the effective model: resolve as if it
+  // were absent, which lands on the platform default. The stored choice is kept,
+  // so the lock lifts by itself when the entitlement changes.
+  if (presets.some((p) => p.custom && p.id === selectedId) && !byokDecision().allowed) {
+    presets = presets.filter((p) => !p.custom);
+  }
   return require("./model-identity").resolveActivePresetId(
-    loadUserChoice()?.activePresetId, loadCatalog(), getAllPresets(), remoteConfig.getRemoteModelIdentityAliasesSync?.(),
+    selectedId, loadCatalog(), presets, remoteConfig.getRemoteModelIdentityAliasesSync?.(),
   );
+}
+
+/**
+ * One-shot notice for models the user chose but the plan gate now locks (the
+ * stored active custom preset, or a picker selection). Each id is announced
+ * once per lock episode; the record clears once BYOK is allowed again.
+ */
+const BYOK_NOTICE_FILE = "byok-lock-notice.json";
+
+function lockedActiveCustomPreset() {
+  const selectedId = loadUserChoice()?.activePresetId;
+  const preset = getCustomPresets().find((p) => p.id === selectedId);
+  if (!preset || byokDecision().allowed) return null;
+  // Same id the model picker uses, so one model is announced once, not twice.
+  return { id: require("./model-identity").canonicalModelId(preset.id, preset.model), label: preset.label };
+}
+
+function takeByokSwitchNotice(candidates = [lockedActiveCustomPreset()]) {
+  try {
+    const file = userDataPath(BYOK_NOTICE_FILE);
+    const decision = byokDecision();
+    if (decision.allowed) {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      return null;
+    }
+    const seen = new Set(readJson(file, {})?.notifiedIds || []);
+    const fresh = (Array.isArray(candidates) ? candidates : []).filter((c) => c?.id && !seen.has(c.id));
+    if (!fresh.length) return null;
+    writeJson(file, { notifiedIds: [...seen, ...fresh.map((c) => c.id)] });
+    return { models: fresh.map((c) => String(c.label || c.id)), pricingUrl: decision.pricingUrl };
+  } catch {
+    return null;
+  }
 }
 
 function getActivePreset() {
@@ -648,6 +703,8 @@ function getUserApiEnv() {
 
   const gateway = user.apiGateway || normalizeApiGateway(null);
   if (gateway.mode !== "custom") return {};
+  // The custom API gateway stays open to everyone (owner decision 2026-09-30):
+  // only own-key MODELS are plan-gated.
 
   const env = {};
   const protocol = normalizeProtocol(gateway.protocol) || legacyProtocolForBaseUrl(gateway.baseUrl);
@@ -777,8 +834,10 @@ function listPresetsPublic() {
       return {};
     }
   })();
+  const byok = byokDecision();
   return {
     activePresetId: getActivePresetId(),
+    byok,
     apiGateway: getApiGatewayPublic(),
     managedByService: isRemoteManagedCatalog(),
     // Server-published BYOK provider catalog — the renderer's "add model" flow
@@ -799,6 +858,7 @@ function listPresetsPublic() {
       capabilities: publicCapabilities(p.capabilities),
       contextWindow: presetContextWindow(p, normalizeToLilyEnv(p.env || {})),
       custom: Boolean(p.custom),
+      locked: require("./byok-policy").isByokLocked(p, byok),
     })),
   };
 }
@@ -806,6 +866,10 @@ function listPresetsPublic() {
 function setActivePreset(presetId) {
   const found = findPresetById(presetId);
   if (!found) return { ok: false, error: "NOT_FOUND" };
+  if (found.custom) {
+    const refusal = byokRefusal();
+    if (refusal) return refusal;
+  }
   const user = loadUserChoice();
   const next = { ...user, activePresetId: presetId };
   if (!found.custom && presetHasOwnModelConnection(found)) {
@@ -843,6 +907,8 @@ function saveCustomPreset({
   compatibilityProfile = null,
   capabilities = null,
 }) {
+  const refusal = byokRefusal();
+  if (refusal) return refusal;
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
 
@@ -1023,6 +1089,9 @@ function isTransientProbeError(error) {
 }
 
 async function saveCustomPresetWithProbe(input = {}) {
+  // Refuse before spending a probe on a model the plan gate would not save.
+  const refusal = byokRefusal();
+  if (refusal) return refusal;
   const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
   if (normalizeRequestBodyOverlay(input.requestBodyOverlay) || protocol !== "openai") {
     return saveCustomPreset(input);
@@ -1346,6 +1415,8 @@ module.exports = {
   getUserApiEnv,
   getActiveModelConnectionStatus,
   getActivePresetId,
+  byokDecision,
+  takeByokSwitchNotice,
   listPresetsPublic,
   getApiGatewayPublic,
   setActivePreset,

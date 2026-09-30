@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AdminShell } from "../../../../../components/admin-shell";
-import { BillingProductForm } from "../../../../../components/billing-admin-panels";
+import { AdminBillingProductForm } from "../../../../../components/admin-billing-product-form";
 
 export default function NewBillingProductPage() {
   return (
@@ -8,7 +8,7 @@ export default function NewBillingProductPage() {
       <div className="mb-5">
         <Link href="/admin/billing/products" className="text-sm font-semibold text-brand">返回商品档位</Link>
       </div>
-      <BillingProductForm />
+      <AdminBillingProductForm />
     </AdminShell>
   );
 }

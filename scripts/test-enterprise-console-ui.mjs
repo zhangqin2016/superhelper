@@ -252,7 +252,7 @@ await check("an admin's overview shows the spendable pool and says top-ups come 
   env.locale = "en";
   env.api = fakeApi({ org: baseOrg });
   const html = textOf(await render(load("app/account/enterprise/[id]/page.js").default({ params: Promise.resolve({ id: baseOrg.id }) })));
-  assert.match(html, /64,000 Tokens available/, "expired grants are not spendable");
+  assert.match(html, /64,000 Credits available/, "expired grants are not spendable");
   assert.match(html, /Image generation 30/);
   assert.match(html, /topped up by the platform/);
   assert.match(html, /1,200/); assert.match(html, /5,000/, "my week: used and budget");
@@ -276,7 +276,7 @@ await check("members are people (name / login / masked phone), with week, contro
   assert.ok(env.calls.some(([k, s]) => k === "members-query" && /q=ma/.test(s) && /limit=50/.test(s)), "search and page size reach the API");
   for (const s of ["Olivia Owner", "139****0002", "Marco Member", "max_0001", "+86 138****8000"]) assert.ok(text.includes(s), `shows ${s}`);
   assert.ok(!/usr_/.test(text), "never a bare usr_ id on screen");
-  assert.match(text, /Used 8,000 \/ 8,000/); assert.match(text, /Used 10 · unlimited/); assert.match(text, /Week not started/);
+  assert.match(text, /Used 8,000 \/ 8,000 credits/); assert.match(text, /Used 10 credits · unlimited/); assert.match(text, /Week not started/);
   assert.match(text, /1–3 of 120/); assert.match(html, /offset=50/, "pagination");
   assert.match(text, /Pending seats \(1\)/); assert.match(text, /Expires/);
   assert.match(text, /Issued accounts \(2\)/); assert.match(text, /Restore to organization/, "a removed issued account can come back");
@@ -406,7 +406,7 @@ await check("history reads as who did what, when — with load more", async () =
   assert.match(text, /Olivia Owner changed Marco Member: role Member → Admin, weekly budget set to 800/);
   assert.match(text, /The platform froze the organization/); assert.match(text, /note: Overdue/);
   assert.match(text, /139\*\*\*\*0002 removed a former member from the organization/);
-  assert.match(text, /The platform added 100,000 Tokens to the pool/);
+  assert.match(text, /The platform added 100,000 Credits to the pool/);
   assert.ok(!/usr_/.test(text));
   assert.match(html, /history\?show=100/, "load more");
 });

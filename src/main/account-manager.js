@@ -14,6 +14,7 @@ let accessToken = "";
 let accessExpiresAt = 0;
 let accessUserId = "";
 let accountGeneration = 0;
+let byokMemo = null; // see byokDecision()
 const secretStorage = require("./secret-storage");
 const unprotectText = (record) => secretStorage.unprotectSecret(record);
 
@@ -50,6 +51,7 @@ function readState() {
 function writeState(state) {
   const file = statePath();
   jsonFile.writeJson(file, state);
+  byokMemo = null;
 }
 
 function tokenFresh() {
@@ -136,6 +138,39 @@ function accountAccessStatus() {
     return { ok: true, usable: false, error: "ACCOUNT_ENTITLEMENTS_INSUFFICIENT", accountStatus: status };
   }
   return { ok: true, usable: true, accountStatus: status };
+}
+
+/**
+ * The BYOK plan-gate verdict for the signed-in account (byok-policy decides).
+ * Read on hot paths (active-model resolution), so it is memoized briefly and
+ * dropped whenever account state is written — a refreshed entitlement (e.g. a
+ * plan just bought) takes effect on the next read, no restart. Any failure to
+ * read the inputs is fail-open: allowed.
+ */
+const BYOK_MEMO_MS = 3_000;
+
+function byokDecision() {
+  const { decideByok } = require("./byok-policy");
+  if (byokMemo && Date.now() - byokMemo.at < BYOK_MEMO_MS) return byokMemo.decision;
+  let decision;
+  try {
+    const entitlements = readState().entitlements || null;
+    // Only an explicit refusal needs the (costlier) session and licence checks.
+    if (entitlements?.byokAllowed !== false) {
+      decision = decideByok({ entitlements });
+    } else {
+      let licenseValid = false;
+      try {
+        const license = require("./license-manager").getLicenseStatus();
+        licenseValid = Boolean(license?.activated && license?.valid);
+      } catch { licenseValid = false; }
+      decision = decideByok({ loggedIn: accountStatus().loggedIn, entitlements, licenseValid });
+    }
+  } catch {
+    decision = decideByok({});
+  }
+  byokMemo = { at: Date.now(), decision };
+  return decision;
 }
 
 async function updateProfile({ displayName } = {}) {
@@ -353,6 +388,7 @@ module.exports = {
   updateProfile,
   accountStatus,
   accountAccessStatus,
+  byokDecision,
   isTransientRefreshFailure,
   sendSmsCode,
   loginWithSms,

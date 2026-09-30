@@ -260,8 +260,12 @@ function registerAll(ctx) {
   };
   const accountDisabled = () => personalAccountDisabled() && require("./service-client").getClientPolicy().features?.enterpriseAccountLogin !== true;
   const disabledAccountResult = () => ({ ok: false, error: "ACCOUNT_FEATURE_DISABLED" });
-  ipcMain.handle("account:status", () =>
-    accountDisabled() ? { ok: true, loggedIn: false, disabled: true } : require("./account-manager").accountStatus());
+  ipcMain.handle("account:status", () => {
+    if (accountDisabled()) return { ok: true, loggedIn: false, disabled: true };
+    const accountManager = require("./account-manager");
+    // The BYOK verdict rides along so model views can re-render when it flips.
+    return { ...accountManager.accountStatus(), byok: accountManager.byokDecision() };
+  });
   ipcMain.handle("account:sms-send", async (_event, payload) =>
     personalAccountDisabled() ? disabledAccountResult() : require("./account-manager").sendSmsCode(payload?.phone || payload));
   ipcMain.handle("account:password-login", async (_event, payload) => {

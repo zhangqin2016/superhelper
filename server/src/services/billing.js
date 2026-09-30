@@ -26,15 +26,28 @@ export function grantTypeForProduct(product = {}) {
   if (resourceType === "image_generation") return "paid_image_generations";
   if (resourceType === "video_generation") return "paid_video_generations";
   if (resourceType === "membership") return "membership";
+  if (resourceType === "plan") return "plan_subscription";
   return "paid_units";
 }
 
-export function createGrantFromPaidOrder({ userId, orderId, product, now = new Date() } = {}) {
+/**
+ * A subscription plan (resource_type "plan"): the grant row IS the subscription
+ * period. unit_amount is the WEEKLY allowance (0 for a plan without one, e.g.
+ * Pro); metadata.plan names the tier. A renewal starts where the current
+ * period of the same tier ends (`startsAt`), so paying early never loses days.
+ */
+export function planTierOf(product = {}) {
+  const tier = String(product?.metadata?.plan || "").trim().toLowerCase();
+  return /^[a-z][a-z0-9_-]{0,31}$/.test(tier) ? tier : "";
+}
+
+export function createGrantFromPaidOrder({ userId, orderId, product, now = new Date(), startsAt = null } = {}) {
   const unitTotal = Number(product?.unit_amount || 0);
   const resourceType = String(product?.resource_type || "");
+  const start = startsAt && new Date(startsAt).getTime() > now.getTime() ? new Date(startsAt) : now;
   const expiresAt = product?.duration_seconds
-    ? new Date(now.getTime() + Number(product.duration_seconds) * 1000)
-    : addDays(now, Number(product?.grant_expires_days || 365));
+    ? new Date(start.getTime() + Number(product.duration_seconds) * 1000)
+    : addDays(start, Number(product?.grant_expires_days || 365));
   return {
     id: publicId("grant"),
     user_id: userId,
@@ -46,10 +59,10 @@ export function createGrantFromPaidOrder({ userId, orderId, product, now = new D
     token_remaining: resourceType === "token" ? unitTotal : 0,
     unit_total: unitTotal,
     unit_remaining: unitTotal,
-    starts_at: now.toISOString(),
+    starts_at: start.toISOString(),
     expires_at: expiresAt.toISOString(),
     status: "active",
-    metadata: { productId: product?.id || "" },
+    metadata: { productId: product?.id || "", ...(resourceType === "plan" ? { plan: planTierOf(product) } : {}) },
   };
 }
 

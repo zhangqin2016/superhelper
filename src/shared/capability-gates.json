@@ -2992,6 +2992,16 @@
       ]
     },
     {
+      "id": "personal-plans",
+      "protects": "Personal Pro/Max plans sold as subscription products (resource_type plan): the paid period is a grant row whose unit_total is the WEEKLY allowance; each week's allowance is handed out once (advisory lock + ledger idempotency key plan_week:<grant>:<index>) as an ordinary token grant expiring when the week ends, so it resets weekly and never accumulates, and every existing balance/statement/admin view shows it; weeks count from the period start; renewals continue the period of the same tier; a full refund ends the plan, revokes the week it handed out and moves queued renewals up; the plan ledger row carries the money with zero credit. Model cost weighting through feature_pricing_rules (deepseek-v4-pro unit_cost 4). Own model keys (BYOK) are decided in one place (byokAllowedFor) from the admin switch byok_requires_plan (default off → open), a Pro/Max plan or an active enterprise membership.",
+      "baseline": "2026-09-30: the quote sheet sold Pro/Max as monthly plans with a weekly reset, but the system only had one-off credit packs and an unmetered membership (a ¥99 membership would have been unlimited platform-model use); pricing rules were empty so the pro model drained credit at the flash rate (real cost ~4.5×).",
+      "failureFallback": "No plan product → nothing changes for anyone. BYOK switch off by default → everyone keeps their keys; a client that does not know the field allows. Allowance issuance runs inside the charge/summary transaction; if it fails the charge fails loudly rather than handing out credit twice. Mutation-verified: an allowance that expires with the plan (no weekly reset) and a renewal that overlaps instead of continuing each fail plans-integration by name.",
+      "tests": [
+        "server/scripts/plans-integration.mjs",
+        "scripts/test-byok-plan-gate.mjs"
+      ]
+    },
+    {
       "id": "render-ledger-content-match",
       "protects": "Every render's receipt is found: render_document.py also records it in the host render ledger (LILY_RENDER_RECEIPTS_DIR, shared host-ledger reader with the vision ledger), so each file is counted by its own receipt. A rendered page byte-identical to a page inspected in another render this turn (a PDF export beside its .docx) counts as inspected; identical pages within one render do not vouch for each other; a file changed after rendering still needs a new render.",
       "baseline": "2026-09-30: the check round inspected every .docx/.pptx page and confirmed the PDF exports rendered identically; the PDFs' receipts were never looked up (only folders of inspected pages were searched), one loop's output was read as every PDF's pages (0/38 inspected for a 7-page PDF), and the finished check still ended 自动检查未全部完成.",
@@ -3001,6 +3011,16 @@
         "scripts/test-vision-ledger-delivery.mjs",
         "scripts/test-document-delivery-gate.mjs",
         "scripts/test-render-document.mjs"
+      ]
+    },
+    {
+      "id": "lily-credits",
+      "protects": "Model usage is charged in Lily credits (积分, 1 yuan = 1000) at each model's own rate, three ways (cached input / fresh input / output per million tokens) from feature_pricing_rules.metadata.creditsPerMillion — an admin edit, not a release. A model without a rate pays the most expensive rate (never free, never a loss). The gateway reserves the estimated input at the cached rate (proves the balance) and settles the provider-reported split when the answer completes; cached tokens counted once for both OpenAI-style (prompt_tokens includes prompt_cache_hit_tokens) and Anthropic-style (cache_read_input_tokens apart) usage. usage_events.billable_tokens stays raw tokens. Migration 065 converted old token balances, their ledger/usage history and enterprise budgets by value (1,600 credits per million tokens) exactly once (app_settings credits_converted). Signup gift 2,000 credits.",
+      "baseline": "2026-09-30: every model was charged one unit per token (pricing rules empty) though deepseek-v4-pro costs ~4.5× flash, and cached input (most of an agent's context) was charged like fresh input; balances were in raw tokens with no currency of our own.",
+      "failureFallback": "Missing/garbled rate → fallback (most expensive) rate. Reservation never above the real charge for the same input; a failed settlement never fails the answer already delivered (existing best-effort reconcile). Conversion is guarded to run once and keeps legacyTokenRemaining on each grant for audit. Raw token statistics unchanged.",
+      "tests": [
+        "scripts/test-credit-pricing.mjs",
+        "server/scripts/credits-integration.mjs"
       ]
     }
   ]

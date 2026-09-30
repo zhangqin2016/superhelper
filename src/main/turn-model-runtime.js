@@ -65,6 +65,9 @@ function resolveTurnModel(opts, text, files, context = {}) {
       return { ok: false, error: "MODEL_SNAPSHOT_UNAVAILABLE" };
     }
     if (manualOverrideAfterSource(context.sessionId, receipt) || pinnedModelUnavailableAfterSource(context.sessionId, receipt, opts?.avoidModelIds)) receipt = null;
+    // A source turn that ran on a now plan-locked custom model continues on the
+    // effective default instead of failing as a snapshot mismatch.
+    else if (receipt?.selectionId && catalog.isLockedModel?.(receipt.selectionId)) receipt = null;
   }
   let retained = 0;
   try {

@@ -7,7 +7,8 @@
 // "paid", so money and credit never diverge. Refunds are applied the same way:
 // money back and credit taken back in one transaction.
 
-import { createGrantFromPaidOrder } from "../billing.js";
+import { sql } from "kysely";
+import { createGrantFromPaidOrder, planTierOf } from "../billing.js";
 import { publicId } from "../ids.js";
 import { effectiveProviderConfig } from "./providers.js";
 
@@ -41,7 +42,18 @@ export function createSettlement({ db, gatewayFor, now, log }) {
   async function fulfil(trx, order, { paymentId, providerOrderId, provider }) {
     const product = await trx.selectFrom("products").selectAll().where("id", "=", order.product_id).executeTakeFirst();
     if (!product) throw Object.assign(new Error("PRODUCT_NOT_FOUND"), { code: "PRODUCT_NOT_FOUND" });
-    const grant = createGrantFromPaidOrder({ userId: order.user_id, orderId: order.id, product, now: now() });
+    // A plan renewal continues the current period of the same tier.
+    let startsAt = null;
+    if (product.resource_type === "plan") {
+      const tier = planTierOf(product);
+      const current = await trx.selectFrom("wallet_grants").select((eb) => eb.fn.max("expires_at").as("until"))
+        .where("user_id", "=", order.user_id).where("resource_type", "=", "plan").where("status", "=", "active")
+        .where("organization_id", "is", null).where("expires_at", ">", now())
+        .where(sql`metadata->>'plan'`, "=", tier)
+        .executeTakeFirst();
+      startsAt = current?.until || null;
+    }
+    const grant = createGrantFromPaidOrder({ userId: order.user_id, orderId: order.id, product, now: now(), startsAt });
     await trx.updateTable("orders").set({
       status: "paid",
       paid_at: now(),
@@ -58,7 +70,9 @@ export function createSettlement({ db, gatewayFor, now, log }) {
       event_type: "grant",
       resource_type: grant.resource_type,
       token_delta: grant.resource_type === "token" ? grant.unit_total : 0,
-      unit_delta: grant.unit_total,
+      // A plan's unit_total is its weekly allowance, not credit: the credit
+      // arrives week by week as its own ledger rows.
+      unit_delta: grant.resource_type === "plan" ? 0 : grant.unit_total,
       money_delta_cents: order.amount_cents,
       source_type: "order",
       source_id: order.id,
@@ -223,7 +237,27 @@ export function createSettlement({ db, gatewayFor, now, log }) {
       // Take back the unused credit in proportion to the money returned.
       const grant = await trx.selectFrom("wallet_grants").selectAll().where("source_type", "=", "order").where("source_id", "=", order.id).forUpdate().executeTakeFirst();
       let units = 0;
-      if (grant) {
+      if (grant?.resource_type === "plan") {
+        // A plan's unit_total is its weekly allowance, not a balance. A full
+        // refund ends the subscription and the week it already handed out; a
+        // partial one leaves the period to an operator.
+        if (refunded >= order.amount_cents) {
+          await trx.updateTable("wallet_grants").set({ status: "revoked" }).where("id", "=", grant.id).execute();
+          await trx.updateTable("wallet_grants").set({ status: "revoked" })
+            .where("source_type", "=", "plan").where("source_id", "=", grant.id).where("status", "=", "active").execute();
+          // Renewals queued behind the refunded period move up to fill its
+          // place, so a paid renewal never waits behind days that no longer exist.
+          const cut = Math.max(0, new Date(grant.expires_at).getTime() - Math.max(now().getTime(), new Date(grant.starts_at).getTime()));
+          if (cut > 0) {
+            await trx.updateTable("wallet_grants").set({
+              starts_at: sql`starts_at - make_interval(secs => ${cut / 1000})`,
+              expires_at: sql`expires_at - make_interval(secs => ${cut / 1000})`,
+            }).where("user_id", "=", grant.user_id).where("resource_type", "=", "plan").where("status", "=", "active")
+              .where("organization_id", "is", null).where("starts_at", ">=", new Date(new Date(grant.expires_at).getTime() - 1000))
+              .where(sql`metadata->>'plan'`, "=", grant.metadata?.plan || "").execute();
+          }
+        }
+      } else if (grant) {
         const share = Math.ceil(Number(grant.unit_total || 0) * refund.amount_cents / Math.max(1, order.amount_cents));
         units = Math.min(Number(grant.unit_remaining || 0), share);
         const full = refunded >= order.amount_cents;

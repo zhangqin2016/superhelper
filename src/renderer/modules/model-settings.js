@@ -8,6 +8,7 @@ import store from "./state.js";
 import { t, tModel, tModelDesc } from "../i18n/index.js";
 
 import { anySessionRunning } from "./session-runtime-store.js";
+import { announceByokNotice, byokGateNotice } from "./byok-gate.js";
 
 // Completion alerts moved to the General settings page (they are notification
 // preferences, not model config). See settings-panel.js + index.html General.
@@ -17,6 +18,7 @@ function isBusy() {
 }
 
 function apiErrorMessage(error, detail = null) {
+  if (error === "BYOK_PLAN_REQUIRED") return t("byok.planRequired");
   if (error === "SECRET_STORAGE_UNAVAILABLE") return t("toast.modelSecretStorageUnavailable");
   // An HTTP rejection with the server's own (redacted) words: which parameter,
   // which model, which key — instead of one sentence for every failure.
@@ -83,6 +85,15 @@ function renderModelLibraryList(presets) {
     badge.className = `model-library-badge${preset.custom ? " is-custom" : ""}`;
     badge.textContent = t(preset.custom ? "settings.modelLibraryCustom" : "settings.modelLibraryOfficial");
     title.append(name, badge);
+    // Plan-locked (main's byok verdict): listed, not usable, with the reason.
+    if (preset.locked) {
+      const lock = document.createElement("span");
+      lock.className = "model-library-badge is-locked";
+      lock.textContent = t("byok.lockedBadge");
+      title.append(lock);
+      row.classList.add("is-locked");
+      row.title = t("byok.planRequired");
+    }
 
     const model = document.createElement("span");
     model.className = "model-custom-id";
@@ -287,12 +298,27 @@ function renderCatalog(catalog) {
 // Engine picker removed: OpenCode is the only engine, so there's nothing to pick.
 // The engine still resolves server/env-side (LILY_ENGINE); it's just not a UI choice.
 
+// Last BYOK verdict shown; an account refresh that flips it re-renders.
+let shownByokAllowed = null;
+
+function renderByokGate(byok) {
+  shownByokAllowed = byok ? byok.allowed !== false : true;
+  $("modelByokGate")?.remove();
+  const notice = byokGateNotice(byok);
+  if (!notice) return;
+  notice.id = "modelByokGate";
+  const anchor = $("modelCatalogBlock") || $("modelLibraryList");
+  anchor?.parentNode?.insertBefore(notice, anchor);
+}
+
 export async function refreshModelSelect() {
   const data = await window.assistantClient.listModels();
   if (!data?.ok) return;
 
   renderModelLibraryList(data.presets);
   renderCatalog(data.catalog);
+  renderByokGate(data.byok);
+  announceByokNotice(data.byokNotice);
 }
 
 function setDiagnoseRestoreStatus(messageKey, kind = "info", params = {}) {
@@ -370,6 +396,13 @@ async function diagnoseAndRestoreDefaultModel() {
 }
 
 export async function initModelSettings() {
+  // Entitlements refreshed (plan bought, signed out…): re-render only when the
+  // BYOK verdict actually changed — models:list is not a cheap call.
+  window.addEventListener("lily:account-status-changed", (event) => {
+    const byok = event?.detail?.byok;
+    if (!byok || shownByokAllowed === null || (byok.allowed !== false) === shownByokAllowed) return;
+    void refreshModelSelect();
+  });
   await refreshModelSelect();
 
   $("modelDiagnoseRestoreBtn")?.addEventListener("click", () => void diagnoseAndRestoreDefaultModel());

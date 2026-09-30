@@ -292,10 +292,131 @@ export async function memberWeeklyStatus({ userId, organizationId }, trx = null)
   return { ok: true, weeklyBudget: decision.budget, weeklyUsed: decision.used, resetsAt: decision.resetsAt, limited: !decision.ok, perRequestCap: access.member.quota ?? null };
 }
 
+// ------------------------------------------------------------ plans
+
+export const PLAN_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The allowance week a subscription is in at `now`. Weeks count from the
+ * start of the paid period (like a weekly usage limit), the last one is cut
+ * at the period's end. Pure.
+ */
+export function planWeek({ startsAt, expiresAt, now = new Date() }) {
+  const start = new Date(startsAt).getTime();
+  const end = new Date(expiresAt).getTime();
+  const at = new Date(now).getTime();
+  if (!(at >= start && at < end)) return null;
+  const index = Math.floor((at - start) / PLAN_WEEK_MS);
+  const weekStart = start + index * PLAN_WEEK_MS;
+  return { index, startsAt: new Date(weekStart), expiresAt: new Date(Math.min(weekStart + PLAN_WEEK_MS, end)) };
+}
+
+/**
+ * Hand out this week's allowance of every active plan the user holds — once per
+ * plan per week, whoever asks first (a charge, or reading the balance). The
+ * allowance is an ordinary token grant that expires when the week ends, so
+ * "resets weekly, never accumulates" is the existing expiry, and every
+ * existing view (balance, statement, admin) already shows it.
+ */
+export async function ensurePlanAllowances(trx, userId, now = new Date()) {
+  const plans = await trx.selectFrom("wallet_grants").selectAll()
+    .where("user_id", "=", userId).where("resource_type", "=", "plan").where("status", "=", "active")
+    .where("organization_id", "is", null).where("starts_at", "<=", now).where("expires_at", ">", now)
+    .where("unit_total", ">", 0)
+    .execute();
+  for (const plan of plans) {
+    const week = planWeek({ startsAt: plan.starts_at, expiresAt: plan.expires_at, now });
+    if (!week) continue;
+    const key = `plan_week:${plan.id}:${week.index}`;
+    await sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`.execute(trx);
+    const issued = await trx.selectFrom("wallet_ledger").select("id").where("idempotency_key", "=", key).executeTakeFirst();
+    if (issued) continue;
+    const grantId = publicId("grant");
+    const units = Number(plan.unit_total || 0);
+    const tier = plan.metadata?.plan || "";
+    await trx.insertInto("wallet_grants").values({
+      id: grantId, user_id: userId, source_type: "plan", source_id: plan.id, grant_type: "plan_weekly",
+      resource_type: "token", token_total: units, token_remaining: units, unit_total: units, unit_remaining: units,
+      starts_at: week.startsAt, expires_at: week.expiresAt, status: "active",
+      metadata: { plan: tier, planGrantId: plan.id, week: week.index },
+    }).execute();
+    await trx.insertInto("wallet_ledger").values({
+      id: publicId("ledger"), user_id: userId, grant_id: grantId, event_type: "grant", resource_type: "token",
+      token_delta: units, unit_delta: units, source_type: "plan", source_id: plan.id,
+      idempotency_key: key, metadata: { plan: tier, week: week.index },
+    }).execute();
+  }
+}
+
+/** The plan a user holds now (the longest-running active one), or null. */
+export function activePlanOf(grants = [], now = new Date()) {
+  const at = new Date(now).getTime();
+  let best = null;
+  for (const grant of grants) {
+    if (grant?.resource_type !== "plan" || grant.status !== "active") continue;
+    const start = new Date(grant.starts_at).getTime();
+    const end = new Date(grant.expires_at).getTime();
+    if (!(start <= at && end > at)) continue;
+    if (!best || end > new Date(best.expires_at).getTime()) best = grant;
+  }
+  if (!best) return null;
+  // A renewal starts where the current period ends: follow the chain of
+  // back-to-back periods of the same tier to the real end of the subscription.
+  const tier = best.metadata?.plan || "";
+  let end = new Date(best.expires_at).getTime();
+  const next = grants.filter((grant) => grant?.resource_type === "plan" && grant.status === "active" && (grant.metadata?.plan || "") === tier)
+    .sort((x, y) => new Date(x.starts_at) - new Date(y.starts_at));
+  for (const grant of next) {
+    const start = new Date(grant.starts_at).getTime();
+    if (start <= end + 1000) end = Math.max(end, new Date(grant.expires_at).getTime());
+  }
+  return { tier, expiresAt: new Date(end).toISOString(), weeklyUnits: Number(best.unit_total || 0) };
+}
+
+/**
+ * Whether this user may use their own model keys. Off by default (the admin
+ * setting `byok_requires_plan`); when on, a Pro/Max plan, or an active
+ * enterprise membership, allows it.
+ */
+export async function byokAllowedFor(userId, grants, trx) {
+  const row = await trx.selectFrom("app_settings").select("value").where("key", "=", "byok_requires_plan").executeTakeFirst();
+  let required = row?.value;
+  if (typeof required === "string") { try { required = JSON.parse(required); } catch { /* bare */ } }
+  if (required !== true) return { allowed: true, reason: "open" };
+  const plan = activePlanOf(grants);
+  if (plan && ["pro", "max"].includes(plan.tier)) return { allowed: true, reason: "plan" };
+  const member = await trx.selectFrom("organization_members")
+    .innerJoin("organizations", "organizations.id", "organization_members.organization_id")
+    .select("organization_members.user_id")
+    .where("organization_members.user_id", "=", userId).where("organization_members.status", "=", "active")
+    .where("organizations.status", "=", "active").executeTakeFirst();
+  if (member) return { allowed: true, reason: "organization" };
+  return { allowed: false, reason: "plan_required" };
+}
+
 export async function fetchEntitlementSummary(userId, trx = null) {
-  trx ||= await defaultDb();
-  const grants = await fetchUserGrants(userId, trx);
-  return summarizeEntitlements(grants);
+  const database = trx || await defaultDb();
+  // Hand out this week's plan allowance first, so the balance a client reads
+  // already includes it. Its own transaction: the advisory lock is per-key.
+  const run = (fn) => trx ? fn(trx) : database.transaction().execute(fn);
+  const allGrants = await run(async (t) => {
+    await ensurePlanAllowances(t, userId);
+    return t.selectFrom("wallet_grants").selectAll().where("user_id", "=", userId).where("organization_id", "is", null).execute();
+  });
+  const personal = allGrants.filter((grant) => grant.resource_type !== "plan");
+  const summary = summarizeEntitlements(personal);
+  const plan = activePlanOf(allGrants);
+  const nowMs = Date.now();
+  const week = allGrants.filter((grant) => grant.grant_type === "plan_weekly" && grant.status === "active"
+    && new Date(grant.starts_at).getTime() <= nowMs && new Date(grant.expires_at).getTime() > nowMs)
+    .sort((a, b) => new Date(a.expires_at) - new Date(b.expires_at))[0];
+  const byok = await byokAllowedFor(userId, allGrants, database);
+  return {
+    ...summary,
+    plan: plan ? { ...plan, ...(week ? { weekRemaining: Number(week.unit_remaining || 0), weekResetsAt: new Date(week.expires_at).toISOString() } : {}) } : null,
+    byokAllowed: byok.allowed,
+    byokReason: byok.reason,
+  };
 }
 
 export async function fetchFeaturePricing({
@@ -377,6 +498,7 @@ export async function consumeEntitlement({
       if (!selected.ok) return { ...selected, code: "ORG_POOL_INSUFFICIENT" };
       orgMember = access.member;
     } else {
+      await ensurePlanAllowances(trx, userId);
       const grants = await fetchUserGrants(userId, trx, { forUpdate: true });
       selected = selectGrantsForConsumption(grants, { resourceType, units: billableUnits });
       if (!selected.ok) return selected;
@@ -403,7 +525,10 @@ export async function consumeEntitlement({
         // Everything here is already known to this call — units ARE tokens when
         // the resource is tokens, and the reconcile phase passes the real split
         // in metadata. Nothing is inferred.
-        billable_tokens: resourceType === "token" ? billableUnits : 0,
+        // Units are credits now; the raw token count is what the call says it
+        // was (estimate, or the reconcile's share of the real total).
+        billable_tokens: resourceType === "token"
+          ? Math.max(0, Math.trunc(Number(metadata?.billableTokens ?? metadata?.estimatedInputTokens ?? billableUnits) || 0)) : 0,
         input_tokens: Math.max(0, Math.trunc(Number(metadata?.inputTokens ?? 0))) || 0,
         output_tokens: Math.max(0, Math.trunc(Number(metadata?.outputTokens ?? 0))) || 0,
         unit_cost: unitCost,

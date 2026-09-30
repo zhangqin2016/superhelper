@@ -1,5 +1,6 @@
 import { Field, SelectField, SubmitButton, TextAreaField } from "./admin-forms";
 import { updateSettingsAction } from "../app/admin/actions";
+import { AdminBillingByokToggle } from "./admin-billing-byok-toggle";
 
 function HiddenTrialDays({ value }) {
   return <input type="hidden" name="licenseTrialDays" value={Number(value ?? 3)} />;
@@ -20,44 +21,59 @@ export function ConfigDeliveryPanel({ settings, t }) {
   const s = t.admin.settings;
 
   return (
-    <SectionShell title={s.trialTitle} description={s.trialDesc}>
-      <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
-        <input type="hidden" name="settingsSection" value="delivery" />
-        <div className="lg:col-span-2 max-w-sm">
-          <Field label={s.trialDays} name="licenseTrialDays" type="number" defaultValue={settings.licenseTrialDays ?? 3} required />
-        </div>
-        <div className="lg:col-span-2 max-w-md">
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-slate-800">{delivery.modelTitle}</span>
-            <select
-              name="modelDeliveryMode"
-              defaultValue={settings.modelDeliveryMode || "direct"}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-            >
-              <option value="direct">{delivery.direct}</option>
-              <option value="gateway">{delivery.gateway}</option>
-            </select>
-            <span className="mt-1 block text-xs text-slate-500">{delivery.modelHelp}</span>
-          </label>
-        </div>
-        <div className="lg:col-span-2 max-w-md">
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-slate-800">{delivery.mediaTitle}</span>
-            <select
-              name="mediaDeliveryMode"
-              defaultValue={settings.mediaDeliveryMode || "direct"}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
-            >
-              <option value="direct">{delivery.direct}</option>
-              <option value="gateway">{delivery.gateway}</option>
-            </select>
-            <span className="mt-1 block text-xs text-slate-500">{delivery.mediaHelp}</span>
-          </label>
-        </div>
-        <div className="flex items-end">
-          <SubmitButton>{s.save}</SubmitButton>
-        </div>
-      </form>
+    <div className="space-y-6">
+      <SectionShell title={s.trialTitle} description={s.trialDesc}>
+        <form action={updateSettingsAction} className="mt-6 grid gap-5 lg:grid-cols-2">
+          <input type="hidden" name="settingsSection" value="delivery" />
+          <div className="lg:col-span-2 max-w-sm">
+            <Field label={s.trialDays} name="licenseTrialDays" type="number" defaultValue={settings.licenseTrialDays ?? 3} required />
+          </div>
+          <div className="lg:col-span-2 max-w-md">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-slate-800">{delivery.modelTitle}</span>
+              <select
+                name="modelDeliveryMode"
+                defaultValue={settings.modelDeliveryMode || "direct"}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+              >
+                <option value="direct">{delivery.direct}</option>
+                <option value="gateway">{delivery.gateway}</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">{delivery.modelHelp}</span>
+            </label>
+          </div>
+          <div className="lg:col-span-2 max-w-md">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-slate-800">{delivery.mediaTitle}</span>
+              <select
+                name="mediaDeliveryMode"
+                defaultValue={settings.mediaDeliveryMode || "direct"}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10"
+              >
+                <option value="direct">{delivery.direct}</option>
+                <option value="gateway">{delivery.gateway}</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">{delivery.mediaHelp}</span>
+            </label>
+          </div>
+          <div className="flex items-end">
+            <SubmitButton>{s.save}</SubmitButton>
+          </div>
+        </form>
+      </SectionShell>
+      <ByokPolicyPanel settings={settings} t={t} />
+    </div>
+  );
+}
+
+// Own model keys only for Pro / Max and organization members (server setting
+// byokRequiresPlan, off by default). Its own form and action, so saving it
+// never re-submits the delivery fields above, and it always asks first.
+export function ByokPolicyPanel({ settings, t }) {
+  const copy = t.admin.byokPolicy;
+  return (
+    <SectionShell title={copy.title} description={copy.desc}>
+      <AdminBillingByokToggle enabled={settings.byokRequiresPlan === true} />
     </SectionShell>
   );
 }

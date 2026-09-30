@@ -40,7 +40,8 @@ export const config = {
   smsAliyunSignName: process.env.ALIYUN_SMS_SIGN_NAME || "",
   smsAliyunTemplateLogin: process.env.ALIYUN_SMS_TEMPLATE_LOGIN || "",
   smsAliyunRegion: process.env.ALIYUN_SMS_REGION || "cn-hangzhou",
-  accountFreeTokens: Number(process.env.ACCOUNT_FREE_TOKENS || 100000),
+  // Signup gift in credits (积分; 1 yuan = 1000 credits) — the wallet "token" balance is credits.
+  accountFreeTokens: Number(process.env.ACCOUNT_FREE_TOKENS || 2000),
   accountFreeImages: Number(process.env.ACCOUNT_FREE_IMAGES || 3),
   accountFreeVideos: Number(process.env.ACCOUNT_FREE_VIDEOS || 1),
   accountFreeDays: Number(process.env.ACCOUNT_FREE_DAYS || 7),

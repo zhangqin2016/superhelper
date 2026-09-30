@@ -4,9 +4,10 @@ import { $ } from "./dom.js";
 import store from "./state.js";
 import { showToast } from "./toast.js";
 import { t, onLocaleChange } from "../i18n/index.js";
+import { announceByokNotice, byokGateNotice } from "./byok-gate.js";
 
 const defaultSelection = () => ({ mode: "auto", autoPoolMode: "recommended", autoModelIds: [], manualModelId: "" });
-let state = { models: [], selection: defaultSelection(), loaded: false };
+let state = { models: [], selection: defaultSelection(), loaded: false, lockedModels: [], byok: null };
 let confirmed = null;
 let initialized = false;
 let generation = 0;
@@ -118,6 +119,36 @@ function modelOption(model, mode) {
   return row;
 }
 
+// Plan-locked custom models (main's byok verdict): shown, never selectable.
+function lockedOption(model) {
+  const row = document.createElement("label");
+  row.className = "model-selection-option is-locked";
+  row.title = t("byok.planRequired");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.disabled = true;
+  const copy = document.createElement("span");
+  copy.className = "model-selection-option-copy";
+  const name = document.createElement("strong");
+  name.textContent = model.label || model.modelID || model.id;
+  const badge = document.createElement("span");
+  badge.className = "model-selection-option-badge";
+  badge.textContent = t("byok.lockedBadge");
+  name.append(badge);
+  const detail = document.createElement("small");
+  detail.textContent = model.modelID || "";
+  copy.append(name, detail);
+  row.append(input, copy);
+  return row;
+}
+
+function lockedRows() {
+  const locked = Array.isArray(state.lockedModels) ? state.lockedModels : [];
+  if (!locked.length) return [];
+  const notice = byokGateNotice(state.byok);
+  return [...locked.map(lockedOption), ...(notice ? [notice] : [])];
+}
+
 function renderPopover() {
   const root = $("modelSelectionPopover");
   if (!root) return;
@@ -131,7 +162,7 @@ function renderPopover() {
   }
   for (const [id, mode] of [["modelSelectionAutoList", "auto"], ["modelSelectionManualList", "manual"]]) {
     const list = $(id);
-    list.replaceChildren(...orderedModels(mode).map(model => modelOption(model, mode)));
+    list.replaceChildren(...orderedModels(mode).map(model => modelOption(model, mode)), ...lockedRows());
     list.hidden = (mode === "manual") !== manualMode;
   }
   const empty = $("modelSelectionEmpty");
@@ -161,7 +192,10 @@ async function loadModels(force = false) {
       if (ticket !== generation || sessionId !== scope) return false;
       state.models = Array.isArray(result.models) ? result.models : [];
       state.selection = copySelection(result.selection);
+      state.lockedModels = Array.isArray(result.lockedModels) ? result.lockedModels : [];
+      state.byok = result.byok || null;
       state.loaded = true;
+      if (result.byokNotice) announceByokNotice(result.byokNotice);
       if (force) displayOrder = null;
       saveError = false;
       confirmed = copySelection();
@@ -248,6 +282,7 @@ export async function getModelSelectionSnapshot(sessionId = scope) {
   if (sessionId !== scope) {
     try {
       const result = await window.assistantClient.listModelSelection(sessionId || null);
+      if (result?.ok && result.byokNotice) announceByokNotice(result.byokNotice);
       return result?.ok ? copySelection(result.selection) : null;
     } catch {
       return null;
@@ -293,6 +328,12 @@ export function initModelPicker() {
     }
   });
   window.addEventListener("resize", positionPopover);
+  // A BYOK verdict flip (plan bought, signed out) re-reads the catalog.
+  window.addEventListener("lily:account-status-changed", event => {
+    const byok = event?.detail?.byok;
+    if (!byok || !state.loaded || (byok.allowed !== false) === (state.byok?.allowed !== false)) return;
+    void loadModels(true);
+  });
   onLocaleChange(renderPopover);
   store.on("activeSessionId", sessionId => {
     if ((sessionId || "") === scope) return;
@@ -300,7 +341,7 @@ export function initModelPicker() {
     generation += 1;
     loading = null;
     confirmed = null;
-    state = { models: [], selection: defaultSelection(), loaded: false };
+    state = { models: [], selection: defaultSelection(), loaded: false, lockedModels: [], byok: null };
     closePopover();
     renderPopover();
     void loadModels();

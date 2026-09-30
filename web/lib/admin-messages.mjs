@@ -66,6 +66,20 @@ const MESSAGES = {
   enterpriseReduced: { zh: "已扣回 {units}。", en: "Took back {units}.", ar: "تمت استعادة {units}." },
   enterpriseRevoked: { zh: "已撤销，收回剩余 {units}。", en: "Revoked; {units} taken back.", ar: "أُلغيت؛ واستُعيد {units}." },
   enterpriseOwnerPasswordReissued: { zh: "已重新签发所有者初始密码，旧的初始密码已失效。请现在复制并交给所有者。", en: "A new initial password is issued and the old one no longer works. Copy it now and hand it to the owner.", ar: "صدرت كلمة مرور أولية جديدة ولم تعد القديمة تعمل. انسخها الآن وسلّمها للمالك." },
+  // Billing products and plans (web/app/admin/billing/actions.js), all three languages.
+  billingProductIdRequired: { zh: "请填写商品 ID（至少 2 个字符）。", en: "Enter a product ID (at least 2 characters).", ar: "أدخل معرّف المنتج (حرفان على الأقل)." },
+  billingProductNameRequired: { zh: "请填写商品名称。", en: "Enter the product's name.", ar: "أدخل اسم المنتج." },
+  billingPriceInvalid: { zh: "价格格式不对：请按元填写，最多两位小数，例如 49 或 9.90。", en: "The price is not valid: enter yuan with up to two decimals, e.g. 49 or 9.90.", ar: "السعر غير صالح: أدخله باليوان بمنزلتين عشريتين على الأكثر، مثل 49 أو 9.90." },
+  billingPlanTierRequired: { zh: "订阅方案必须选择档位：Pro 或 Max。", en: "A plan needs a tier: Pro or Max.", ar: "تحتاج الخطة إلى مستوى: Pro أو Max." },
+  billingPlanPeriodRequired: { zh: "订阅方案必须选择付费周期：月付或年付。", en: "A plan needs a billing period: monthly or yearly.", ar: "تحتاج الخطة إلى فترة دفع: شهرية أو سنوية." },
+  billingPlanDaysInvalid: { zh: "每期天数必须是 1 到 3650 之间的整数。", en: "Days per period must be a whole number from 1 to 3650.", ar: "يجب أن تكون أيام الفترة عدداً صحيحاً من 1 إلى 3650." },
+  billingPlanUnitsInvalid: { zh: "每周发放数量必须是 0 到 1,000,000,000 之间的整数（0 表示不发放）。", en: "The weekly amount must be a whole number from 0 to 1,000,000,000 (0 means none).", ar: "يجب أن تكون الكمية الأسبوعية عدداً صحيحاً من 0 إلى 1,000,000,000 (0 يعني لا شيء)." },
+  billingProductInvalid: { zh: "服务端没有接受这些字段：{fields}。请检查后再保存。", en: "The server did not accept these fields: {fields}. Check them and save again.", ar: "لم يقبل الخادم هذه الحقول: {fields}. راجعها واحفظ مجدداً." },
+  billingProductFailed: { zh: "保存商品失败，请稍后重试。", en: "Could not save the product. Try again in a moment.", ar: "تعذّر حفظ المنتج. حاول بعد قليل." },
+  billingProductSaved: { zh: "商品 {id} 已保存。", en: "Product {id} saved.", ar: "تم حفظ المنتج {id}." },
+  byokRestrictionOn: { zh: "已开启：自配置模型仅限 Pro / Max 订阅用户与企业成员。", en: "On: own model keys are limited to Pro / Max subscribers and organization members.", ar: "مفعّل: المفاتيح الخاصة لمشتركي Pro / Max وأعضاء المؤسسات فقط." },
+  byokRestrictionOff: { zh: "已关闭：所有用户都可以使用自配置模型。", en: "Off: every user may use their own model keys.", ar: "متوقف: يمكن لكل المستخدمين استخدام مفاتيحهم الخاصة." },
+  byokRestrictionFailed: { zh: "没有保存成功，设置保持原样。请稍后重试。", en: "Not saved; the setting is unchanged. Try again in a moment.", ar: "لم يُحفظ؛ بقي الإعداد كما هو. حاول بعد قليل." },
 };
 
 export const ADMIN_MESSAGE_KEYS = Object.keys(MESSAGES);

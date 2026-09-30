@@ -57,8 +57,15 @@ function catalogState() {
     "LILY_OPENCODE_SYSTEM_PROMPT_MAX_CHARS", "LILY_OPENCODE_TOOL_COMPAT", "LILY_TLS_SKIP_VERIFY"]) delete baseEnv[key];
   const models = [];
   const runtimeModels = [];
+  // Plan-locked custom models (byok-policy verdict, carried as preset.locked)
+  // are listed for the picker but never routable.
+  const lockedModels = [];
   for (const preset of publicState.presets) {
     if (!preset.model) continue;
+    if (preset.locked) {
+      lockedModels.push({ id: canonicalModelId(preset.id, preset.model), label: preset.label, modelID: preset.model });
+      continue;
+    }
     const raw = rawPresets.find(item => item.id === preset.id);
     if (!preset.custom && status === "ready" && (!raw || raw.enabled === false)) continue;
     if (!preset.custom && preset.id !== activeId && !raw?.env) continue;
@@ -85,23 +92,52 @@ function catalogState() {
   }
   const legacyActiveId = canonicalModelId(activeId, active?.model);
   const fallbackModelId = models.find(model => model.managed)?.id || models[0]?.id || "";
-  return { models, runtimeModels, activeId: legacyActiveId, fallbackModelId, status, aliases };
+  return { models, runtimeModels, activeId: legacyActiveId, fallbackModelId, status, aliases, lockedModels, byok: publicState.byok || null };
+}
+
+/**
+ * A stored choice that points at a locked model resolves to the platform
+ * default instead of failing the turn: a locked manual pick falls back, an
+ * auto pool made only of locked models becomes the recommended pool. The stored
+ * preference is untouched, so it comes back when the lock lifts. Returns the
+ * locked models the user had chosen, for the one-shot notice.
+ */
+function withoutLockedModels(selection, lockedModels = []) {
+  if (!selection || typeof selection !== "object" || !lockedModels.length) return { selection, lockedChosen: [] };
+  const locked = new Map(lockedModels.map(model => [model.id, model]));
+  const lockedChosen = [];
+  let next = selection;
+  const manualId = typeof selection.manualModelId === "string" ? selection.manualModelId.trim() : "";
+  if (locked.has(manualId)) {
+    if (selection.mode === "manual") lockedChosen.push(locked.get(manualId));
+    next = { ...next, manualModelId: "" };
+  }
+  const poolIds = Array.isArray(selection.autoModelIds) ? selection.autoModelIds : [];
+  const customPool = selection.autoPoolMode === "custom" || (!selection.autoPoolMode && poolIds.length);
+  if (customPool && poolIds.length && poolIds.every(id => locked.has(id))) {
+    if (selection.mode !== "manual") lockedChosen.push(...poolIds.map(id => locked.get(id)));
+    next = { ...next, autoPoolMode: "recommended", autoModelIds: [] };
+  }
+  return { selection: next, lockedChosen };
 }
 
 function listModelSelectionPublic(sessionId = "") {
-  const { models, activeId, fallbackModelId, aliases, status } = catalogState();
+  const { models, activeId, fallbackModelId, aliases, status, lockedModels, byok } = catalogState();
+  const { selection: stored, lockedChosen } = withoutLockedModels(migrateSelection(readStoredSelection(sessionId), aliases), lockedModels);
   // Silent-model marks (first-response watchdog) ride along as information.
   let annotated = models;
   try { annotated = require("./model-availability").annotateModelOptions(models); } catch { annotated = models; }
   return {
-    models: annotated, catalogStatus: status, selection: normalizeSelection(migrateSelection(readStoredSelection(sessionId), aliases), models, activeId),
+    models: annotated, catalogStatus: status, selection: normalizeSelection(stored, models, activeId),
     recommendedModelIds: models.map(model => model.id), fallbackModelId,
+    lockedModels, byok, lockedChosen,
   };
 }
 
 function setModelSelectionPreference(input = {}, sessionId = "") {
   try {
     const state = listModelSelectionPublic(sessionId);
+    if (withoutLockedModels(input, state.lockedModels).lockedChosen.length) return { ok: false, error: "BYOK_PLAN_REQUIRED", byok: state.byok };
     const selection = normalizeSelection(input, state.models, state.fallbackModelId);
     const validation = routeTurn({ selection, options: state.models, fallbackId: state.fallbackModelId });
     if (!validation.ok) return { ok: false, error: validation.error };
@@ -119,14 +155,16 @@ function resolveTurnModel(input = {}) {
   try {
     const state = catalogState();
     if (state.status === "stale") return { ok: false, error: "MODEL_CATALOG_STALE", model: null };
-    selection = migrateSelection(selection, state.aliases);
+    selection = withoutLockedModels(migrateSelection(selection, state.aliases), state.lockedModels).selection;
+    // A turn pinned to a now-locked model continues on the effective default.
+    const pinnedLocked = state.lockedModels.some(model => model.id === (state.aliases[input.pinnedModelId]?.id || input.pinnedModelId));
     // Availability marks become routing input for AUTO mode (manual/pinned
     // routing ignores them) — the same annotation the picker already shows.
     let options = state.models;
     try { options = require("./model-availability").annotateModelOptions(state.models); } catch { options = state.models; }
     const route = routeTurn({
       ...input, selection,
-      pinnedModelId: state.aliases[input.pinnedModelId]?.id || input.pinnedModelId,
+      pinnedModelId: pinnedLocked ? "" : state.aliases[input.pinnedModelId]?.id || input.pinnedModelId,
       options, fallbackId: state.fallbackModelId,
     });
     if (route.ok && route.model) {
@@ -144,6 +182,13 @@ function resolveTurnModel(input = {}) {
     }
     return { ok: true, mode: "auto", reason: "legacy_active_model", selection: selection || null, model: null };
   }
+}
+
+/** Whether a model id is currently plan-locked (a replay of its turn must not pin it). Fail-open. */
+function isLockedModel(id) {
+  if (!id) return false;
+  try { return catalogState().lockedModels.some(model => model.id === id); }
+  catch { return false; }
 }
 
 function listRuntimeModelIds() {
@@ -179,6 +224,6 @@ function clearSessionModelSelection(sessionId = "") {
 }
 
 module.exports = {
-  listModelSelectionPublic, setModelSelectionPreference, resolveTurnModel, listRuntimeModelIds, matchesLegacyModelReceipt,
+  listModelSelectionPublic, setModelSelectionPreference, resolveTurnModel, listRuntimeModelIds, matchesLegacyModelReceipt, isLockedModel,
   getSessionModelSelection, clearSessionModelSelection,
 };

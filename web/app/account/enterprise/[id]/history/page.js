@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireEnterpriseOrganization, requireEnterpriseData, roleAtLeast } from "../../../../../lib/enterprise-page";
 import { getI18n } from "../../../../../lib/i18n.mjs";
-import { consoleErrorMessage, enterpriseConsoleText, fill, formatBudget, formatDateTime, formatNumber, personLabel } from "../../../../../lib/enterprise-console-i18n.mjs";
+import { consoleErrorMessage, enterpriseConsoleText, fill, formatCreditBudget, formatDateTime, formatNumber, personLabel } from "../../../../../lib/enterprise-console-i18n.mjs";
 import { EnterpriseCard, EnterpriseEmpty, EnterpriseNoAccess, EnterpriseSectionError } from "../../../../../components/enterprise-ui";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ function describe(entry, people, T, locale) {
   const actor = entry.actor?.kind === "platform" ? H.platform : personLabel(entry.actor, H.someone);
   const who = (userId) => (userId && people.get(userId)) || H.formerMember;
   const role = (value) => T.roles[value] || value || T.roles.member;
-  const budget = (value) => (value === null || value === undefined ? T.common.unlimited : formatNumber(value, locale));
+  const budget = (value) => formatCreditBudget(value, locale);
   const changes = [];
   if (entry.action === "enterprise_member_change") {
     if (meta.memberRole !== undefined) changes.push(fill(H.changes.role, { from: role(meta.previousRole), to: role(meta.memberRole) }));
@@ -38,7 +38,7 @@ function describe(entry, people, T, locale) {
   if (entry.action === "enterprise_org_change") {
     if (meta.name !== undefined) changes.push(fill(H.changes.name, { value: meta.name }));
     if (meta.ownerStatus !== undefined) changes.push(meta.ownerStatus === "disabled" ? H.changes.paused : H.changes.resumed);
-    if (meta.defaultMemberWeeklyBudget !== undefined) changes.push(fill(H.changes.defaultBudget, { value: formatBudget(meta.defaultMemberWeeklyBudget, locale) }));
+    if (meta.defaultMemberWeeklyBudget !== undefined) changes.push(fill(H.changes.defaultBudget, { value: formatCreditBudget(meta.defaultMemberWeeklyBudget, locale) }));
     if (meta.reason) changes.push(fill(H.changes.reason, { value: meta.reason }));
   }
   let key = entry.action;

@@ -107,7 +107,9 @@ await check("usage answers the shape of the spend, not only its size", async () 
 
 await check("billing events now record the tokens they already knew", () => {
   const wallet = read("server/src/services/wallet.js");
-  assert.match(wallet, /billable_tokens: resourceType === "token" \? billableUnits : 0/, "units are tokens when the resource is tokens");
+  // Since 2026-09-30 units are credits (积分); billable_tokens keeps the RAW
+  // token count the call reports (estimate, or the reconcile's share).
+  assert.match(wallet, /billable_tokens: resourceType === "token"\s*\? Math\.max\(0, Math\.trunc\(Number\(metadata\?\.billableTokens \?\? metadata\?\.estimatedInputTokens/, "billable_tokens records raw tokens, not credits");
   assert.match(wallet, /input_tokens: Math\.max\(0, Math\.trunc\(Number\(metadata\?\.inputTokens/, "and the reconcile phase's real split is stored");
   assert.match(wallet, /output_tokens: Math\.max\(0, Math\.trunc\(Number\(metadata\?\.outputTokens/);
 });

@@ -194,7 +194,7 @@ export async function refreshAccountSettings() {
     return;
   }
   renderAccountNickname(status);
-  window.dispatchEvent(new CustomEvent("lily:account-status-changed"));
+  window.dispatchEvent(new CustomEvent("lily:account-status-changed", { detail: { byok: status?.byok || null } }));
   if (!status?.loggedIn) {
     purchaseWatch.stop();
     currentAccountPhone = "";

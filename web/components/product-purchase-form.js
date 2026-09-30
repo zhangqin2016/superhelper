@@ -6,7 +6,8 @@ import { AccountSubmitButton } from "./account-submit-button";
 
 const initialState = { ok: null, message: "" };
 
-export function ProductPurchaseForm({ productId, paymentProviders = [] }) {
+// submitLabel lets a plan say "订阅" / "续费"; the order flow is the same for every product.
+export function ProductPurchaseForm({ productId, paymentProviders = [], submitLabel = "购买" }) {
   const [state, formAction] = useActionState(createBillingOrderAction, initialState);
   const providers = Array.isArray(paymentProviders) ? paymentProviders : [];
   const disabled = providers.length === 0;
@@ -29,11 +30,11 @@ export function ProductPurchaseForm({ productId, paymentProviders = [] }) {
           pendingChildren="创建中..."
           disabled={disabled}
         >
-          购买
+          {submitLabel}
         </AccountSubmitButton>
       </div>
       {disabled ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">后台还没有启用支付方式。</p>
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">在线支付即将开放。现在需要订阅或充值，请<a className="font-semibold text-brand" href="/contact">联系我们</a>。</p>
       ) : null}
       {state?.message ? (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">{state.message}</p>

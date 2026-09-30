@@ -72,7 +72,8 @@ function describeMetadata(metadata, e, locale) {
     else if (key === "resourceType") value = e.resource[raw] || raw;
     else if (key === "role") value = e.roles[raw] || raw;
     else if ((key === "unitTotal" || key === "units") && resource) value = formatAmount(e, resource, raw, locale);
-    else if (key === "unitTotal" || key === "units" || key === "defaultMemberWeeklyBudget" || key === "weeklyBudget") value = raw === null ? h.values.unlimited : formatNumber(raw, locale);
+    else if (key === "defaultMemberWeeklyBudget" || key === "weeklyBudget") value = raw === null ? h.values.unlimited : formatAmount(e, "token", raw, locale);
+    else if (key === "unitTotal" || key === "units") value = raw === null ? h.values.unlimited : formatNumber(raw, locale);
     else if (typeof raw === "boolean") value = raw ? h.values.yes : h.values.no;
     else if (raw === null) value = h.values.unlimited;
     else if (typeof raw === "object") continue;
@@ -384,7 +385,7 @@ export default async function AdminOrgDetailPage({ params, searchParams }) {
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-slate-700">{d.budgetTitle}</span>
               <input name="defaultMemberWeeklyBudget" inputMode="numeric" defaultValue={hasBudget ? String(budget) : ""} placeholder={d.budgetPlaceholder} className={`${inputClass} tabular-nums`} />
-              <span className="mt-1 block text-xs text-slate-500">{fill(d.budgetCurrent, { value: hasBudget ? formatNumber(budget, locale) : d.budgetUnlimited })}</span>
+              <span className="mt-1 block text-xs text-slate-500">{fill(d.budgetCurrent, { value: hasBudget ? formatAmount(e, "token", budget, locale) : d.budgetUnlimited })}</span>
               <span className="mt-1 block text-xs text-slate-500">{d.budgetHelp}</span>
             </label>
             <div><button type="submit" className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">{d.saveBudget}</button></div>

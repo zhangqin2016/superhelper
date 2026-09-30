@@ -7,12 +7,14 @@ import { paymentService } from "../../services/payments/service.js";
 
 const productSchema = z.object({
   id: z.string().min(2).max(120),
-  kind: z.enum(["day_pass", "week_pass", "month_pass", "token_pack", "image_pack", "video_pack", "single_use"]),
+  // "subscription" + resourceType "plan": a Pro/Max period; unitAmount is the
+  // WEEKLY allowance (0 = none), metadata.plan names the tier (pro|max).
+  kind: z.enum(["day_pass", "week_pass", "month_pass", "token_pack", "image_pack", "video_pack", "single_use", "subscription"]),
   name: z.string().min(1).max(160),
   description: z.string().max(1000).optional().nullable(),
   priceCents: z.number().int().min(0).max(10_000_000),
   currency: z.string().min(3).max(8).default("CNY"),
-  resourceType: z.enum(["token", "image_generation", "video_generation", "membership"]),
+  resourceType: z.enum(["token", "image_generation", "video_generation", "membership", "plan"]),
   unitAmount: z.number().int().min(0).max(1_000_000_000).default(0),
   durationSeconds: z.number().int().min(0).max(10 * 365 * 24 * 60 * 60).optional().nullable(),
   grantExpiresDays: z.number().int().min(0).max(3650).optional().nullable(),

@@ -143,7 +143,7 @@ await check("the list finds an organization from a person and says why it is not
   assert.equal(sent.get("limit"), "50");
   const e = dictionaries.zh.admin.enterprise;
   for (const expected of ["王经理", "xinghe-owner", "+86 138****0000", e.statusLabel.frozen, "合同到期未续费", e.statusLabel.paused, e.statusWhy.paused,
-    "1,500,000 Token", "20 张图片", "98,765", e.source.self_serve, e.list.noOwner, e.list.poolEmpty, "共 120 家企业", e.list.createTitle, e.list.searchHelp]) {
+    "1,500,000 积分", "20 张图片", "98,765", e.source.self_serve, e.list.noOwner, e.list.poolEmpty, "共 120 家企业", e.list.createTitle, e.list.searchHelp]) {
     assert.ok(html.includes(expected), `the list says "${expected}"`);
   }
   assert.ok(!html.includes("suspended") && !html.includes("self_serve"), "no raw column values");
@@ -190,14 +190,14 @@ await check("the detail page says the two switches apart and offers only what ea
   assert.ok(html.includes(d.ownerLayerHelp), "the owner's switch is explained as read-only");
   assert.equal((html.match(new RegExp(d.reissue, "g")) || []).length, 1, "reissue is offered only to the owner who has not activated");
   assert.ok(html.includes("12 位成员 · 3 个待接受的邀请") && html.includes(d.membersNote), "member counts, and why they are not editable here");
-  assert.ok(html.includes("1,500,000 Token"), "the pool says what is available now, with its unit");
+  assert.ok(html.includes("1,500,000 积分"), "the pool says what is available now, with its unit");
   assert.ok(html.includes(e.pool.states.expired) && html.includes(e.pool.states.revoked), "each grant says what state it is in");
   assert.equal((raw.match(new RegExp(`${e.pool.reduce} / ${e.pool.revoke}`, "g")) || []).length, 1, "only the live grant can be reduced or revoked");
   assert.match(raw, /name="idempotencyKey" value="[0-9a-f-]{36}"/, "the grant form carries an idempotency key");
   assert.ok(html.includes(e.grant.summaryEmpty), "and says what it will do once filled in");
   assert.ok(html.includes("45,678") && html.includes("李四") && raw.includes('href="/admin/users/u_member"'), "usage by member links to the person");
   assert.ok(html.includes("deepseek-v4-pro") && html.includes(e.usage.help), "usage by model, and what the figures include");
-  assert.ok(html.includes(e.history.actions.enterprise_grant_adjust) && html.includes("2,000,000 Token"), "history reads as sentences");
+  assert.ok(html.includes(e.history.actions.enterprise_grant_adjust) && html.includes("2,000,000 积分"), "history reads as sentences");
   assert.ok(html.includes(e.history.platform) && html.includes("王经理") && html.includes(e.roles.owner), "and says who did it, platform or member");
   assert.ok(raw.includes("before=17#history"), "older history is one click away");
   assert.ok(raw.includes('value="50000"') && html.includes("当前：50,000"), "the weekly default is shown and editable");
@@ -291,7 +291,7 @@ await check("a grant carries its idempotency key, and a replay says nothing was 
   const done = await actions.grantOrganizationQuotaAction("org_1", form({ resourceType: "token", unitTotal: "1,000,000", expiresDays: "365", idempotencyKey: "0f8fad5b-d9cb-469f-a165-70867728950e", note: "合同首期" }));
   assert.deepEqual(lastCall(), ["POST", "/api/admin/enterprise/organizations/org_1/grants",
     { resourceType: "token", unitTotal: 1000000, expiresDays: 365, idempotencyKey: "0f8fad5b-d9cb-469f-a165-70867728950e", note: "合同首期" }]);
-  assert.ok(done.ok && done.message.includes("1,000,000 Token") && done.message.includes("365"), done.message);
+  assert.ok(done.ok && done.message.includes("1,000,000 积分") && done.message.includes("365"), done.message);
   api.post = async () => ({ ok: true, status: 200, json: { ok: true, grant: { id: "g" }, idempotent: true } });
   const replay = await actions.grantOrganizationQuotaAction("org_1", form({ resourceType: "image_generation", unitTotal: "20", idempotencyKey: "0f8fad5b-d9cb-469f-a165-70867728950e" }));
   assert.match(replay.message, /没有重复调拨/, "a replay is said to be one");

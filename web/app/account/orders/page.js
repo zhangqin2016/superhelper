@@ -49,7 +49,7 @@ export default async function AccountOrdersPage({ searchParams }) {
       ) : orders.length === 0 ? (
         <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
           <h2 className="text-base font-semibold text-slate-900">暂无订单</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">从购买页选择会员、Token 包或图片视频次数包，下单后会出现在这里。</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">从购买页选择会员、积分包或图片视频次数包，下单后会出现在这里。</p>
           <Link href="/account/billing" className="mt-5 inline-flex rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100">
             去购买
           </Link>

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { config } from "../../config.js";
 import { db, pool } from "../../db.js";
-import { getAliyunSmsAdminSettings, getMediaDeliveryMode, getModelDeliveryMode, getPaymentAdminSettings, getPaymentConfig, getQiniuAdminSettings, getQiniuConfig, setAliyunSmsConfig, setAppSetting, setPaymentConfig, setQiniuConfig } from "../../services/app-settings.js";
+import { getAppSetting, getAliyunSmsAdminSettings, getMediaDeliveryMode, getModelDeliveryMode, getPaymentAdminSettings, getPaymentConfig, getQiniuAdminSettings, getQiniuConfig, setAliyunSmsConfig, setAppSetting, setPaymentConfig, setQiniuConfig } from "../../services/app-settings.js";
 import { ensureEnvManagedConfigProfile } from "../../services/client-config.js";
 import { fakePaymentsAllowed, missingCredentials, providerStatus, readyProviders } from "../../services/payments/providers.js";
 import { listModelGatewayProviders } from "../../services/model-gateway/providers.js";
@@ -12,6 +12,9 @@ const updateSettingsSchema = z.object({
   licenseTrialDays: z.number().int().min(0).max(3650),
   mediaDeliveryMode: z.enum(["direct", "gateway"]).optional(),
   modelDeliveryMode: z.enum(["direct", "gateway"]).optional(),
+  // Own model keys (BYOK) only for Pro/Max plans and enterprise members.
+  // Off by default: everyone keeps their own keys until an operator turns it on.
+  byokRequiresPlan: z.boolean().optional(),
   qiniu: z.object({
     publicBaseUrl: z.string().url().max(400),
     accessKey: z.string().max(200),
@@ -248,6 +251,7 @@ export function registerAdminSystemRoutes(app, { audit }) {
         licenseTrialDays: Number.isFinite(days) ? days : 3,
         modelDeliveryMode: await getModelDeliveryMode(),
         mediaDeliveryMode: await getMediaDeliveryMode(),
+        byokRequiresPlan: [true, "true"].includes(await getAppSetting("byok_requires_plan", false)),
         qiniu: await getQiniuAdminSettings(),
         aliyunSms: await getAliyunSmsAdminSettings(),
         payment: await getPaymentAdminSettings(),
@@ -288,6 +292,9 @@ export function registerAdminSystemRoutes(app, { audit }) {
       // direct/gateway immediately.
       await ensureEnvManagedConfigProfile();
     }
+    if (input.byokRequiresPlan !== undefined) {
+      await setAppSetting("byok_requires_plan", input.byokRequiresPlan);
+    }
     let qiniu = null;
     if (input.qiniu) {
       qiniu = await setQiniuConfig(input.qiniu);
@@ -305,6 +312,7 @@ export function registerAdminSystemRoutes(app, { audit }) {
       qiniuUpdated: Boolean(input.qiniu),
       aliyunSmsUpdated: Boolean(input.aliyunSms),
       paymentUpdated: Boolean(input.payment),
+      ...(input.byokRequiresPlan !== undefined ? { byokRequiresPlan: input.byokRequiresPlan } : {}),
     });
     return {
       ok: true,

@@ -30,10 +30,11 @@
 
 /* ---------------------------------------------------------------- plans */
 
-.pr-plans {
+.pr-offer-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .pr-plan {
@@ -42,9 +43,97 @@
   padding: clamp(24px, 3vw, 36px);
 }
 
-.pr-plan--personal {
+.pr-plan--featured {
   border-color: var(--site-brand-line);
   box-shadow: var(--site-shadow);
+}
+
+/* The month / year switch: two radios and CSS, so it works without JS. */
+.pr-period-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pr-period-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-end: 24px;
+  border: 1px solid var(--site-line);
+  border-radius: 999px;
+  background: var(--site-sunken);
+  padding: 4px;
+}
+
+.pr-period-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: var(--site-text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pr-period-radio--month:checked ~ .pr-period-toggle label[for="pr-period-month"],
+.pr-period-radio--year:checked ~ .pr-period-toggle label[for="pr-period-year"] {
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow-sm);
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+.pr-period-radio--month:focus-visible ~ .pr-period-toggle label[for="pr-period-month"],
+.pr-period-radio--year:focus-visible ~ .pr-period-toggle label[for="pr-period-year"] {
+  outline: 2px solid var(--site-brand);
+  outline-offset: 2px;
+}
+
+.pr-period-save {
+  color: var(--site-brand);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pr-period-radio--month:checked ~ .pr-offer-grid .pr-period--year,
+.pr-period-radio--year:checked ~ .pr-offer-grid .pr-period--month { display: none; }
+
+.pr-plan-per {
+  margin-inline-start: 4px;
+  color: var(--site-muted);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.pr-plan-weekly {
+  margin: 12px 0 0;
+  color: var(--site-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pr-plan-soon {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--site-sunken);
+  padding: 8px 14px;
+  color: var(--site-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pr-plan-soon-note {
+  margin: 10px 0 0;
+  color: var(--site-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .pr-plan-head {
@@ -109,9 +198,28 @@
 }
 
 .pr-plan--enterprise .pr-plan-points svg { color: var(--site-ink); }
+.pr-plan-points .pr-plan-point--no { color: var(--site-muted); }
+.pr-plan-points .pr-plan-point--no svg { color: var(--site-faint); }
+
+/* ----------------------------------------------------------- enterprise */
+
+.pr-enterprise-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pr-enterprise-note {
+  margin: 20px 0 0;
+  max-width: 760px;
+  color: var(--site-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
 
 /* ------------------------------------------------------ shared sections */
 
+.pr-enterprise,
 .pr-packs,
 .pr-compare,
 .pr-faq {
@@ -275,6 +383,17 @@
   color: var(--site-text);
 }
 
+/* Plans as rows: seven columns scroll inside the card on a narrow screen. */
+.pr-table--plans { min-width: 880px; }
+.pr-table--plans tbody th,
+.pr-table--plans td { width: auto; }
+.pr-table--plans tbody th { white-space: nowrap; }
+
+.pr-cell-lines {
+  display: grid;
+  gap: 2px;
+}
+
 .pr-mark { display: inline-flex; align-items: center; }
 .pr-mark--yes { color: var(--site-brand); }
 .pr-mark--no { color: var(--site-faint); }
@@ -325,8 +444,14 @@
 
 /* --------------------------------------------------------------- mobile */
 
+@media (max-width: 1020px) {
+  .pr-offer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pr-offer-grid .pr-plan--free { grid-column: 1 / -1; }
+}
+
 @media (max-width: 820px) {
-  .pr-plans { grid-template-columns: minmax(0, 1fr); }
+  .pr-offer-grid,
+  .pr-enterprise-grid { grid-template-columns: minmax(0, 1fr); }
   .pr-status { flex-direction: column; align-items: flex-start; }
 }
 

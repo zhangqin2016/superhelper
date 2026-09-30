@@ -29,7 +29,7 @@ export const TONE_CLASS = {
 
 export function unitLabel({ resourceType, unitAmount }) {
   const n = Number(unitAmount || 0).toLocaleString("zh-CN");
-  if (resourceType === "token") return `${n} tokens`;
+  if (resourceType === "token") return `${n} 积分`;
   if (resourceType === "image_generation") return `${n} 次图片生成`;
   if (resourceType === "video_generation") return `${n} 次视频生成`;
   if (resourceType === "membership") return "会员权益";
@@ -38,7 +38,7 @@ export function unitLabel({ resourceType, unitAmount }) {
 
 export function resourceUnits(resourceType, units) {
   const n = Math.abs(Number(units || 0)).toLocaleString("zh-CN");
-  if (resourceType === "token") return `${n} tokens`;
+  if (resourceType === "token") return `${n} 积分`;
   if (resourceType === "image_generation" || resourceType === "video_generation") return `${n} 次`;
   return n;
 }

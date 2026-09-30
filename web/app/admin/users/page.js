@@ -111,7 +111,7 @@ export default async function AdminUsersPage({ searchParams }) {
                     {billing ? <td className="px-4 py-2 tabular-nums">{fmt(user.paidOrderCount, locale)} / {fmt(user.orderCount, locale)}</td> : null}
                     {billing ? <td className="px-4 py-2 tabular-nums">{money(user.totalPaidCents)}</td> : null}
                     <td className="px-4 py-2">
-                      <div>Token {fmt(user.tokenRemaining, locale)}</div>
+                      <div>{c.credits} {fmt(user.tokenRemaining, locale)}</div>
                       <div className="text-xs text-slate-500">{c.image} {fmt(user.imageRemaining, locale)} · {c.video} {fmt(user.videoRemaining, locale)}</div>
                     </td>
                     <td className="px-4 py-2">{fmt(user.activeSessionCount, locale)}</td>

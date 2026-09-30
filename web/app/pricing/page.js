@@ -1,12 +1,13 @@
 import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
 import { PricingPlans } from "../../components/site/pricing-plans";
+import { PricingEnterprise } from "../../components/site/pricing-plans-enterprise";
 import { PricingPacks } from "../../components/site/pricing-packs";
 import { PricingCompare } from "../../components/site/pricing-compare";
 import { PricingFaq } from "../../components/site/pricing-faq";
 import { getI18n } from "../../lib/i18n.mjs";
 import { publicApiGet } from "../../lib/public-api";
-import { copyFor, pricingState } from "../../lib/site-copy-pricing.mjs";
+import { copyFor, enterpriseTiers, plansState, pricingState } from "../../lib/site-copy-pricing.mjs";
 import "./pricing.css";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,12 @@ export default async function PricingPage() {
   const copy = copyFor(locale);
   // Real prices only: a short timeout, and a failure or a regional 403 shows
   // an honest panel instead of numbers the server never gave.
-  const state = pricingState(await publicApiGet("/api/billing/products", { timeoutMs: 2500 }), locale);
+  const result = await publicApiGet("/api/billing/products", { timeoutMs: 2500 });
+  const state = pricingState(result, locale);
+  // Plans read the same answer; without a plan product they show the quote
+  // sheet as a reference price, never a buy button.
+  const plans = plansState(result, locale);
+  const enterprise = enterpriseTiers(locale);
 
   return (
     <>
@@ -34,9 +40,10 @@ export default async function PricingPage() {
             <h1 className="site-h1">{copy.head.title}</h1>
             <p className="site-lead pr-head-lead">{copy.head.lead}</p>
           </header>
-          <PricingPlans copy={copy} />
+          <PricingPlans copy={copy} plans={plans} />
+          <PricingEnterprise copy={copy} tiers={enterprise} />
           <PricingPacks copy={copy} state={state} />
-          <PricingCompare copy={copy} />
+          <PricingCompare copy={copy} plans={plans} enterprise={enterprise} />
           <PricingFaq copy={copy} />
         </div>
       </main>

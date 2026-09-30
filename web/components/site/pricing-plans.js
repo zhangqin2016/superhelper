@@ -1,17 +1,25 @@
 import Link from "next/link";
-import { ArrowRight, Check } from "lucide-react";
+import { Check } from "lucide-react";
+import { PlanOfferCard } from "./pricing-plans-card";
 
-function PlanCard({ plan, variant, children }) {
+function fill(template, values) {
+  return String(template || "").replace(/\{(\w+)\}/g, (_, key) => (values[key] ?? `{${key}}`));
+}
+
+function FreeCard({ plan }) {
   return (
-    <article className={`pr-plan site-card pr-plan--${variant}`}>
+    <article className="pr-plan site-card pr-plan--free">
       <header className="pr-plan-head">
-        <h2 className="site-h3 pr-plan-name">{plan.name}</h2>
-        <span className={variant === "personal" ? "site-chip site-chip--brand" : "site-chip"}>{plan.tag}</span>
+        <h3 className="site-h3 pr-plan-name">{plan.name}</h3>
+        <span className="site-chip">{plan.tag}</span>
       </header>
       <p className="pr-plan-price">{plan.price}</p>
       <p className="pr-plan-note">{plan.priceNote}</p>
       <p className="pr-plan-desc">{plan.desc}</p>
-      <div className="pr-plan-actions">{children}</div>
+      <div className="pr-plan-actions">
+        <Link href="/download" className="site-btn site-btn--secondary">{plan.cta}</Link>
+        <Link href="/account/login" className="site-btn site-btn--ghost">{plan.secondary}</Link>
+      </div>
       <hr className="site-divider pr-plan-rule" />
       <ul className="pr-plan-points">
         {plan.points.map((point) => (
@@ -25,20 +33,34 @@ function PlanCard({ plan, variant, children }) {
   );
 }
 
-/** The two ways to use Lily: personal (free trial, then usage) and enterprise (opened by the platform). */
-export function PricingPlans({ copy }) {
+/**
+ * The main offer: the free trial, then Pro and Max (Max highlighted). The
+ * monthly / yearly switch is two radio inputs and CSS, so it works before —
+ * and without — JavaScript, and the server and client render the same thing.
+ */
+export function PricingPlans({ copy, plans }) {
+  const p = copy.plans;
+  const months = plans.tiers.find((tier) => tier.yearMonths)?.yearMonths || 0;
   return (
-    <section className="pr-plans" aria-label={`${copy.personal.name} / ${copy.enterprise.name}`}>
-      <PlanCard plan={copy.personal} variant="personal">
-        <Link href="/download" className="site-btn site-btn--primary">{copy.personal.cta}</Link>
-        <Link href="/account/login" className="site-btn site-btn--secondary">{copy.personal.secondary}</Link>
-      </PlanCard>
-      <PlanCard plan={copy.enterprise} variant="enterprise">
-        <Link href="/contact" className="site-btn site-btn--dark">
-          {copy.enterprise.cta}
-          <ArrowRight size={16} className="pr-arrow" aria-hidden="true" />
-        </Link>
-      </PlanCard>
+    <section className="pr-offer" aria-labelledby="pr-offer-title">
+      <div className="pr-section-head">
+        <p className="site-eyebrow">{p.eyebrow}</p>
+        <h2 id="pr-offer-title" className="site-h2">{p.title}</h2>
+        <p className="site-lead pr-section-lead">{p.lead}</p>
+      </div>
+      <input type="radio" name="pr-period" id="pr-period-month" className="pr-period-radio pr-period-radio--month" defaultChecked />
+      <input type="radio" name="pr-period" id="pr-period-year" className="pr-period-radio pr-period-radio--year" />
+      <div className="pr-period-toggle" role="group" aria-label={p.periodLegend}>
+        <label htmlFor="pr-period-month">{p.month}</label>
+        <label htmlFor="pr-period-year">
+          {p.year}
+          {months ? <span className="pr-period-save">{fill(p.yearHint, { n: months })}</span> : null}
+        </label>
+      </div>
+      <div className="pr-offer-grid">
+        <FreeCard plan={copy.personal} />
+        {plans.tiers.map((tier) => <PlanOfferCard key={tier.tier} tierState={tier} copy={copy} />)}
+      </div>
     </section>
   );
 }

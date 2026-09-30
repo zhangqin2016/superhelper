@@ -19,14 +19,14 @@ export function BillingProductForm() {
           <input name="id" required placeholder="token_100k" className={inputClass} />
         </Field>
         <Field label="商品名称">
-          <input name="name" required placeholder="100K Token 包" className={inputClass} />
+          <input name="name" required placeholder="10 万积分包" className={inputClass} />
         </Field>
         <Field label="商品类型">
           <select name="kind" defaultValue="token_pack" className={selectClass}>
             <option value="day_pass">日卡</option>
             <option value="week_pass">周卡</option>
             <option value="month_pass">月卡</option>
-            <option value="token_pack">Token 包</option>
+            <option value="token_pack">积分包</option>
             <option value="image_pack">图片包</option>
             <option value="video_pack">视频包</option>
             <option value="single_use">单次购买</option>
@@ -34,7 +34,7 @@ export function BillingProductForm() {
         </Field>
         <Field label="发放资源">
           <select name="resourceType" defaultValue="token" className={selectClass}>
-            <option value="token">Token</option>
+            <option value="token">积分</option>
             <option value="image_generation">图片生成次数</option>
             <option value="video_generation">视频生成次数</option>
             <option value="membership">会员</option>
@@ -97,7 +97,7 @@ export function PricingRuleForm() {
         </Field>
         <Field label="扣减资源">
           <select name="resourceType" defaultValue="image_generation" className={selectClass}>
-            <option value="token">Token</option>
+            <option value="token">积分</option>
             <option value="image_generation">图片次数</option>
             <option value="video_generation">视频次数</option>
             <option value="membership">会员</option>
@@ -158,7 +158,7 @@ export function BillingProductsTable({ products = [] }) {
               </tr>
             ))}
             {!products.length ? (
-              <tr><td className="py-6 text-slate-500" colSpan={6}>暂无商品。后续可创建日卡、周卡、月卡、Token 包、图片包和视频包。</td></tr>
+              <tr><td className="py-6 text-slate-500" colSpan={6}>暂无商品。后续可创建日卡、周卡、月卡、积分包、图片包和视频包。</td></tr>
             ) : null}
           </tbody>
         </table>

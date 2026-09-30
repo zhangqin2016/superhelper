@@ -10,6 +10,7 @@ const {
   deleteCustomPreset,
   setApiGateway,
   diagnoseAndRestoreDefaultModel,
+  takeByokSwitchNotice,
 } = require("./model-presets");
 const { listModelSelectionPublic, setModelSelectionPreference } = require("./model-selection-catalog");
 const { withRunnerChange, applyPermissionModeLive } = require("./ipc-utils");
@@ -61,7 +62,8 @@ function registerModelHandlers(ctx) {
       // Model settings should still render; failed custom-profile repair is
       // surfaced by save/send preflight paths instead of blocking the panel.
     }
-    return { ok: true, ...listPresetsPublic() };
+    // Plan-locked active custom model: resolved to the platform default; say so once.
+    return { ok: true, ...listPresetsPublic(), byokNotice: takeByokSwitchNotice?.() || null };
   });
 
   ipcMain.handle("models:set-active", async (_event, presetId) => {
@@ -92,7 +94,11 @@ function registerModelHandlers(ctx) {
     } catch {
       // The last verified catalog remains valid offline.
     }
-    try { return { ok: true, ...listModelSelectionPublic(sessionId) }; }
+    try {
+      const state = listModelSelectionPublic(sessionId);
+      const byokNotice = state?.lockedChosen?.length ? takeByokSwitchNotice?.(state.lockedChosen) || null : null;
+      return { ok: true, ...state, byokNotice };
+    }
     catch { return { ok: false, error: "MODEL_CATALOG_UNAVAILABLE" }; }
   });
 

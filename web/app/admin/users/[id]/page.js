@@ -178,7 +178,7 @@ export default async function AdminUserDetailPage({ params }) {
             rows={grants.map((grant) => (
               <tr key={grant.id} className="border-t border-slate-100">
                 <td className="px-4 py-2">{grant.source_type}<div className="font-mono text-xs text-slate-400">{grant.source_id || grant.id}</div></td>
-                <td className="px-4 py-2">{grant.resource_type}</td>
+                <td className="px-4 py-2">{grant.resource_type === "token" ? c.credits : grant.resource_type}</td>
                 <td className="px-4 py-2">{grant.resource_type === "token" ? `${fmt(grant.token_remaining, locale)} / ${fmt(grant.token_total, locale)}` : `${fmt(grant.unit_remaining, locale)} / ${fmt(grant.unit_total, locale)}`}</td>
                 <td className="px-4 py-2">{grant.status}</td>
                 <td className="px-4 py-2">{date(grant.expires_at, locale)}</td>
@@ -201,7 +201,7 @@ export default async function AdminUserDetailPage({ params }) {
               <tr key={row.id} className="border-t border-slate-100">
                 <td className="px-4 py-2">{date(row.created_at, locale)}</td>
                 <td className="px-4 py-2">{row.event_type}</td>
-                <td className="px-4 py-2">{row.resource_type || "-"}</td>
+                <td className="px-4 py-2">{row.resource_type === "token" ? c.credits : row.resource_type || "-"}</td>
                 <td className="px-4 py-2">{row.resource_type === "token" ? fmt(row.token_delta, locale) : fmt(row.unit_delta, locale)}</td>
                 <td className="px-4 py-2">{row.source_type || "-"} {row.source_id || ""}</td>
               </tr>
@@ -247,7 +247,7 @@ export default async function AdminUserDetailPage({ params }) {
                 <td className="px-4 py-2">{date(row.created_at, locale)}</td>
                 <td className="px-4 py-2">{row.feature || "-"}</td>
                 <td className="px-4 py-2">{row.model || row.provider || "-"}</td>
-                <td className="px-4 py-2">{row.resource_type === "token" ? fmt(row.billable_tokens, locale) : fmt(row.billable_units, locale)}</td>
+                <td className="px-4 py-2">{row.resource_type === "token" ? `${fmt(row.billable_units, locale)} ${c.credits}` : fmt(row.billable_units, locale)}</td>
                 <td className="px-4 py-2">{row.status}</td>
               </tr>
             ))}

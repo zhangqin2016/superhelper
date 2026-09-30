@@ -23,7 +23,7 @@ export default async function AccountEntitlementsPage({ searchParams }) {
   const data = result.ok ? result.data : null;
   const entitlements = data?.entitlements || null;
   const cards = [
-    ["Token 余额", entitlements ? formatCount(entitlements.tokenBalance) : "--", MessageSquareText],
+    ["积分余额", entitlements ? formatCount(entitlements.tokenBalance) : "--", MessageSquareText],
     ["图片生成次数", entitlements ? formatCount(entitlements.imageGenerationsRemaining) : "--", Image],
     ["视频生成次数", entitlements ? formatCount(entitlements.videoGenerationsRemaining) : "--", Video],
     ["会员有效期", entitlements ? formatDate(entitlements.membershipExpiresAt) : "--", Zap],

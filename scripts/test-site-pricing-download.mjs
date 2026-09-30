@@ -59,7 +59,8 @@ for (const [name, copy] of [["pricing", pricingCopy], ["download", downloadCopy]
     assert.deepEqual(han, [], `${name} ${locale} copy carries no Chinese`);
   }
   // zh: Latin words allowed only as proper nouns, units and file types.
-  const ALLOWED = new Set(["Lily", "macOS", "Mac", "Windows", "Apple", "Intel", "M", "token", "Token", "SHA256", "Python", "LibreOffice", "Office", "PDF", "OCR", "PowerShell", "MB", "GB"]);
+  // Pro / Max are the plan names and "API Key" is the quote sheet's own wording.
+  const ALLOWED = new Set(["Lily", "macOS", "Mac", "Windows", "Apple", "Intel", "M", "token", "Token", "SHA256", "Python", "LibreOffice", "Office", "PDF", "OCR", "PowerShell", "MB", "GB", "Pro", "Max", "API", "Key"]);
   const stray = strings(copy.zh)
     .filter(([key]) => !/(^|\.)href$/.test(key))
     .flatMap(([key, text]) => (text.replace(/\{\w+\}/g, "").match(/[A-Za-z][A-Za-z0-9]*/g) || []).filter((word) => !ALLOWED.has(word)).map((word) => `${key}: ${word}`));
@@ -91,9 +92,9 @@ const products = [
   { id: "", name: "broken", priceCents: 100 },
   { id: "neg", name: "negative", priceCents: -5 },
 ];
-const groups = groupProducts(products);
+const groups = groupProducts([...products, { id: "max_m", name: "Lily Max", priceCents: 9900, resourceType: "plan", kind: "subscription", unitAmount: 1, durationSeconds: 30 * 86400, metadata: { plan: "max", period: "month" } }]);
 assert.deepEqual(groups.map((g) => g.key), ["membership", "token", "image_generation", "other"], "fixed group order, empty groups dropped, unknown types in other");
-assert.equal(groups.flatMap((g) => g.items).length, 4, "malformed products are dropped");
+assert.equal(groups.flatMap((g) => g.items).length, 4, "malformed products are dropped, and plans have their own section");
 assert.equal(featuredProductId(products), "img_10", "the first marked product is the one featured");
 
 const ok = pricingState({ ok: true, status: 200, data: { products, paymentProviders: [{ id: "alipay" }] } }, "zh");
@@ -103,10 +104,10 @@ const allItems = ok.groups.flatMap((g) => g.items);
 assert.equal(allItems.filter((item) => item.featured).length, 1, "at most one product is highlighted");
 const tok = allItems.find((item) => item.id === "tok_s");
 assert.equal(tok.price, "¥9.90");
-assert.equal(tok.unit, "100万 token 对话额度");
+assert.equal(tok.unit, "1,000,000 积分", "chat credit is counted exactly, in the one credit unit");
 assert.equal(tok.validity, "有效期 365 天");
 assert.equal(allItems.find((item) => item.id === "vip_m").validity, "会员 30 天");
-assert.equal(productView(products[0], "en").unit, "1M tokens of chat");
+assert.equal(productView(products[0], "en").unit, "1,000,000 credits");
 
 const noProvider = pricingState({ ok: true, status: 200, data: { products, paymentProviders: [], fakePaymentsEnabled: false } }, "zh");
 assert.equal(noProvider.purchasable, false, "products without a live payment method are shown but not sold");

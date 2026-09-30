@@ -21,7 +21,9 @@ export function purchaseArrived(before, after) {
   if (!after) return false;
   if (COUNTS.some((key) => Number(after[key] || 0) > Number(before?.[key] || 0))) return true;
   const until = (e) => Date.parse(e?.membershipExpiresAt || "") || 0;
-  return until(after) > until(before);
+  // A plan (Pro/Max) bought or renewed shows as a plan expiry running later.
+  const planUntil = (e) => (e?.plan ? Date.parse(e.plan.expiresAt || "") || 1 : 0);
+  return until(after) > until(before) || planUntil(after) > planUntil(before);
 }
 
 /**
