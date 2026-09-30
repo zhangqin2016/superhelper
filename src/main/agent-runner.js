@@ -9,6 +9,9 @@ const ERROR_PATTERNS = [
   // "ORG_MEMBER_QUOTA_EXCEEDED" would otherwise read as a personal top-up and
   // a frozen organization as a bad API key.
   ...require("./organization-identity").ORG_IDENTITY_ERROR_PATTERNS,
+  // Licence-code refusals (402 LICENSE_WEEKLY_LIMIT / LICENSE_UNAVAILABLE):
+  // also ahead of QUOTA_EXCEEDED — "top up your account" is wrong for a licence.
+  ...require("./license-limit").LICENSE_LIMIT_ERROR_PATTERNS,
   {
     code: "RUNTIME_SKILL_TOO_MANY",
     category: "runtime_diagnostic",

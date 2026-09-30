@@ -2,6 +2,7 @@
 
 import { updateLicenseAction } from "../app/admin/actions";
 import { Field, SelectField, SubmitButton } from "./admin-forms";
+import { LicensePlanFields } from "./license-plan-fields";
 import { MultiSelectField } from "./multi-select-field";
 
 const LICENSE_FEATURES = ["updates", "skill-packages", "usage"];
@@ -32,11 +33,11 @@ export function LicenseEditForm({ license }) {
       <div className="lg:col-span-2">
         <Field label="Customer" name="customerName" defaultValue={license.customer_name || ""} />
       </div>
-      <SelectField label="Plan" name="plan" defaultValue={license.plan || "pro"} options={["trial", "pro", "team", "enterprise"]} />
+      <LicensePlanFields defaultPlan={license.plan || "pro"} defaultWeeklyCredits={license.weekly_credits_per_seat ?? ""} />
       <Field label="Seats" name="seats" type="number" defaultValue={license.seats || 1} />
       <Field label="Expires" name="expiresAt" type="date" defaultValue={isoLocalDate(license.expires_at)} />
       <SelectField label="Status" name="status" defaultValue={license.status || "active"} options={["active", "disabled"]} />
-      <div className="lg:col-span-5">
+      <div className="lg:col-span-3">
         <MultiSelectField label="Features" name="features" options={FEATURE_OPTIONS} defaultValue={featureList(license.features)} />
       </div>
       <div className="flex items-end">

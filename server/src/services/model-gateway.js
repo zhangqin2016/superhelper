@@ -18,10 +18,8 @@ import {
 } from "./model-gateway/openai-adapter.js";
 import { listModelGatewayProviders } from "./model-gateway/providers.js";
 import { discoveredModelMetadataSync } from "./model-gateway/model-discovery.js";
-import { chatTokenUsage, gatewayAccountRequired, scanRealTokenUsage, billableRealTokens, realTokenSplit } from "./model-gateway/usage.js";
-import { creditRateFor, creditsForUsage, reserveCredits } from "./credit-pricing.js";
-import { consumeEntitlement, fetchFeaturePricing } from "./wallet.js";
-import { resolveOrgContextForRequest } from "./organization-context.js";
+import { scanRealTokenUsage } from "./model-gateway/usage.js";
+import { consumeChatUsage, reconcileChatUsage } from "./model-gateway/chat-billing.js";
 
 export { signModelGatewayToken, verifyModelGatewayToken } from "./model-gateway/auth.js";
 export { listModelGatewayProviders } from "./model-gateway/providers.js";
@@ -129,117 +127,6 @@ async function providerContextForRequest(request, reply, defaultProvider = "deep
     return null;
   }
   return { providerId, provider, token };
-}
-
-// Reserve (input-estimate) phase. Gates the request: rejects an empty wallet up
-// front and returns a billing context so the caller can RECONCILE against the
-// provider's real token usage once the response completes. Returns
-// { ok:false } (reply already sent) on rejection, or { ok:true, billing } where
-// billing is null for non-metered access (license / trial / anonymous).
-async function consumeChatUsage({ request, reply, token, providerId, provider, body }) {
-  const account = gatewayAccountRequired({ token, enforcementEnabled: config.accountUsageEnforcementEnabled });
-  if (!account.ok) {
-    reply.code(402).send({ error: { type: "payment_required", message: account.code } });
-    return { ok: false };
-  }
-  if (account.licenseAuthorized || account.trial || account.anonymous) return { ok: true, billing: null };
-  const usage = chatTokenUsage({ ...body, model: body.model || provider.model || "" });
-  const pricing = await fetchFeaturePricing({
-    feature: usage.feature,
-    provider: providerId,
-    model: usage.model,
-    specKey: usage.specKey,
-  });
-  const idempotencyKey = String(request.headers["x-lily-idempotency-key"] || "").trim().slice(0, 200);
-  const organizationId = await resolveOrgContextForRequest(request, reply, token);
-  if (organizationId === null) return { ok: false };
-  // Charged in credits at this model's rate. The reservation prices the
-  // estimated input at the cached rate (cheapest): it proves the balance can
-  // pay; the answer's real usage settles the rest.
-  const rate = creditRateFor(pricing.rule);
-  const reserved = reserveCredits(usage.units, rate);
-  const consumed = await consumeEntitlement({
-    userId: token.userId,
-    deviceId: token.deviceId || "",
-    licenseId: token.licenseId || "",
-    provider: providerId,
-    model: usage.model,
-    feature: usage.feature,
-    specKey: usage.specKey,
-    resourceType: usage.resourceType,
-    units: reserved,
-    unitCost: 1,
-    idempotencyKey,
-    metadata: { phase: "input_estimate", estimatedInputTokens: usage.units, rate },
-    organizationId,
-  });
-  if (!consumed.ok) {
-    reply.code(402).send({
-      error: {
-        type: "payment_required",
-        message: consumed.code || "ENTITLEMENT_INSUFFICIENT",
-        resourceType: usage.resourceType,
-        requiredUnits: consumed.requiredUnits || usage.units,
-        availableUnits: consumed.availableUnits || 0,
-        ...(consumed.resetsAt ? { resetsAt: new Date(consumed.resetsAt).toISOString() } : {}),
-        ...(consumed.budget !== undefined && consumed.budget !== null ? { weeklyBudget: consumed.budget, weeklyUsed: consumed.used } : {}),
-      },
-    });
-    return { ok: false };
-  }
-  return {
-    ok: true,
-    billing: {
-      userId: token.userId,
-      deviceId: token.deviceId || "",
-      licenseId: token.licenseId || "",
-      providerId,
-      model: usage.model,
-      feature: usage.feature,
-      specKey: usage.specKey,
-      resourceType: usage.resourceType,
-      unitCost: 1,
-      rate,
-      estimateUnits: reserved,
-      estimatedInputTokens: usage.units,
-      idempotencyKey,
-      organizationId,
-    },
-  };
-}
-
-// Reconcile phase: charge the DELTA between the provider's real usage
-// (input + output tokens) and the already-charged input estimate. Best-effort —
-// the estimate is a floor, so we never refund and never fail the turn here.
-async function reconcileChatUsage(billing, usage) {
-  if (!billing || !usage?.seen) return;
-  const split = realTokenSplit(usage);
-  const realUnits = creditsForUsage(split, billing.rate);
-  const extra = realUnits - Math.max(0, Math.trunc(Number(billing.estimateUnits || 0)));
-  if (extra <= 0) return;
-  try {
-    await consumeEntitlement({
-      userId: billing.userId,
-      deviceId: billing.deviceId,
-      licenseId: billing.licenseId,
-      provider: billing.providerId,
-      model: billing.model,
-      feature: billing.feature,
-      specKey: billing.specKey,
-      resourceType: billing.resourceType,
-      units: extra,
-      unitCost: billing.unitCost,
-      idempotencyKey: billing.idempotencyKey ? `${billing.idempotencyKey}:final` : "",
-      metadata: { phase: "usage_reconcile", inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-        cachedInputTokens: split.cachedInputTokens, freshInputTokens: split.inputTokens, credits: realUnits, realTokens: billableRealTokens(usage),
-        billableTokens: Math.max(0, billableRealTokens(usage) - Math.trunc(Number(billing.estimatedInputTokens || 0))) },
-      organizationId: billing.organizationId || "",
-      enforceMemberLimits: false,
-    });
-  } catch {
-    // The input estimate was already charged; a failed reconcile must not break
-    // the response the user already received.
-  }
 }
 
 // Tee an upstream (SSE or JSON) body through to the client UNCHANGED while

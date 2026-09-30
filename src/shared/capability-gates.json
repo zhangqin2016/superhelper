@@ -3033,6 +3033,15 @@
         "scripts/test-tool-call-rescue.mjs",
         "scripts/test-delivery-check-continues-answer.mjs"
       ]
+    },
+    {
+      "id": "license-credits",
+      "protects": "Licence codes (授权码) open a plan (trial/pro/max/standard/premium/unlimited) with a weekly credit pool = credits per seat per week × seats in use (active bound devices, capped by the licence's seats, at least 1) — a typed 99999 seats is not a bottomless pool. Licensed devices spend the pool first (in credits at the model's rate), then the signed-in account's credits; a device with no account gets 402 LICENSE_WEEKLY_LIMIT with the reset time. Weeks count from the licence's creation and reset every 7 days. The unlimited plan is never refused but is still metered. Our own charging failure never blocks a paying licence (fail open, logged). Migration 066 moved every historical licence to premium (legacy_plan kept).",
+      "baseline": "2026-09-30: licensed devices (123 across 65 licences) were not metered at all — no usage events, unbounded official-model cost — and licence plans were bare labels (trial/pro/team/enterprise) unrelated to the quote sheet; some licences had seat counts like 99999.",
+      "failureFallback": "Charge failure → request allowed (as before) and logged. Media generation for licences is unchanged (still unmetered). A lapsed licence falls through to the account; without one, LICENSE_UNAVAILABLE. Mutation-verified: pool from typed seats, licences back to unmetered, and removing fail-open each fail license-credits-integration by name.",
+      "tests": [
+        "server/scripts/license-credits-integration.mjs"
+      ]
     }
   ]
 }

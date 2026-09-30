@@ -4,6 +4,8 @@ import { AdminEmpty } from "../../../../components/admin-empty";
 import { AdminPageActions } from "../../../../components/admin-page-actions";
 import { Badge } from "../../../../components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../../components/ui/card";
+import { LicenseCreditPool } from "../../../../components/license-credit-pool";
+import { licensePlanName } from "../../../../lib/license-plans.mjs";
 import { loadAdmin } from "../../../../lib/api";
 import { getI18n } from "../../../../lib/i18n.mjs";
 
@@ -28,7 +30,7 @@ function featureText(features) {
 
 export default async function LicenseDetailPage({ params }) {
   const { id } = await params;
-  const { t } = await getI18n();
+  const { t, locale } = await getI18n();
   const data = await loadAdmin(`/api/admin/licenses/${id}`, null);
   if (!data?.license) {
     return (
@@ -38,11 +40,11 @@ export default async function LicenseDetailPage({ params }) {
     );
   }
 
-  const { license, devices = [], usage = {} } = data;
+  const { license, devices = [], usage = {}, credits = null } = data;
   const tokens = Number(usage.input_tokens || 0) + Number(usage.output_tokens || 0);
 
   return (
-    <AdminShell title={license.id} subtitle={`${license.customer_name || "Unnamed customer"} · ${license.plan}`}>
+    <AdminShell title={license.id} subtitle={`${license.customer_name || "Unnamed customer"} · ${licensePlanName(t.admin.licensePlans, license.plan)}`}>
       <div className="mb-5">
         <Link href="/admin/licenses" className="text-sm font-semibold text-brand">Back to licenses</Link>
       </div>
@@ -80,16 +82,19 @@ export default async function LicenseDetailPage({ params }) {
             </table>
           ) : <AdminEmpty title="No devices" description="Devices appear after this license is activated." />}
         </div>
-        <Card>
-          <CardHeader><CardTitle>Usage summary</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm text-slate-600">
-            <div className="flex justify-between"><span>Messages</span><b>{fmt(usage.messages)}</b></div>
-            <div className="flex justify-between"><span>Images</span><b>{fmt(usage.images)}</b></div>
-            <div className="flex justify-between"><span>Tool calls</span><b>{fmt(usage.tool_calls)}</b></div>
-            <div className="flex justify-between"><span>Plugin calls</span><b>{fmt(usage.plugin_calls)}</b></div>
-            <div className="border-t border-slate-100 pt-3 text-slate-500">Features: {featureText(license.features)}</div>
-          </CardContent>
-        </Card>
+        <div className="space-y-5">
+          <LicenseCreditPool credits={credits} legacyPlan={license.legacy_plan || ""} copy={t.admin.licensePlans} locale={locale} />
+          <Card>
+            <CardHeader><CardTitle>Usage summary</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm text-slate-600">
+              <div className="flex justify-between"><span>Messages</span><b>{fmt(usage.messages)}</b></div>
+              <div className="flex justify-between"><span>Images</span><b>{fmt(usage.images)}</b></div>
+              <div className="flex justify-between"><span>Tool calls</span><b>{fmt(usage.tool_calls)}</b></div>
+              <div className="flex justify-between"><span>Plugin calls</span><b>{fmt(usage.plugin_calls)}</b></div>
+              <div className="border-t border-slate-100 pt-3 text-slate-500">Features: {featureText(license.features)}</div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </AdminShell>
   );

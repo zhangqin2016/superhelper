@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { createLicenseAction } from "../app/admin/actions";
-import { Field, SelectField, SubmitButton } from "./admin-forms";
+import { Field, SubmitButton } from "./admin-forms";
+import { LicensePlanFields } from "./license-plan-fields";
 import { MultiSelectField } from "./multi-select-field";
 import { useI18n } from "../lib/use-i18n";
 
@@ -23,7 +24,7 @@ export function LicenseCreateForm({ title }) {
         <div className="lg:col-span-2">
           <Field label="Customer" name="customerName" placeholder="Lanren Soft" />
         </div>
-        <SelectField label="Plan" name="plan" defaultValue="pro" options={["trial", "pro", "team", "enterprise"]} />
+        <LicensePlanFields defaultPlan="pro" />
         <Field label="Seats" name="seats" type="number" defaultValue="1" required />
         <Field label="Expires at" name="expiresAt" type="datetime-local" required />
         <div className="lg:col-span-3">

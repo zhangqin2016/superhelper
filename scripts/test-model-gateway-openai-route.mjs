@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 process.env.MODEL_GATEWAY_TOKEN_SECRET = "test-openai-route-secret";
+// Routing only: never meter against whatever database the shell points at.
+// Licensed requests now charge the licence's credit pool; with no reachable
+// database that metering fails open (a licence is never blocked by our own
+// failure), which is exactly the path this routing test should take.
+process.env.DATABASE_URL = "postgres://127.0.0.1:9/unreachable";
 process.env.ACCOUNT_USAGE_ENFORCEMENT = "false";
 process.env.MODEL_GATEWAY_PROVIDERS = JSON.stringify({
   "iluvatar-vllm": {

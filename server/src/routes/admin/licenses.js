@@ -5,11 +5,22 @@ import { zodBody, okResponse } from "../../openapi.js";
 import { licenseKey, publicId } from "../../services/ids.js";
 import { hashLicenseKey } from "../../services/security.js";
 import { listPage, pageQuerySchema, pageResponseSchema } from "../../services/admin-pagination.js";
+import { LICENSE_PLANS, licenseWeekStatus } from "../../services/license-credits.js";
+
+// A licence opens a plan (credit pricing, 2026-09-30). Older console builds
+// still send the old labels; they map onto the plans they meant.
+const LEGACY_LICENSE_PLAN = { team: "standard", enterprise: "premium", test: "premium" };
+const licensePlanSchema = z.string().min(1).max(40)
+  .transform((value) => LEGACY_LICENSE_PLAN[value] || value)
+  .refine((value) => LICENSE_PLANS.includes(value), { message: "unknown plan" });
+const weeklyCreditsSchema = z.number().int().min(0).max(100_000_000).nullable();
 
 const createLicenseSchema = z.object({
   customerName: z.string().max(160).optional().nullable(),
-  plan: z.string().min(1).max(40).default("pro"),
+  plan: licensePlanSchema.default("pro"),
   seats: z.number().int().min(1).max(100000).default(1),
+  // Credits per seat per week; null = the plan's default.
+  weeklyCreditsPerSeat: weeklyCreditsSchema.optional(),
   expiresAt: z.string().datetime(),
   features: z.array(z.string()).default(["updates", "skill-packages", "usage"]),
 });
@@ -18,7 +29,8 @@ const updateLicenseSchema = z.object({
   status: z.enum(["active", "disabled"]).optional(),
   seats: z.number().int().min(1).max(100000).optional(),
   expiresAt: z.string().datetime().optional(),
-  plan: z.string().min(1).max(40).optional(),
+  plan: licensePlanSchema.optional(),
+  weeklyCreditsPerSeat: weeklyCreditsSchema.optional(),
   customerName: z.string().max(160).optional().nullable(),
   features: z.array(z.string()).optional(),
 });
@@ -54,7 +66,7 @@ export function registerAdminLicenseRoutes(app, { audit }) {
         tags: ["admin:licenses"],
         summary: "Get a license with its devices and usage",
         description: "Returns the license record plus its bound devices and aggregated usage totals.",
-        response: { 200: okResponse({ license: { type: "object" }, devices: { type: "array" }, usage: { type: "object" } }) },
+        response: { 200: okResponse({ license: { type: "object" }, devices: { type: "array" }, usage: { type: "object" }, credits: { type: "object" } }) },
       },
     },
     async (request, reply) => {
@@ -95,7 +107,9 @@ export function registerAdminLicenseRoutes(app, { audit }) {
         .where("license_id", "=", request.params.id)
         .executeTakeFirst(),
     ]);
-    return { license, devices, usage };
+    // This week's credit pool: devices in use × credits per seat.
+    const credits = await licenseWeekStatus(db, license);
+    return { license, devices, usage, credits };
   });
 
   app.post(
@@ -121,6 +135,7 @@ export function registerAdminLicenseRoutes(app, { audit }) {
         customer_name: input.customerName || null,
         plan: input.plan,
         seats: input.seats,
+        ...(input.weeklyCreditsPerSeat !== undefined ? { weekly_credits_per_seat: input.weeklyCreditsPerSeat } : {}),
         expires_at: input.expiresAt,
         features: JSON.stringify(input.features),
       })
@@ -147,6 +162,7 @@ export function registerAdminLicenseRoutes(app, { audit }) {
       ...(input.seats ? { seats: input.seats } : {}),
       ...(input.expiresAt ? { expires_at: input.expiresAt } : {}),
       ...(input.plan ? { plan: input.plan } : {}),
+      ...(input.weeklyCreditsPerSeat !== undefined ? { weekly_credits_per_seat: input.weeklyCreditsPerSeat } : {}),
       ...(input.customerName !== undefined ? { customer_name: input.customerName || null } : {}),
       ...(input.features ? { features: JSON.stringify(input.features) } : {}),
       updated_at: new Date(),

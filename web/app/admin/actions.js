@@ -1,6 +1,7 @@
 "use server";
 
 import { adminMessage } from "../../lib/admin-messages.mjs";
+import { weeklyCreditsFromForm } from "../../lib/license-plans.mjs";
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -43,6 +44,8 @@ export async function createLicenseAction(_previousState, formData) {
       customerName: text(formData, "customerName") || null,
       plan: text(formData, "plan") || "pro",
       seats: Number(text(formData, "seats") || 1),
+      // Empty = the plan's default (null); disabled (unlimited plan) = not sent.
+      ...(formData.has("weeklyCreditsPerSeat") ? { weeklyCreditsPerSeat: weeklyCreditsFromForm(text(formData, "weeklyCreditsPerSeat")) } : {}),
       expiresAt: expiresAt.toISOString(),
       features: text(formData, "features")
         .split(",")
@@ -267,6 +270,8 @@ export async function updateLicenseAction(formData) {
     customerName: text(formData, "customerName") || null,
     plan: text(formData, "plan") || "pro",
     seats: Number(text(formData, "seats") || 1),
+    // Empty = back to the plan's default (null); disabled (unlimited plan) = left as stored.
+    ...(formData.has("weeklyCreditsPerSeat") ? { weeklyCreditsPerSeat: weeklyCreditsFromForm(text(formData, "weeklyCreditsPerSeat")) } : {}),
     expiresAt: expiresAt.toISOString(),
     status: text(formData, "status") || "active",
     features: text(formData, "features")

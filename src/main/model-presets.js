@@ -581,105 +581,30 @@ function findPresetById(presetId) {
   return getAllPresets().find((p) => p.id === presetId) || null;
 }
 
-/** BYOK plan-gate verdict — byok-policy is the only interpreter; fail-open. */
-function byokDecision() {
-  try {
-    return require("./account-manager").byokDecision();
-  } catch {
-    return require("./byok-policy").decideByok({});
-  }
-}
-
-function byokRefusal() {
-  const decision = byokDecision();
-  return decision.allowed ? null : { ok: false, error: "BYOK_PLAN_REQUIRED", byok: decision };
-}
+// Own-key models behind the plan gate (model-presets-byok.js). Deps are passed
+// lazily: they are function declarations below.
+const byokGate = require("./model-presets-byok").createPresetByokGate({
+  loadUserChoice: (...a) => loadUserChoice(...a), getCustomPresets: (...a) => getCustomPresets(...a),
+  userDataPath: (...a) => userDataPath(...a), readJson: (...a) => readJson(...a), writeJson: (...a) => writeJson(...a),
+});
+const byokDecision = () => byokGate.decision();
+const byokRefusal = () => byokGate.refusal();
+const takeByokSwitchNotice = (candidates) => byokGate.takeSwitchNotice(candidates);
 
 function getActivePresetId() {
   const selectedId = loadUserChoice()?.activePresetId;
-  let presets = getAllPresets();
-  // A plan-locked custom model is never the effective model: resolve as if it
-  // were absent, which lands on the platform default. The stored choice is kept,
-  // so the lock lifts by itself when the entitlement changes.
-  if (presets.some((p) => p.custom && p.id === selectedId) && !byokDecision().allowed) {
-    presets = presets.filter((p) => !p.custom);
-  }
+  const presets = byokGate.resolvablePresets(getAllPresets(), selectedId);
   return require("./model-identity").resolveActivePresetId(
     selectedId, loadCatalog(), presets, remoteConfig.getRemoteModelIdentityAliasesSync?.(),
   );
-}
-
-/**
- * One-shot notice for models the user chose but the plan gate now locks (the
- * stored active custom preset, or a picker selection). Each id is announced
- * once per lock episode; the record clears once BYOK is allowed again.
- */
-const BYOK_NOTICE_FILE = "byok-lock-notice.json";
-
-function lockedActiveCustomPreset() {
-  const selectedId = loadUserChoice()?.activePresetId;
-  const preset = getCustomPresets().find((p) => p.id === selectedId);
-  if (!preset || byokDecision().allowed) return null;
-  // Same id the model picker uses, so one model is announced once, not twice.
-  return { id: require("./model-identity").canonicalModelId(preset.id, preset.model), label: preset.label };
-}
-
-function takeByokSwitchNotice(candidates = [lockedActiveCustomPreset()]) {
-  try {
-    const file = userDataPath(BYOK_NOTICE_FILE);
-    const decision = byokDecision();
-    if (decision.allowed) {
-      if (fs.existsSync(file)) fs.unlinkSync(file);
-      return null;
-    }
-    const seen = new Set(readJson(file, {})?.notifiedIds || []);
-    const fresh = (Array.isArray(candidates) ? candidates : []).filter((c) => c?.id && !seen.has(c.id));
-    if (!fresh.length) return null;
-    writeJson(file, { notifiedIds: [...seen, ...fresh.map((c) => c.id)] });
-    return { models: fresh.map((c) => String(c.label || c.id)), pricingUrl: decision.pricingUrl };
-  } catch {
-    return null;
-  }
 }
 
 function getActivePreset() {
   return findPresetById(getActivePresetId());
 }
 
-/**
- * Whether the active model natively recognizes images. When true the vision
- * preflight skips the Qwen bridge and lets images pass through as image blocks.
- */
-function activePresetSupportsVision() {
-  try {
-    return Boolean(getActivePreset()?.capabilities?.vision);
-  } catch {
-    // Capability probe must never crash a turn; if presets can't be resolved
-    // (e.g. paths not bound yet), assume no native vision → use the bridge.
-    return false;
-  }
-}
-
-/**
- * The non-image file-part media types the active model is DECLARED to accept as
- * raw file parts (e.g. an Anthropic-family managed model that takes
- * "application/pdf"). This is opt-in per preset via `capabilities.filePartMimes`
- * — there is no safe default because arbitrary custom/BYOK models reject file
- * parts they don't understand (the AI SDK throws AI_UnsupportedFunctionalityError
- * while building the request). So the default is EMPTY: non-image attachments go
- * as inline text or a source path (universally supported), never as a raw file
- * part, unless a preset explicitly says the model supports the type. Images stay
- * governed by `capabilities.vision` (activePresetSupportsVision), not this list.
- */
-function activePresetFilePartMimes() {
-  try {
-    const mimes = getActivePreset()?.capabilities?.filePartMimes;
-    if (!Array.isArray(mimes)) return [];
-    return mimes.map((m) => String(m || "").trim().toLowerCase()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
+const { activePresetSupportsVision, activePresetFilePartMimes } =
+  require("./model-presets-capabilities").createActivePresetCapabilities(() => getActivePreset());
 
 function getActivePresetEnv() {
   const preset = getActivePreset();
@@ -703,8 +628,7 @@ function getUserApiEnv() {
 
   const gateway = user.apiGateway || normalizeApiGateway(null);
   if (gateway.mode !== "custom") return {};
-  // The custom API gateway stays open to everyone (owner decision 2026-09-30):
-  // only own-key MODELS are plan-gated.
+  // The custom API gateway is not plan-gated (owner decision 2026-09-30).
 
   const env = {};
   const protocol = normalizeProtocol(gateway.protocol) || legacyProtocolForBaseUrl(gateway.baseUrl);
@@ -867,8 +791,7 @@ function setActivePreset(presetId) {
   const found = findPresetById(presetId);
   if (!found) return { ok: false, error: "NOT_FOUND" };
   if (found.custom) {
-    const refusal = byokRefusal();
-    if (refusal) return refusal;
+    const refusal = byokRefusal(); if (refusal) return refusal;
   }
   const user = loadUserChoice();
   const next = { ...user, activePresetId: presetId };
@@ -907,8 +830,7 @@ function saveCustomPreset({
   compatibilityProfile = null,
   capabilities = null,
 }) {
-  const refusal = byokRefusal();
-  if (refusal) return refusal;
+  const refusal = byokRefusal(); if (refusal) return refusal;
   const validated = validateCustomInput(label, model);
   if (!validated.ok) return validated;
 
@@ -1090,8 +1012,7 @@ function isTransientProbeError(error) {
 
 async function saveCustomPresetWithProbe(input = {}) {
   // Refuse before spending a probe on a model the plan gate would not save.
-  const refusal = byokRefusal();
-  if (refusal) return refusal;
+  const refusal = byokRefusal(); if (refusal) return refusal;
   const protocol = normalizeProtocol(input.protocol) || legacyProtocolForBaseUrl(input.baseUrl);
   if (normalizeRequestBodyOverlay(input.requestBodyOverlay) || protocol !== "openai") {
     return saveCustomPreset(input);

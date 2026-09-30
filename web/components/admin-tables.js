@@ -7,6 +7,7 @@ import { Button } from "./ui/button";
 import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import { RowActions } from "./row-actions";
+import { licensePlanName } from "../lib/license-plans.mjs";
 import {
   removeLicenseDeviceAction,
   setLicenseDeviceStatusAction,
@@ -49,7 +50,7 @@ export function LicensesTable({ rows, empty }) {
   const columns = [
     { accessorKey: "id", header: ({ column }) => <SortHeader column={column}>{t.admin.nav.licenses}</SortHeader>, cell: ({ row }) => <Link href={`/admin/licenses/${row.original.id}`} className="font-mono text-brand">{row.original.id}</Link> },
     { accessorKey: "customer_name", header: t.admin.cols.customer, cell: ({ row }) => row.original.customer_name || "-" },
-    { accessorKey: "plan", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.plan}</SortHeader> },
+    { accessorKey: "plan", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.plan}</SortHeader>, cell: ({ row }) => licensePlanName(t.admin.licensePlans, row.original.plan) },
     {
       // Used against allowed, so an unused license is visible at a glance.
       accessorKey: "active_devices",

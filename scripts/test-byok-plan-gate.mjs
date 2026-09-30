@@ -224,7 +224,11 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const presetsSrc = read("src/main/model-presets.js");
 const accountSrc = read("src/main/account-manager.js");
 assert.match(accountSrc, /require\("\.\/byok-policy"\)/, "account-manager decides through byok-policy");
-assert.match(presetsSrc, /require\("\.\/account-manager"\)\.byokDecision\(\)/, "enforcement reads the account verdict");
+// The preset-side gate lives in model-presets-byok.js (split out for the size
+// ratchet); model-presets goes through it, and it reads the account verdict.
+const gateSrc = read("src/main/model-presets-byok.js");
+assert.match(gateSrc, /require\("\.\/account-manager"\)\.byokDecision\(\)/, "enforcement reads the account verdict");
+assert.match(presetsSrc, /require\("\.\/model-presets-byok"\)\.createPresetByokGate\(/, "model-presets applies the gate through its one module");
 assert.match(presetsSrc, /require\("\.\/byok-policy"\)\.isByokLocked/, "the view model's locked flag comes from byok-policy");
 assert.match(read("src/main/model-selection-catalog.js"), /preset\.locked/, "picker routing consumes the same flag");
 const byokFieldReaders = [];
