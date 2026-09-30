@@ -5,7 +5,7 @@
 //   paid Max order → a plan period (ledger carries the money, no credit) →
 //   this week's allowance handed out once, whoever asks first, even racing →
 //   charged before older credit → a new week starts fresh (no carry-over) →
-//   renewal continues the period → Pro has no allowance →
+//   renewal continues the period → a 0-allowance plan hands out nothing →
 //   BYOK: open by default, plan/enterprise-only when the operator turns it on →
 //   a full refund ends the plan and the week it handed out.
 //
@@ -103,7 +103,7 @@ try {
   assert.equal(new Date(renewed.starts_at).getTime(), before, "starts where the current period ends");
   assert.equal(new Date((await summary(buyer)).plan.expiresAt).getTime(), before + 2592000 * 1000);
 
-  step("Pro is a plan without an allowance");
+  step("a plan whose weekly allowance is 0 hands out nothing (the tier still counts)");
   const pro = await user("usr_pro");
   await pay(pro, "pro_month", 4900);
   const sp = await summary(pro);

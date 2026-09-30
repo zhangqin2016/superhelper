@@ -462,7 +462,7 @@ export const pricingCopy = {
       title: "方案对比",
       columns: ["方案", "价格", "模型", "官方内置智能体", "{unit}", "企业控制台", "起购"],
       rows: {
-        pro: ["自接 API Key", false, "不含官方{unit}", false, "1 个账号"],
+        pro: ["自接 API Key", false, "按周发放、每周重置", false, "1 个账号"],
         max: ["官方模型，也可自接", true, "按周发放、每周重置", false, "1 个账号"],
         standard: ["自接 API Key", false, "按周发放 · 企业内池化", true, "{n} 席起"],
         premium: ["官方模型，也可自接", true, "企业内{unit}池共享", true, "{n} 席起"],
@@ -633,7 +633,7 @@ export const pricingCopy = {
       title: "Compare plans",
       columns: ["Plan", "Price", "Models", "Built-in official agents", "{unit}", "Enterprise console", "Minimum"],
       rows: {
-        pro: ["Your own API key", false, "No platform {unit}", false, "1 account"],
+        pro: ["Your own API key", false, "Issued weekly, reset every week", false, "1 account"],
         max: ["Official models, or your own", true, "Issued weekly, reset every week", false, "1 account"],
         standard: ["Your own API key", false, "Issued weekly, pooled within the organization", true, "From {n} seats"],
         premium: ["Official models, or your own", true, "Shared {unit} pool in the organization", true, "From {n} seats"],
@@ -804,7 +804,7 @@ export const pricingCopy = {
       title: "مقارنة الخطط",
       columns: ["الخطة", "السعر", "النماذج", "الوكلاء الرسميون المدمجون", "{unit}", "لوحة تحكم المؤسسة", "الحد الأدنى"],
       rows: {
-        pro: ["مفتاح API خاص بك", false, "بلا {unit} من المنصة", false, "حساب واحد"],
+        pro: ["مفتاح API خاص بك", false, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
         max: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
         standard: ["مفتاح API خاص بك", false, "تُمنح أسبوعياً وتُجمع داخل المؤسسة", true, "من {n} مقاعد"],
         premium: ["نماذج رسمية، أو نموذجك الخاص", true, "رصيد {unit} مشترك داخل المؤسسة", true, "من {n} مقاعد"],
