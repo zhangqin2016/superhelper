@@ -10,7 +10,9 @@ const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
 const { inspectedByContent, renderReceiptFor, inspectedImages: receiptInspectedImages } = require("./document-render-receipt.js");
 const { workbookRecalculation, xlsxFormulaState } = require("./workbook-recalc-receipt.js");
 
-const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument]);
+// What a turn must verify before delivering. An SVG is a drawing generated in
+// one pass like a slide, and just as likely to overlap or clip (2026-09-30).
+const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument, ".svg"]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
 const DOCUMENT_OPERATIONS = new Set(["create", "modify", "convert"]);
 const MAX_DEEP_STRUCTURE_BYTES = 20 * 1024 * 1024;
@@ -154,6 +156,14 @@ function structureCheck(artifact = {}) {
     if (ext === ".pdf" && !head.subarray(0, 4).equals(Buffer.from("%PDF"))) {
       return { ok: false, reason: "invalid_pdf_header" };
     }
+    if (ext === ".svg") {
+      // A drawing cut off mid-write still "renders" (the browser shows its error
+      // page), so the file itself is checked: an <svg> root that is closed.
+      const text = readFileSlice(file, Math.min(stat.size, MAX_SCAN_CHARS)).toString("utf8");
+      const tail = readFileSlice(file, Math.min(1024, stat.size), Math.max(0, stat.size - 1024)).toString("utf8");
+      if (!/<svg[\s>]/i.test(text)) return { ok: false, reason: "invalid_svg_root" };
+      if (!/<\/svg>\s*$/i.test(tail) && !/<svg\b[^>]*\/>\s*$/i.test(tail)) return { ok: false, reason: "truncated_svg" };
+    }
     if (OOXML_EXTENSIONS.has(ext) && stat.size <= MAX_DEEP_STRUCTURE_BYTES) {
       const contents = fs.readFileSync(file);
       if (!contents.includes("[Content_Types].xml")) return { ok: false, reason: "missing_content_types" };
@@ -190,9 +200,10 @@ function xlsxContainsFormulas(file) {
   return xlsxFormulaState(file).formulas > 0;
 }
 
-// Drawn by a browser (render_document.py → lily_web_render.py). Checked when the
-// agent asks (lily_delivery_check); not part of the turn's required delivery set.
-const WEB_VISUAL_EXTENSIONS = new Set([".svg", ".html", ".htm"]);
+// Pages a browser draws (render_document.py → lily_web_render.py). Checked when
+// the agent asks (lily_delivery_check); an interactive page is verified in the
+// browser, so it is not part of the turn's required delivery set.
+const WEB_VISUAL_EXTENSIONS = new Set([".html", ".htm"]);
 
 function documentArtifacts(artifacts = [], extensions = DOCUMENT_EXTENSIONS) {
   return (Array.isArray(artifacts) ? artifacts : [])

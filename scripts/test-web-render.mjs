@@ -74,10 +74,16 @@ try {
     JSON.stringify({ version: 1, kind: "image_inspection", ok: true, path: first.images[0], at: Date.now() }) + "\n");
   const after = await tool.handler({ paths: [svg] }, { sessionId: "s1", workspacePath: ws });
   assert.equal(after.ok, true, JSON.stringify(after));
-  // Scope: the turn's final gate still requires documents only — checking an SVG is the agent's call.
+  // Scope: a delivered SVG is verified like a slide (generated in one pass, it can
+  // overlap or clip); an interactive HTML page is verified in the browser instead.
   const { assessDocumentDelivery } = require("../src/main/document-delivery-gate.js");
-  assert.equal(assessDocumentDelivery({ artifacts: [{ path: svg, ext: ".svg", fileName: "架构.svg", source: "tool_write" }], tools: [] }).required, false,
-    "a delivered SVG does not start a check round by itself");
+  const delivered = (file) => assessDocumentDelivery({ artifacts: [{ path: file, ext: path.extname(file), fileName: path.basename(file), source: "tool_write" }], tools: [] });
+  assert.equal(delivered(svg).required, true, "a delivered SVG must be rendered and inspected");
+  assert.deepEqual(delivered(svg).missing, ["render"], "with no render this turn, the render is what is missing");
+  assert.equal(delivered(html).required, false, "an HTML page is not in the required set");
+  const cut = path.join(ws, "cut.svg");
+  fs.writeFileSync(cut, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10"`);
+  assert.equal(delivered(cut).artifacts[0].checks.structure.reason, "truncated_svg", "a drawing cut off mid-write fails structure");
   console.log("test-web-render: ok (runtime-backed)");
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
