@@ -414,7 +414,7 @@ export const pricingCopy = {
     enterprisePlans: {
       eyebrow: "企业",
       title: "企业订阅，按席位计费",
-      lead: "企业控制台统一管理成员与用量，{unit}池在企业内共享。",
+      lead: "企业控制台统一管理成员与用量，{unit}池在企业内共享。标准版与高级版功能完全相同，只是每席每周{unit}不同。",
       perSeatMonth: "/席位/月",
       perSeatYear: "/席位/年",
       yearly: "年付 {price}",
@@ -424,14 +424,14 @@ export const pricingCopy = {
       tiers: {
         standard: {
           name: "企业标准版",
-          tag: "自接模型",
-          points: ["自接 API Key", "企业控制台", "{unit}池共享", "按周发放 · 企业内池化"],
-          excludes: ["官方内置智能体"],
+          tag: "轻度使用",
+          points: ["官方模型，也可自接", "含官方内置智能体", "企业控制台", "{unit}池共享", "与高级版功能相同，每席每周{unit}少一些"],
+          excludes: [],
         },
         premium: {
           name: "企业高级版",
-          tag: "官方模型",
-          points: ["官方模型，也可自接", "含官方内置智能体", "企业控制台", "{unit}池共享"],
+          tag: "用量更大",
+          points: ["官方模型，也可自接", "含官方内置智能体", "企业控制台", "{unit}池共享", "与标准版功能相同，每席每周{unit}更多"],
           excludes: [],
         },
       },
@@ -464,8 +464,8 @@ export const pricingCopy = {
       rows: {
         pro: ["官方模型，也可自接", true, "按周发放、每周重置", false, "1 个账号"],
         max: ["官方模型，也可自接", true, "按周发放、每周重置", false, "1 个账号"],
-        standard: ["自接 API Key", false, "按周发放 · 企业内池化", true, "{n} 席起"],
-        premium: ["官方模型，也可自接", true, "企业内{unit}池共享", true, "{n} 席起"],
+        standard: ["官方模型，也可自接", true, "按席位每周发放 · 企业内共享", true, "{n} 席起"],
+        premium: ["官方模型，也可自接", true, "按席位每周发放 · 企业内共享", true, "{n} 席起"],
       },
       yes: "包含",
       no: "不包含",
@@ -585,7 +585,7 @@ export const pricingCopy = {
     enterprisePlans: {
       eyebrow: "Enterprise",
       title: "Enterprise plans, priced per seat",
-      lead: "An enterprise console for members and usage, with {unit} pooled across the organization.",
+      lead: "An enterprise console for members and usage, with {unit} pooled across the organization. Standard and Premium have exactly the same features and differ only in weekly {unit} per seat.",
       perSeatMonth: "/seat/month",
       perSeatYear: "/seat/year",
       yearly: "{price} billed yearly",
@@ -595,14 +595,14 @@ export const pricingCopy = {
       tiers: {
         standard: {
           name: "Enterprise Standard",
-          tag: "Bring your model",
-          points: ["Your own API key", "Enterprise console", "Shared {unit} pool", "Issued weekly, pooled within the organization"],
-          excludes: ["Built-in official agents"],
+          tag: "Lighter use",
+          points: ["Official models, or bring your own", "Built-in official agents", "Enterprise console", "Shared {unit} pool", "Every Premium feature, with fewer weekly {unit} per seat"],
+          excludes: [],
         },
         premium: {
           name: "Enterprise Premium",
-          tag: "Official models",
-          points: ["Official models, or bring your own", "Built-in official agents", "Enterprise console", "Shared {unit} pool"],
+          tag: "Heavier use",
+          points: ["Official models, or bring your own", "Built-in official agents", "Enterprise console", "Shared {unit} pool", "Every Standard feature, with more weekly {unit} per seat"],
           excludes: [],
         },
       },
@@ -635,8 +635,8 @@ export const pricingCopy = {
       rows: {
         pro: ["Official models, or your own", true, "Issued weekly, reset every week", false, "1 account"],
         max: ["Official models, or your own", true, "Issued weekly, reset every week", false, "1 account"],
-        standard: ["Your own API key", false, "Issued weekly, pooled within the organization", true, "From {n} seats"],
-        premium: ["Official models, or your own", true, "Shared {unit} pool in the organization", true, "From {n} seats"],
+        standard: ["Official models, or your own", true, "Issued weekly per seat, shared in the organization", true, "From {n} seats"],
+        premium: ["Official models, or your own", true, "Issued weekly per seat, shared in the organization", true, "From {n} seats"],
       },
       yes: "Included",
       no: "Not included",
@@ -756,7 +756,7 @@ export const pricingCopy = {
     enterprisePlans: {
       eyebrow: "المؤسسات",
       title: "خطط المؤسسات، بالسعر لكل مقعد",
-      lead: "لوحة تحكم للمؤسسة لإدارة الأعضاء والاستخدام، مع {unit} مشتركة داخل المؤسسة.",
+      lead: "لوحة تحكم للمؤسسة لإدارة الأعضاء والاستخدام، مع {unit} مشتركة داخل المؤسسة. للقياسية والمتقدمة الميزات نفسها تماماً، والفرق في {unit} الأسبوعية لكل مقعد فقط.",
       perSeatMonth: "/مقعد/شهر",
       perSeatYear: "/مقعد/سنة",
       yearly: "{price} عند الدفع السنوي",
@@ -766,14 +766,14 @@ export const pricingCopy = {
       tiers: {
         standard: {
           name: "المؤسسات القياسية",
-          tag: "نموذجك الخاص",
-          points: ["مفتاح API خاص بك", "لوحة تحكم المؤسسة", "رصيد {unit} مشترك", "تُمنح أسبوعياً وتُجمع داخل المؤسسة"],
-          excludes: ["الوكلاء الرسميون المدمجون"],
+          tag: "استخدام أخف",
+          points: ["نماذج رسمية، أو نموذجك الخاص", "الوكلاء الرسميون المدمجون", "لوحة تحكم المؤسسة", "رصيد {unit} مشترك", "كل ميزات المتقدمة، مع {unit} أسبوعية أقل لكل مقعد"],
+          excludes: [],
         },
         premium: {
           name: "المؤسسات المتقدمة",
-          tag: "نماذج رسمية",
-          points: ["نماذج رسمية، أو نموذجك الخاص", "الوكلاء الرسميون المدمجون", "لوحة تحكم المؤسسة", "رصيد {unit} مشترك"],
+          tag: "استخدام أكثف",
+          points: ["نماذج رسمية، أو نموذجك الخاص", "الوكلاء الرسميون المدمجون", "لوحة تحكم المؤسسة", "رصيد {unit} مشترك", "كل ميزات القياسية، مع {unit} أسبوعية أكثر لكل مقعد"],
           excludes: [],
         },
       },
@@ -806,8 +806,8 @@ export const pricingCopy = {
       rows: {
         pro: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
         max: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً وتتجدد كل أسبوع", false, "حساب واحد"],
-        standard: ["مفتاح API خاص بك", false, "تُمنح أسبوعياً وتُجمع داخل المؤسسة", true, "من {n} مقاعد"],
-        premium: ["نماذج رسمية، أو نموذجك الخاص", true, "رصيد {unit} مشترك داخل المؤسسة", true, "من {n} مقاعد"],
+        standard: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً لكل مقعد وتُشارك داخل المؤسسة", true, "من {n} مقاعد"],
+        premium: ["نماذج رسمية، أو نموذجك الخاص", true, "تُمنح أسبوعياً لكل مقعد وتُشارك داخل المؤسسة", true, "من {n} مقاعد"],
       },
       yes: "مشمول",
       no: "غير مشمول",
