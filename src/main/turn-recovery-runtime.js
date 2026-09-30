@@ -218,12 +218,13 @@ function createTurnRecoveryRuntime(options = {}) {
       const state = stateFor(sessionId);
       if (state.turnId || state.queue.length) return false;
       if (ctx.runnerPool?.get?.(sessionId)?.isBusy?.()) return false;
+      // LILY_DELIVERY_CHECK_CONTINUES=0: the check replaces the answer, as before 2026-09-30.
+      const continuesAnswer = strategy.kind === "document_verify_retry" && process.env.LILY_DELIVERY_CHECK_CONTINUES !== "0";
       const documentRecovery = strategy.kind === "document_verify_retry"
-        ? prepareDocumentDeliveryRecovery(failure)
+        ? prepareDocumentDeliveryRecovery(failure, { onlyPending: continuesAnswer })
         : null;
       if (strategy.kind === "document_verify_retry" && !documentRecovery) return false;
-      // LILY_DELIVERY_CHECK_CONTINUES=0: the check replaces the answer, as before 2026-09-30.
-      const checkContinues = Boolean(documentRecovery) && process.env.LILY_DELIVERY_CHECK_CONTINUES !== "0";
+      const checkContinues = Boolean(documentRecovery) && continuesAnswer;
       const ranTools = [...(state.tools?.values?.() || [])];
       // A leaked tool call on a turn that already had side effects used to get
       // no rescue at all: replay would re-run the edits, so the guard refused

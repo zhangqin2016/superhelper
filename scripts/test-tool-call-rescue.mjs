@@ -400,11 +400,13 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   let supersededTurn = null;
   ctx.transcriptStore.supersedeAssistantTurn = (_session, turnId) => { supersededTurn = turnId; return { ok: true }; };
   resetRescueStateForTests();
+  const passedPath = path.join(tempUserData, "passed.pdf");
+  const delivery = { artifacts: [{ path: documentPath, ok: false, missing: ["visual_inspection"] }, { path: passedPath, ok: true, missing: [] }], missing: ["visual_inspection"] };
   const dispatched = await ctx.turnOrchestrator._maybeToolCallRescueRetry("s1", {
     code: "DOCUMENT_DELIVERY_UNVERIFIED",
     supersedesTurnId: "document-turn-old",
     userText: "Create a polished report",
-    documentDelivery: { artifacts: [{ path: documentPath }], missing: ["visual_inspection"] },
+    documentDelivery: delivery,
   });
   assert.equal(dispatched, true, "a document QA continuation is allowed after file writes");
   assert.match(captured[1], /internal continuation/i);
@@ -412,6 +414,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(captured[3].recordUser, false);
   assert.equal(captured[3].skipPreflight, false, "managed document runtime preflight remains enabled");
   assert.equal(captured[3].documentDeliveryRecovery, true);
+  // Only the file it must complete: a file that passed stands in the answer above
+  // (carrying it made the round re-judge it and re-list its card, 2026-09-30).
   assert.deepEqual(captured[3].expectedArtifactPaths, [documentPath]);
   // The check continues the answer it checks; it never replaces it (2026-09-30:
   // replacing swapped the deliverables and sources for a short QA report).
@@ -427,9 +431,10 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
     code: "DOCUMENT_DELIVERY_UNVERIFIED",
     supersedesTurnId: "document-turn-old",
     userText: "Create a polished report",
-    documentDelivery: { artifacts: [{ path: documentPath }], missing: ["visual_inspection"] },
+    documentDelivery: delivery,
   });
   delete process.env.LILY_DELIVERY_CHECK_CONTINUES;
+  assert.deepEqual(captured[3].expectedArtifactPaths, [documentPath, passedPath], "switched off: the replacing answer lists every file, as before");
   assert.equal(captured[3].continuesTurnId, "", "switched off: no continuation link");
   assert.equal(supersededTurn, "document-turn-old", "switched off: the answer is superseded as before");
   flushEvents();

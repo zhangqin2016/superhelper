@@ -4,6 +4,7 @@ import { sanitizeNoticeForIngest } from "./engine-notice-policy.js";
 import { ingestPlatformNoticeEvent } from "./platform-notice-ingest.js";
 import { alertTaskDone } from "./task-alert.js";
 import { removeSupersededAssistant } from "./assistant-supersession.js";
+import { resolveContinuedDeliveryNotes } from "./delivery-check-note.js";
 import {
   activityFromEngineNotice,
   setActivityLabel,
@@ -129,7 +130,7 @@ export function syncCommittedMessages(sessionId, messages) {
     Boolean(runtime.turnId) ||
     Boolean(runtime.queue?.length);
   if (!shouldPreserveLocal) {
-    runtime.committedMessages = dedupeCommittedMessages(mergedIncoming);
+    runtime.committedMessages = resolveContinuedDeliveryNotes(dedupeCommittedMessages(mergedIncoming));
     return;
   }
 
@@ -147,7 +148,7 @@ export function syncCommittedMessages(sessionId, messages) {
     seen.add(key);
     localOnly.push(message);
   }
-  runtime.committedMessages = dedupeCommittedMessages([...mergedIncoming, ...localOnly]);
+  runtime.committedMessages = resolveContinuedDeliveryNotes(dedupeCommittedMessages([...mergedIncoming, ...localOnly]));
 }
 
 export function hydrateRuntimeFromState(state) {
@@ -713,6 +714,7 @@ export function applyRuntimeEvent(event, opts = {}) {
             tools: event.payload.toolsSummary,
           },
         });
+        runtime.committedMessages = resolveContinuedDeliveryNotes(runtime.committedMessages);
       }
   }
 }

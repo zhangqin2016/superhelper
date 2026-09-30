@@ -289,7 +289,8 @@
   margin-top: -6px;
 }
 
-.assistant-turn-article.is-continuation > .assistant-turn-speaker {
+.assistant-turn-article.is-continuation > .assistant-turn-speaker,
+.assistant-turn-article.is-continuation.is-sealed > .assistant-turn-header {
   display: none;
 }
 

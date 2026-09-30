@@ -39,7 +39,10 @@ export function legacyLiveTurnFromMessage(message) {
   };
 }
 
-export function liveTurnFromRecord(record) {
+// `turnId`: the message's, for records that carry none — engine-history records
+// do not, and an article without its turn could not replace the live article
+// of that turn, so both stood (2026-09-30: the check's reply shown twice).
+export function liveTurnFromRecord(record, turnId = "") {
   const tools = new Map();
   for (const tool of record?.tools || []) {
     if (tool?.id) tools.set(tool.id, tool);
@@ -52,7 +55,7 @@ export function liveTurnFromRecord(record) {
     event?.type ? event : { type: "engine.notice", payload: { notice: event } }
   ));
   return {
-    turnId: record.turnId,
+    turnId: record.turnId || turnId,
     phase: "done",
     assistantText: record.assistantText || "",
     thinkingText: record.thinkingText || "",

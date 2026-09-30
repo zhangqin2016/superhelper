@@ -38,6 +38,19 @@ const legacyPrompt = "[系统文档交付续检] 这是对刚生成文件的一�
 assert(isPlatformAuthoredPromptText(legacyPrompt), "a check prompt stored before the tag is recognised");
 assert(!isPlatformAuthoredPromptText("[系统文档交付续检] 这是对刚生成文件的一次内部续接 —— 这句话是什么意思？"), "a user quoting the opener keeps their message");
 
+// The note appended to an unverified delivery is recorded exactly, so an answer a check continues can drop it.
+{
+  const { evaluateAnswerEvidence } = require("../src/main/answer-evidence-finalizer.js");
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "delivery-note-"));
+  const pdf = path.join(dir, "r.pdf");
+  fs.writeFileSync(pdf, "%PDF-1.7\n%%EOF\n");
+  const result = evaluateAnswerEvidence({ assistant: "报告已生成。", artifacts: [{ path: pdf, ext: ".pdf", fileName: "r.pdf", source: "tool_write" }], tools: [], userText: "生成报告" });
+  const note = result.assessment.deliveryNote;
+  assert(note && result.assistant === `报告已生成。${note}`, "the recorded note is exactly the appended suffix");
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 // 2. History, on both read paths.
 const user = (turnId, content) => ({ id: `u-${turnId}`, role: "user", content, turnId, timestamp: new Date(Date.parse("2026-09-30T01:47:48Z") + turnId.length).toISOString() });
 const answer = (turnId, content, meta = {}, at = 0) => ({ id: `a-${turnId}`, role: "assistant", content, turnId, timestamp: new Date(Date.parse("2026-09-30T01:55:00Z") + at).toISOString(),

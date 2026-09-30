@@ -459,7 +459,7 @@ function appendFinalAssistantArticle(sessionId, message, beforeNode = null, key 
   }
   const v = ensurePanel(sessionId);
   const liveTurn = message.record
-    ? liveTurnFromRecord(message.record)
+    ? liveTurnFromRecord(message.record, message.turnId)
     : legacyLiveTurnFromMessage(message);
   const article = renderSealedTurnArticle(liveTurn, Boolean(message.failed), sessionId);
   if (key) article.dataset.messageKey = key; // lets window eviction locate this article

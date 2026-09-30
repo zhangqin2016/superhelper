@@ -9,6 +9,11 @@ export function createLiveTurnArticleShell(liveTurn, {
   const article = document.createElement("article");
   article.className = "assistant-turn-article is-live";
   article.dataset.turnId = liveTurn.turnId || "";
+  // A delivery check is part of the answer it continues from its first frame.
+  if (liveTurn.continuesTurnId) {
+    article.classList.add("is-continuation");
+    article.dataset.continuationLabel = t("message.deliveryCheck");
+  }
 
   const header = document.createElement("header");
   header.className = "assistant-turn-header";

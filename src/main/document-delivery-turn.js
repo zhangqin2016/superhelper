@@ -33,10 +33,14 @@ function clearDocumentDeliveryTurnState(state) {
   state.continuesTurnId = "";
 }
 
-function prepareDocumentDeliveryRecovery(failure = {}) {
-  const paths = normalizeExpectedArtifactPaths(
-    (failure?.documentDelivery?.artifacts || []).map((item) => item?.path),
-  );
+// `onlyPending`: a check that continues the answer carries only the files it
+// must complete — the others passed and stand in the answer above. Carrying
+// every file made the round re-judge files it was told not to touch (they had
+// no render THIS round: "页面渲染" missing) and re-list all their cards (2026-09-30).
+function prepareDocumentDeliveryRecovery(failure = {}, { onlyPending = false } = {}) {
+  const artifacts = failure?.documentDelivery?.artifacts || [];
+  const pending = onlyPending ? artifacts.filter((item) => item?.ok !== true) : [];
+  const paths = normalizeExpectedArtifactPaths((pending.length ? pending : artifacts).map((item) => item?.path));
   if (!paths.length) return null;
   return {
     paths,

@@ -206,10 +206,11 @@ function evaluateAnswerEvidence({
       // never erase the deliverable: original answer + one plain note; at most
       // one silent verification retry runs and may supersede it.
       const structural = (documentDelivery.missing || []).some((m) => m === "structure" || m === "output_file");
+      const deliveryNote = structural ? "" : documentDeliveryNote(documentDelivery, userText);
       return {
         assistant: structural
           ? safeDocumentDeliveryFallback({ assessment: documentDelivery, userText })
-          : `${original}${documentDeliveryNote(documentDelivery, userText)}`,
+          : `${original}${deliveryNote}`,
         assessment: {
           ok: false,
           required: true,
@@ -217,7 +218,8 @@ function evaluateAnswerEvidence({
           hasEvidence: documentDelivery.artifacts.length > 0,
           reason: documentDelivery.reason,
           documentDelivery,
-          ...(structural ? {} : { deliveredUnverifiedWithNote: true }),
+          // The exact note appended: a delivery check that continues this answer reports the outcome instead.
+          ...(structural ? {} : { deliveredUnverifiedWithNote: true, deliveryNote }),
         },
         documentDelivery,
         evidenceSummary: effectiveEvidenceSummary,

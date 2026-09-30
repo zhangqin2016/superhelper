@@ -3022,6 +3022,17 @@
         "scripts/test-credit-pricing.mjs",
         "server/scripts/credits-integration.mjs"
       ]
+    },
+    {
+      "id": "delivery-check-one-answer",
+      "protects": "A delivery check reads as part of the answer it continues: it carries only the files it must complete (all of them only with the switch off); the answer it continues drops the exact note the platform appended to it (recorded as evidenceGate.deliveryNote, nothing the model wrote is touched) while an answer nothing continues keeps its note; a finished check shows no second duration/token line (a running one still shows progress); an engine-history record without a turnId takes the message's, so one turn is one article; the check is drawn as a continuation from its first frame.",
+      "baseline": "2026-09-30: the check carried every file, re-judged the passed docx/pdf/pptx as missing a render this round and re-listed all seven cards; it showed its own duration/token line under the answer, which still said 自动检查未全部完成; engine-history records have no turnId, so their article did not replace the live one of the same turn and the check's reply showed twice.",
+      "failureFallback": "LILY_DELIVERY_CHECK_CONTINUES=0 restores the replacing round with every file. A note that is not the exact recorded suffix is left as is. Mutation-verified: carrying every file, keeping the note, showing the check's header, and no turnId fallback each fail by name.",
+      "tests": [
+        "scripts/test-delivery-check-continuation-ui.cjs",
+        "scripts/test-tool-call-rescue.mjs",
+        "scripts/test-delivery-check-continues-answer.mjs"
+      ]
     }
   ]
 }
