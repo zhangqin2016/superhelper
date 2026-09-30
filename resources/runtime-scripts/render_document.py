@@ -6,6 +6,8 @@ page images so a multimodal model can *look* at the result and catch what text
 extraction can't — overflowed cells, broken tables, blank pages, layout that
 ran off the margin. Office files are converted to PDF with the bundled
 LibreOffice first; PDFs (and the converted PDF) are rasterized with pypdfium2.
+SVG and HTML are drawn by a browser (lily_web_render.py): an SVG as one page,
+an HTML page cut into screen-height pages.
 
 Usage: python render_document.py <file_path> <out_dir> [scale]
 Emits a single JSON object on stdout:
@@ -112,15 +114,19 @@ def main(argv):
     ext = os.path.splitext(path)[1].lower()
 
     os.makedirs(out_dir, exist_ok=True)
+    notes = []
     try:
-        if ext in OFFICE_EXTS:
-            pdf = _office_to_pdf(path, out_dir)
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from lily_web_render import WEB_EXTS, render_web
+        if ext in WEB_EXTS:
+            images, notes = render_web(path, out_dir, scale)
+        elif ext in OFFICE_EXTS:
+            images = _render_pdf(_office_to_pdf(path, out_dir), out_dir, scale)
         elif ext == ".pdf":
-            pdf = path
+            images = _render_pdf(path, out_dir, scale)
         else:
             print(json.dumps({"ok": False, "error": f"UNSUPPORTED:{ext}"}))
             return 1
-        images = _render_pdf(pdf, out_dir, scale)
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or b"").decode("utf-8", "replace")[:500]
         print(json.dumps({"ok": False, "error": f"LIBREOFFICE_FAILED: {detail}"}))
@@ -134,6 +140,8 @@ def main(argv):
     result = {"ok": True, "images": images, "pages": len(images)}
     if package is not None:
         result["package"] = package
+    if notes:
+        result["notes"] = notes  # browser used, console/page errors, truncation
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

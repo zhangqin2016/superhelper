@@ -2177,7 +2177,7 @@
         "en": "Office Documents",
         "ar": "مستندات المكتب"
       },
-      "contentRevision": "e74c066da7aac2f5a8918afd9c9bf677503883c4559c963f6e23ab775f7e4990"
+      "contentRevision": "105bb89db8f2b07f629402b93611e062fd820c7dea8ce2b6ce7b47fa24e2004f"
     },
     {
       "id": "lily-doc-style-reference",
@@ -2570,5 +2570,5 @@
       ]
     }
   ],
-  "registryRevision": "5f7e45771d7a42b4ccd817ee6d82d4e7dfe85fbc30b2f3838ca099d5319bb9fc"
+  "registryRevision": "a466929bec05d3a446f3333412db032161459a37260d71529a34ef35ecc36380"
 }

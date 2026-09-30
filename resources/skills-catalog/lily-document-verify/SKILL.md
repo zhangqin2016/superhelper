@@ -8,7 +8,7 @@ type: reference
 
 # Document Verify
 
-Text extraction tells you what a document says; it cannot prove the document looks right. Use this skill after creating or editing .docx, .xlsx, .pptx, or .pdf files when visual layout matters.
+Text extraction tells you what a document says; it cannot prove the document looks right. Use this skill after creating or editing .docx, .xlsx, .pptx, .pdf, .svg or .html files when visual layout matters.
 
 ## Workflow
 
@@ -23,7 +23,11 @@ Text extraction tells you what a document says; it cannot prove the document loo
    before choosing the recalculated copy for delivery; unsupported formats and
    failed/missing caches remain explicitly unverified, never silently accepted.
 2. Render each final document to page images with
-   `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`.
+   `{{RUNTIME_SCRIPTS_DIR}}/render_document.py`. It also draws .svg (one page,
+   at the drawing's size) and .html (screen-height pages at desktop width) in a
+   browser; use it for those instead of opening them in the browser tool, which
+   blocks file: URLs and hangs on a bare SVG document. Keep the browser tool for
+   interactive checks of a page served over http.
 3. Actually open the rendered images with an image-reading tool. Inspect every
    page for artifacts up to 12 pages. For longer files, inspect the first page,
    last page, and at least 6 pages distributed across the document; inspect
@@ -38,8 +42,10 @@ Text extraction tells you what a document says; it cannot prove the document loo
    blank/extra pages, missing images, font fallback, inconsistent margins,
    headers/footers, and content outside the page boundary.
 5. Fix only defects that were observed, then re-render and re-inspect affected
-   pages. Report the pages checked, defects fixed, and any remaining unverified
-   scope. Never label the artifact visually verified merely because rendering
+   pages. Before your final answer, call `lily_delivery_check` with the files you
+   deliver: it is the same check the platform applies to your answer and names
+   any page still unseen. Report the pages checked, defects fixed, and any
+   remaining unverified scope. Never label the artifact visually verified merely because rendering
    completed; the page images must have been read.
 
 ## Notes

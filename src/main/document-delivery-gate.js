@@ -190,16 +190,20 @@ function xlsxContainsFormulas(file) {
   return xlsxFormulaState(file).formulas > 0;
 }
 
-function documentArtifacts(artifacts = []) {
+// Drawn by a browser (render_document.py → lily_web_render.py). Checked when the
+// agent asks (lily_delivery_check); not part of the turn's required delivery set.
+const WEB_VISUAL_EXTENSIONS = new Set([".svg", ".html", ".htm"]);
+
+function documentArtifacts(artifacts = [], extensions = DOCUMENT_EXTENSIONS) {
   return (Array.isArray(artifacts) ? artifacts : [])
-    .filter((artifact) => DOCUMENT_EXTENSIONS.has(String(artifact?.ext || path.extname(artifact?.path || "")).toLowerCase()))
+    .filter((artifact) => extensions.has(String(artifact?.ext || path.extname(artifact?.path || "")).toLowerCase()))
     .slice(0, 20);
 }
 
-function requiresDocumentDelivery(taskContract = null, artifacts = []) {
+function requiresDocumentDelivery(taskContract = null, artifacts = [], extensions = DOCUMENT_EXTENSIONS) {
   // Output provenance survives short follow-ups whose intent is "general".
   // Merely citing/reading an existing document must not start delivery QA.
-  if (documentArtifacts(artifacts).some((artifact) => artifact.display !== "compact"
+  if (documentArtifacts(artifacts, extensions).some((artifact) => artifact.display !== "compact"
     && String(artifact.source || "").split(",").some((source) =>
       ["file_change", "tool_write", "tool_output", "inherited_delivery"].includes(source)))) return true;
   if (taskContract?.taskType !== "document_work") return false;
@@ -306,11 +310,11 @@ function assessArtifact(artifact, tools, { inspections = [], renders = [], recal
   };
 }
 
-function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [], renderReceipts = [], recalcReceipts = [], detail = false } = {}) {
-  const required = requiresDocumentDelivery(taskContract, artifacts);
+function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [], renderReceipts = [], recalcReceipts = [], detail = false, extensions = DOCUMENT_EXTENSIONS } = {}) {
+  const required = requiresDocumentDelivery(taskContract, artifacts, extensions);
   if (!required) return { required: false, ok: true, status: "not_required", artifacts: [], missing: [] };
-  const documents = documentArtifacts(artifacts).filter((artifact) =>
-    requiresDocumentDelivery(taskContract) || requiresDocumentDelivery(null, [artifact]));
+  const documents = documentArtifacts(artifacts, extensions).filter((artifact) =>
+    requiresDocumentDelivery(taskContract) || requiresDocumentDelivery(null, [artifact], extensions));
   if (!documents.length) {
     return {
       required: true,
@@ -396,6 +400,7 @@ function safeDocumentDeliveryFallback({ assessment = null, userText = "" } = {})
 
 module.exports = {
   DOCUMENT_EXTENSIONS,
+  WEB_VISUAL_EXTENSIONS,
   assessDocumentDelivery,
   documentArtifacts,
   missingLabels,

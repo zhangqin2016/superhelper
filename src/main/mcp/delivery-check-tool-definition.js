@@ -53,20 +53,22 @@ function buildDeliveryCheckToolDefinition({ executionSurface, mcpServerName } = 
     requiredSkillIds: [],
     executionSurface,
     mcpServerName,
-    description: "Check the documents you are about to deliver (docx/xlsx/pptx/pdf/md…) against the platform's delivery gate — the same check your final answer receives. Call it BEFORE your final answer whenever you created or changed documents, fix whatever it reports (render, uninspectedPages, formula recalculation, structure), and call it again until every file is ok. Evidence comes from what render_document.py, lily-vision and lily_xlsx_recalc.py recorded, so filtering their output does not matter.",
+    description: "Check the documents and visuals you are about to deliver (docx/xlsx/pptx/pdf/md, svg/html…) against the platform's delivery gate — the same check your final answer receives. Call it BEFORE your final answer whenever you created or changed documents, fix whatever it reports (render, uninspectedPages, formula recalculation, structure), and call it again until every file is ok. Evidence comes from what render_document.py, lily-vision and lily_xlsx_recalc.py recorded, so filtering their output does not matter.",
     inputSchema: {
       paths: z.array(z.string().min(1)).min(1).max(20).describe("the files you deliver: absolute, or relative to the workspace"),
     },
     annotations: { readOnlyHint: true },
     handler: async ({ paths }, context = {}) => {
-      const { assessDocumentDelivery, documentArtifacts } = require("../document-delivery-gate");
+      const { DOCUMENT_EXTENSIONS, WEB_VISUAL_EXTENSIONS, assessDocumentDelivery, documentArtifacts } = require("../document-delivery-gate");
+      // Documents, and what a browser draws (SVG/HTML): the same render → inspect loop.
+      const extensions = new Set([...DOCUMENT_EXTENSIONS, ...WEB_VISUAL_EXTENSIONS]);
       const { deliveryEvidenceSince } = require("../delivery-ledgers");
       const root = String(context?.workspacePath || "");
       const files = [...new Set((paths || []).map((item) => path.resolve(root || process.cwd(), String(item))))];
       const outside = files.filter((file) => !insideWorkspace(root, file));
       const artifacts = files.filter((file) => insideWorkspace(root, file))
         .map((file) => ({ path: file, ext: path.extname(file).toLowerCase(), fileName: path.basename(file), source: "tool_write" }));
-      const documents = documentArtifacts(artifacts);
+      const documents = documentArtifacts(artifacts, extensions);
       const notDocuments = artifacts.filter((item) => !documents.includes(item)).map((item) => item.path);
       const evidence = deliveryEvidenceSince(Date.now() - LEDGER_WINDOW_MS, {
         vision: process.env.LILY_VISION_RECEIPTS_DIR || "",
@@ -74,7 +76,7 @@ function buildDeliveryCheckToolDefinition({ executionSurface, mcpServerName } = 
         recalc: process.env.LILY_RECALC_RECEIPTS_DIR || "",
       });
       const verdict = documents.length
-        ? assessDocumentDelivery({ artifacts: documents, tools: [], ...evidence, detail: true })
+        ? assessDocumentDelivery({ artifacts: documents, tools: [], ...evidence, detail: true, extensions })
         : { ok: true, artifacts: [], missing: [] };
       return {
         ok: Boolean(verdict.ok) && !outside.length,
