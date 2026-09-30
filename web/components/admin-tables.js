@@ -8,6 +8,7 @@ import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import { RowActions } from "./row-actions";
 import { licensePlanName } from "../lib/license-plans.mjs";
+import { adminDate, adminDateTime } from "../lib/admin-time.mjs";
 import {
   removeLicenseDeviceAction,
   setLicenseDeviceStatusAction,
@@ -27,11 +28,6 @@ function StatusBadge({ active }) {
   return <Badge variant={active ? "success" : "danger"}>{active ? t.admin.common.enabled : t.admin.common.disabled}</Badge>;
 }
 
-function formatDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
-}
-
 function trialStatus(value, labels) {
   if (!value) return "-";
   const expires = new Date(value);
@@ -40,7 +36,7 @@ function trialStatus(value, labels) {
   return (
     <div className="space-y-1">
       <Badge variant={active ? "brand" : "danger"}>{active ? labels.trial : labels.expired}</Badge>
-      <div className="text-xs text-slate-500">{expires.toLocaleDateString()}</div>
+      <div className="text-xs text-slate-500">{adminDate(expires)}</div>
     </div>
   );
 }
@@ -71,7 +67,7 @@ export function LicensesTable({ rows, empty }) {
       cell: ({ row }) => {
         const at = new Date(row.original.expires_at).getTime();
         if (!row.original.expires_at || !Number.isFinite(at)) return "-";
-        const date = new Date(at).toLocaleDateString();
+        const date = adminDate(at);
         if (at < Date.now()) return <span className="flex items-center gap-2 whitespace-nowrap">{date}<Badge variant="danger">{t.admin.cols.expired}</Badge></span>;
         const days = Math.ceil((at - Date.now()) / 86_400_000);
         if (days <= 30) return <span className="flex items-center gap-2 whitespace-nowrap">{date}<Badge variant="warning">{t.admin.cols.expiresInDays.replace("{n}", String(days))}</Badge></span>;
@@ -129,7 +125,7 @@ export function DevicesTable({ rows, latest = {}, empty }) {
     { accessorKey: "platform", header: t.admin.cols.platform, cell: ({ row }) => [row.original.platform, row.original.arch].filter(Boolean).join("-") || "-" },
     { accessorKey: "app_version", header: t.admin.cols.version, cell: ({ row }) => <VersionCell version={row.original.app_version} latest={latest[[row.original.platform, row.original.arch].filter(Boolean).join("-")] || ""} behindLabel={copy.behind} /> },
     { accessorKey: "license_status", header: t.admin.common.status, cell: ({ row }) => row.original.license_status ? <Badge variant={row.original.license_status === "active" ? "success" : "danger"}>{row.original.license_status}</Badge> : "-" },
-    { accessorKey: "last_seen_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.lastSeen}</SortHeader>, cell: ({ row }) => formatDate(row.original.last_seen_at) },
+    { accessorKey: "last_seen_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.lastSeen}</SortHeader>, cell: ({ row }) => adminDateTime(row.original.last_seen_at) },
     {
       id: "action",
       header: t.admin.common.action,
@@ -189,7 +185,7 @@ export function ReleasesTable({ rows, latest = {}, support = {}, empty }) {
   const columns = [
     { accessorKey: "version", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.version}</SortHeader>, cell: ({ row }) => <span className="font-mono">{row.original.version}</span> },
     { id: "platforms", header: copy.colPlatforms, cell: ({ row }) => <div className="flex flex-wrap">{row.original.rows.map(chip)}</div> },
-    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{copy.colReleased}</SortHeader>, cell: ({ row }) => new Date(row.original.created_at).toLocaleDateString() },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{copy.colReleased}</SortHeader>, cell: ({ row }) => adminDate(row.original.created_at) },
     { id: "notes", header: copy.colNotes, cell: ({ row }) => <span className="line-clamp-2 max-w-md text-xs text-slate-600" title={row.original.notes}>{row.original.notes || "—"}</span> },
     {
       id: "more",
@@ -230,7 +226,7 @@ export function RuntimePacksTable({ rows, empty }) {
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => statusBadge(row.original.enabled) },
     { accessorKey: "size_bytes", header: t.admin.cols.size, cell: ({ row }) => row.original.size_bytes ? `${(Number(row.original.size_bytes) / 1024 / 1024).toFixed(1)} MB` : "-" },
     { accessorKey: "url", header: t.admin.cols.file, cell: ({ row }) => <a href={row.original.url} title={row.original.url} className="block max-w-[260px] truncate font-mono text-xs text-slate-500 hover:text-brand">{fileName(row.original.url)}</a> },
-    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => formatDate(row.original.created_at) },
+    { accessorKey: "created_at", header: ({ column }) => <SortHeader column={column}>{t.admin.cols.created}</SortHeader>, cell: ({ row }) => adminDateTime(row.original.created_at) },
     {
       id: "action",
       header: t.admin.common.action,

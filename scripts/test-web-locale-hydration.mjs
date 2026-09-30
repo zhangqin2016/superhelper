@@ -27,4 +27,24 @@ assert.match(account, /await getLocale\(\)/);
 for (const label of ["Organizations", "المؤسسات", "Statement", "الكشف"]) assert.ok(account.includes(label), `account nav has ${label}`);
 assert.doesNotMatch(account, /className="ml-auto/, "logical margin so the nav sits right in RTL");
 
+// Dates too: a bare toLocaleString() in a client component formats with the
+// container's zone/locale (UTC, en) on the server and the operator's in the
+// browser — the admin licence list failed hydration this way (React #418).
+// Client components format through lib/admin-time.mjs (explicit zone).
+const bare = /\.toLocale(Date|Time)?String\(\s*\)/;
+const clientFiles = [];
+for (const dir of ["web/components", "web/app"]) {
+  for (const entry of fs.readdirSync(new URL(`../${dir}`, import.meta.url), { recursive: true })) {
+    if (!/\.(js|jsx|mjs)$/.test(entry)) continue;
+    const text = read(`${dir}/${entry}`);
+    if (/^\s*["']use client["']/.test(text)) clientFiles.push([`${dir}/${entry}`, text]);
+  }
+}
+assert.ok(clientFiles.length > 10, "the scan found the client components");
+for (const [file, text] of clientFiles) assert.doesNotMatch(text, bare, `${file}: bare toLocale*() in a client component breaks hydration`);
+const time = await import(new URL("../web/lib/admin-time.mjs", import.meta.url));
+assert.equal(time.adminDateTime("2026-09-30T03:05:00Z"), "2026-09-30 11:05", "Beijing time, one shape everywhere");
+assert.equal(time.adminDate("2026-09-30T20:00:00Z"), "2026-10-01");
+assert.equal(time.adminDate(null), "-");
+
 console.log("web locale hydration: ok");

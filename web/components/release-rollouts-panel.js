@@ -7,6 +7,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { useI18n } from "../lib/use-i18n";
 import { rolloutAction, setAutoPauseAction, setLegacyNoticeAction, setReleaseSupportAction } from "../app/admin/actions";
+import { adminDate } from "../lib/admin-time.mjs";
 
 // The release console is organised by what an operator wants to do, not by the
 // tables behind it: what is happening now per platform, then "I want to…",
@@ -99,7 +100,7 @@ function PlatformStatus({ entry, copy, t }) {
       <h3 className="text-base font-semibold text-slate-900">{name}</h3>
       <p className="mt-1 text-sm text-slate-700">{entry.full ? fill(copy.everyoneGets, { version: entry.full.version }) : copy.nothingOffered}</p>
       <p className="mt-0.5 text-xs text-slate-500">{fill(copy.adoption, { active: entry.activeWeek || 0, updated: entry.full?.installed || 0, share })}</p>
-      {support.minSupportedVersion ? <p className="mt-1 text-xs text-amber-800">{fill(copy.requiredNow, { version: support.minSupportedVersion, n: support.belowMinimum || 0 })}{support.mandateDeadline ? ` · ${fill(copy.deadlineOn, { when: new Date(support.mandateDeadline).toLocaleDateString() })}` : ""}</p> : null}
+      {support.minSupportedVersion ? <p className="mt-1 text-xs text-amber-800">{fill(copy.requiredNow, { version: support.minSupportedVersion, n: support.belowMinimum || 0 })}{support.mandateDeadline ? ` · ${fill(copy.deadlineOn, { when: adminDate(support.mandateDeadline) })}` : ""}</p> : null}
       {(support.blockedVersions || []).length ? <p className="mt-1 text-xs text-red-700">{fill(copy.pulledNow, { versions: support.blockedVersions.join("、") })}</p> : null}
       {entry.active ? <ActiveRollout rollout={entry.active} name={name} copy={copy} /> : null}
       {entry.betaActive ? <p className="mt-2 text-xs text-slate-600"><Badge variant="brand">beta</Badge> {fill(copy.betaNow, { version: entry.betaActive.version, percent: entry.betaActive.percent })}</p> : null}

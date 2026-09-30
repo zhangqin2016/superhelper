@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { AdminDataTable, SortHeader } from "./admin-data-table";
 import { useI18n } from "../lib/use-i18n";
 import { setAgentPackageEnabledAction, setAgentPackageFeaturedAction } from "../app/admin/actions";
+import { adminDateTime } from "../lib/admin-time.mjs";
 
 const COPY = {
   zh: { scope: "范围", global: "全局", organization: "组织", channel: "渠道", edit: "编辑", feature: "设为精选", unfeature: "取消精选", updated: "更新时间", dimensions: "维度" },
@@ -54,7 +55,7 @@ export function AgentPackagesTable({ rows, empty }) {
     { id: "dimensions", header: copy.dimensions, cell: ({ row }) => <span className="tabular-nums">{dimensionCount(definitionOf(row.original))}</span> },
     { accessorKey: "featured", header: t.admin.cols.featured, cell: ({ row }) => row.original.featured ? <Badge variant="success">{t.admin.cols.yes}</Badge> : <span className="text-slate-400">{t.admin.cols.no}</span> },
     { accessorKey: "enabled", header: t.admin.common.status, cell: ({ row }) => <Badge variant={row.original.enabled ? "success" : "danger"}>{row.original.enabled ? t.admin.common.enabled : t.admin.common.disabled}</Badge> },
-    { accessorKey: "updated_at", header: copy.updated, cell: ({ row }) => <span className="text-xs text-slate-500">{row.original.updated_at ? new Date(row.original.updated_at).toLocaleString() : "-"}</span> },
+    { accessorKey: "updated_at", header: copy.updated, cell: ({ row }) => <span className="text-xs text-slate-500">{adminDateTime(row.original.updated_at)}</span> },
     {
       id: "action",
       header: t.admin.common.action,
