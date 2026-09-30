@@ -96,11 +96,12 @@ try {
   const spawnEnv = fs.readFileSync("src/main/spawn-env.js", "utf8");
   assert.match(spawnEnv, /LILY_VISION_RECEIPTS_DIR: require\("\.\/vision-inspection-receipt"\)\.visionReceiptsDir\(app\.getPath\("userData"\)\)/);
   const finalizer = fs.readFileSync("src/main/turn-terminal-finalizer.js", "utf8");
-  assert.match(finalizer, /visionInspections: require\("\.\/vision-inspection-receipt"\)\.turnVisionInspections\(state\)/, "the terminal gate is given this turn's ledger");
-  const { turnVisionInspections } = require("../src/main/vision-inspection-receipt.js");
-  assert.deepEqual(turnVisionInspections({}), [], "no turn start: nothing, never an error");
+  assert.match(finalizer, /\.\.\.require\("\.\/delivery-ledgers"\)\.turnDeliveryEvidence\(state\)/, "the terminal gate is given this turn's ledgers");
+  const { deliveryEvidenceSince, turnDeliveryEvidence } = require("../src/main/delivery-ledgers.js");
+  assert.deepEqual(turnDeliveryEvidence({}).visionInspections, [], "no turn start: nothing, never an error");
+  assert.equal(deliveryEvidenceSince(turnStart, { vision: ledger }).visionInspections.length, 3, "the turn's ledger is what the gate reads");
   process.env.LILY_VISION_LEDGER = "0";
-  assert.deepEqual(turnVisionInspections({ startedAt: turnStart }), [], "switched off: printed receipts only");
+  assert.deepEqual(deliveryEvidenceSince(turnStart, { vision: ledger }).visionInspections, [], "switched off: printed receipts only");
   delete process.env.LILY_VISION_LEDGER;
   console.log("test-vision-ledger-delivery: ok");
 } finally {

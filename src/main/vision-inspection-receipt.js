@@ -1,9 +1,6 @@
 "use strict";
 const { isVisionRaster } = require("../shared/file-kinds.mjs");
 const { defaultLedgerDir, ledgerDir, ledgerFileName, readLedger } = require("./host-ledger");
-const { getLogger } = require("./logger");
-
-const log = getLogger("vision-inspection-receipt");
 
 // A completed local vision invocation names the image it actually submitted.
 // Free-form model claims and command names are not inspection evidence.
@@ -43,15 +40,4 @@ function ledgerInspections({ since = 0, dir = defaultLedgerDir(LEDGER_NAME), now
   return readLedger({ dir, since, now, accept: validReceipt }).map((entry) => ({ path: entry.path, at: Number(entry.at) }));
 }
 
-/** Pages lily-vision inspected during the turn `state` describes (the turn's gate reads these). */
-function turnVisionInspections(state = {}) {
-  if (process.env.LILY_VISION_LEDGER === "0") return []; // printed receipts only, as before 2026-09-30
-  try {
-    return ledgerInspections({ since: Number(state.startedAt) || 0 });
-  } catch (err) {
-    log.warn("vision ledger read failed open: %s", err?.message || err);
-    return [];
-  }
-}
-
-module.exports = { ledgerFileName, ledgerInspections, turnVisionInspections, visionInspectionPaths, visionReceiptsDir };
+module.exports = { ledgerFileName, ledgerInspections, visionInspectionPaths, visionReceiptsDir };

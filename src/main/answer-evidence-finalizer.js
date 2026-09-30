@@ -169,6 +169,7 @@ function evaluateAnswerEvidence({
   // The host ledgers' vision inspections and document renders this turn (document delivery gate).
   visionInspections = [],
   renderReceipts = [],
+  recalcReceipts = [],
 } = {}) {
   const original = String(assistant || "").trim();
   const externalFact = isExternalFactContract(taskContract);
@@ -183,6 +184,7 @@ function evaluateAnswerEvidence({
       userText,
       visionInspections,
       renderReceipts,
+      recalcReceipts,
     });
     const effectiveEvidenceSummary = withDocumentOutputEvidence(evidenceSummary, artifacts, documentDelivery);
     const assessment = assessFinalAnswerEvidence({

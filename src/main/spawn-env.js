@@ -179,6 +179,8 @@ function buildAgentSpawnEnv(options = {}) {
     LILY_VISION_RECEIPTS_DIR: require("./vision-inspection-receipt").visionReceiptsDir(app.getPath("userData")),
     // Where render_document.py records each render's receipt for the same gate.
     LILY_RENDER_RECEIPTS_DIR: require("./document-render-receipt").renderReceiptsDir(app.getPath("userData")),
+    // Where lily_xlsx_recalc.py records the workbook bytes it verified.
+    LILY_RECALC_RECEIPTS_DIR: require("./workbook-recalc-receipt").recalcReceiptsDir(app.getPath("userData")),
   };
 
   if (truthy(lilyEnv.LILY_TLS_SKIP_VERIFY)) {

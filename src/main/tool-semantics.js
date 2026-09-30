@@ -134,6 +134,7 @@ function isSideEffectFreeToolRun(tools = []) {
   ["lily_intent_contract_commit", { readOnly: true, evidenceKind: "intent_contract" }],
   // Only proposes: the host shows a confirmation card; nothing runs or is created.
   ["lily_schedule_propose", { readOnly: true, idempotent: true, replaySafe: true, externalSideEffect: false }],
+  ["lily_delivery_check", { readOnly: true, idempotent: true, replaySafe: true, externalSideEffect: false }],
   // Local knowledge base retrieval (file-intelligence MCP): read-only,
   // replay-safe, and a first-class evidence source for local/private facts.
   ["query_index", { readOnly: true, evidenceKind: "knowledge_base" }],

@@ -68,6 +68,7 @@ function renderReceiptFor(artifactPath, tools = [], ledgerImages = [], renderEnt
     return {
       images: receipt.images.map(String),
       pages: Number(receipt.pages) || receipt.images.length,
+      renderedAtMs: Number(receipt.renderedAtMs) || 0,
       // render_document.py's OOXML schema check of the same file (absent on old receipts).
       package: receipt.package && typeof receipt.package === "object" ? receipt.package : null,
     };
@@ -88,17 +89,6 @@ function renderReceiptsDir(userDataDir) {
 function ledgerRenders({ since = 0, dir = defaultLedgerDir(RENDER_LEDGER_NAME), now = Date.now() } = {}) {
   return readLedger({ dir, since, now, accept: (entry) => entry?.version === 1 && entry.kind === "document_render"
     && typeof entry.source === "string" && typeof entry.receipt === "string" });
-}
-
-/** Renders recorded during the turn `state` describes (the turn's gate reads these). */
-function turnRenderReceipts(state = {}) {
-  if (process.env.LILY_VISION_LEDGER === "0") return []; // printed evidence only, as before 2026-09-30
-  try {
-    return ledgerRenders({ since: Number(state.startedAt) || 0 });
-  } catch (err) {
-    log.warn("render ledger read failed open: %s", err?.message || err);
-    return [];
-  }
 }
 
 /**
@@ -138,4 +128,4 @@ function inspectedByContent(renderedImages = [], inspected = []) {
   return matched;
 }
 
-module.exports = { RECEIPT_NAME, inspectedByContent, inspectedImages, ledgerRenders, renderReceiptFor, renderReceiptsDir, samePath, turnRenderReceipts };
+module.exports = { RECEIPT_NAME, inspectedByContent, inspectedImages, ledgerRenders, renderReceiptFor, renderReceiptsDir, samePath };

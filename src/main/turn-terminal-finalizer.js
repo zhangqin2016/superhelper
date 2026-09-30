@@ -343,8 +343,7 @@ function createTurnTerminalFinalizer(options = {}) {
         inputFiles: require("./turn-user-context").effectiveInputFiles(state),
         artifacts: record?.artifacts || [],
         recoveryAttempt: Boolean(state.wasRescueAttempt),
-        visionInspections: require("./vision-inspection-receipt").turnVisionInspections(state),
-        renderReceipts: require("./document-render-receipt").turnRenderReceipts(state),
+        ...require("./delivery-ledgers").turnDeliveryEvidence(state),
       });
       assistant = guarded.assistant;
       evidenceGateAssessment = guarded.assessment;

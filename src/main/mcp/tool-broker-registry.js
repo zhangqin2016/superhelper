@@ -14,6 +14,7 @@ const path = require("node:path");
 const { z } = require("zod");
 const { buildIntentContractToolDefinition } = require("./intent-contract-tool-definition");
 const { buildScheduleProposalToolDefinition } = require("./schedule-proposal-tool-definition");
+const { buildDeliveryCheckToolDefinition } = require("./delivery-check-tool-definition");
 const { buildSystemTools } = require("./web-system-mcp");
 const { buildCharacterDraftTool } = require("../character-worlds/agent-draft-tools");
 const {
@@ -158,6 +159,10 @@ const STATIC_TOOL_DEFINITIONS = [
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
   }),
   buildScheduleProposalToolDefinition({
+    executionSurface: EXECUTION_SURFACES.toolBroker,
+    mcpServerName: MCP_SERVER_NAMES.toolBroker,
+  }),
+  buildDeliveryCheckToolDefinition({
     executionSurface: EXECUTION_SURFACES.toolBroker,
     mcpServerName: MCP_SERVER_NAMES.toolBroker,
   }),

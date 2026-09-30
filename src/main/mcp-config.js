@@ -165,6 +165,22 @@ function buildMailMcpEntry() {
   };
 }
 
+// lily_delivery_check reads what the platform's scripts recorded, in the same
+// folders spawn-env names for them.
+function deliveryLedgerEnv() {
+  try {
+    const userData = require("./config").userDataPath();
+    return {
+      LILY_VISION_RECEIPTS_DIR: require("./vision-inspection-receipt").visionReceiptsDir(userData),
+      LILY_RENDER_RECEIPTS_DIR: require("./document-render-receipt").renderReceiptsDir(userData),
+      LILY_RECALC_RECEIPTS_DIR: require("./workbook-recalc-receipt").recalcReceiptsDir(userData),
+    };
+  } catch (err) {
+    console.warn("[mcp-config] delivery ledger folders unavailable to the tool broker:", err?.message || err);
+    return {};
+  }
+}
+
 /**
  * Lily tool broker entry. With LILY_TOOL_BROKER_CONTEXT it exposes session-
  * scoped tools; without context it exposes only platform-level capability and
@@ -173,7 +189,7 @@ function buildMailMcpEntry() {
  * the legacy process-environment fallback for external callers.
  */
 function buildToolBrokerMcpEntry(context, options = {}) {
-  const env = { ELECTRON_RUN_AS_NODE: "1" };
+  const env = { ELECTRON_RUN_AS_NODE: "1", ...deliveryLedgerEnv() };
   // The child env is a fresh object (not a copy of process.env), so the
   // Character Worlds emergency kill switch must be forwarded explicitly —
   // otherwise LILY_CHARACTER_WORLDS=0 would not reach the broker subprocess

@@ -1,7 +1,10 @@
 """Recalculate an XLSX into a separate verified copy, without user-profile macros."""
 import argparse
+import hashlib
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -40,8 +43,32 @@ def recalculate(source, out_dir, timeout=60):
         expressions.close()
     if errors:
         raise ValueError("Recalculation not verified: " + "; ".join(errors[:30]))
+    _record_in_ledger(output, len(formulas))
     return {"status": "verified", "output": str(output), "formula_count": len(formulas),
             "scope": "formula presence, cached values and Excel errors; layout/features need separate review"}
+
+
+def _record_in_ledger(output, formula_count):
+    """Tell the host which workbook bytes were verified (LILY_RECALC_RECEIPTS_DIR).
+
+    Keyed by content: the verified copy is usually moved over the original, and
+    the delivery gate recognises it by digest wherever it ends up. It used to
+    look for "recalc.py" in the command text instead (2026-09-30).
+    """
+    ledger = os.environ.get("LILY_RECALC_RECEIPTS_DIR")
+    if not ledger:
+        return
+    try:
+        digest = hashlib.sha256(Path(output).read_bytes()).hexdigest()
+        at_ms = int(time.time() * 1000)
+        os.makedirs(ledger, exist_ok=True)
+        day = time.strftime("%Y-%m-%d", time.gmtime(at_ms / 1000))
+        line = json.dumps({"version": 1, "kind": "workbook_recalc", "output": str(Path(output).resolve()),
+                           "sha256": digest, "formulas": formula_count, "at": at_ms}, ensure_ascii=False)
+        with open(os.path.join(ledger, f"{day}.jsonl"), "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except Exception as exc:  # noqa: BLE001 — the verified copy still stands
+        print(f"recalc ledger not written: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

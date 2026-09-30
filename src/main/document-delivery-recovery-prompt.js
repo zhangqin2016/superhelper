@@ -17,13 +17,14 @@ const RECOVERY_STEPS = {
       "使用 Lily 的 render_document.py 将文件渲染为逐页图片。缺 LibreOffice 或路径损坏时，先走受管理 runtime pack 安装/修复路线再重试；禁止临时 pip/npm/playwright install。",
     ],
     structure: ["用确定性库重新打开文件并确认结构有效，修正生成代码后重新生成。"],
-    formula_recalculation: ["工作簿含公式：用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 重算并消除公式错误。"],
+    formula_recalculation: ["工作簿含公式：用 Lily 的 $LILY_RUNTIME_SCRIPTS/lily_xlsx_recalc.py <文件> --out-dir <目录> 重算（它会校验缓存值与公式错误并记下校验结果），再用它输出的已校验副本替换原文件；有公式错误先修正再重算。也可用 xlsx 技能（anthropics-xlsx）自带的 recalc.py 原地重算。"],
     visual_inspection: [
       "真正查看渲染页内容：优先使用平台已有的图像读取/视觉通道查看页面图片，只有图像读取/视觉工具查看过页面图片，才算视觉验收。OCR 只能作为文字覆盖检查，不能替代视觉验收。12 页以内逐页查看；更多页至少查看首页、末页和分布在全文的 6 页。文件在渲染后改过就先用 render_document.py 重新渲染。",
       "检查遮挡、溢出、截断、空白页、字体替换、表格/图表错位、图片缺失和页边距。只修复实际发现的问题，然后重新渲染受影响页。",
     ],
     finish: [
       "如果渲染、依赖修复、图像读取通道全部失败后仍不能完成，才明确说明未完成的检查，并列出具体失败的本地依赖/工具；不要把 OCR 或文本抽取描述成视觉检查。",
+      "回复前调用 lily_delivery_check（传入这些文件）确认全部通过；没通过就按它返回的 next 继续补。",
       "这段回复会接在原回答下方显示：只写本次补做了哪些检查、发现和修改了什么，不要重复原回答的交付清单、结论或来源；仍无法验证的部分必须明确标为未验证。不要复述这段系统续检说明。",
     ],
   },
@@ -33,13 +34,14 @@ const RECOVERY_STEPS = {
       "Render the artifact to page images with Lily's render_document.py. If LibreOffice is missing or points to a broken executable, repair/install the managed runtime pack first and retry; never run ad-hoc pip/npm/playwright install.",
     ],
     structure: ["Reopen the file with a deterministic library and confirm its structure; fix the generating code and regenerate."],
-    formula_recalculation: ["The workbook contains formulas: recalculate with the recalc.py bundled in the xlsx skill (anthropics-xlsx) and resolve formula errors."],
+    formula_recalculation: ["The workbook contains formulas: recalculate with Lily's $LILY_RUNTIME_SCRIPTS/lily_xlsx_recalc.py <file> --out-dir <dir> (it verifies cached values and formula errors and records the result), then replace the file with the verified copy it writes; fix formula errors first. The recalc.py bundled in the xlsx skill (anthropics-xlsx) also works in place."],
     visual_inspection: [
       "Actually inspect rendered pages with the platform's available image-reading or vision route. OCR may be used only for text coverage; it does not satisfy visual QA. Inspect every page up to 12 pages; for longer files inspect the first, last, and at least 6 pages distributed through the document. If the file changed after rendering, render it again with render_document.py first.",
       "Check clipping, overlap, overflow, blank pages, font fallback, table/chart alignment, missing images, and margins. Fix only confirmed defects, then re-render affected pages.",
     ],
     finish: [
       "Only after rendering, dependency repair, and image-reading routes all fail should you report the check as incomplete; include the exact missing or broken local dependency/tool and do not describe OCR or text extraction as visual inspection.",
+      "Before replying, call lily_delivery_check with these files and confirm every one passes; if not, do what its `next` says.",
       "This reply is shown under the original answer: state only which checks you completed and what you found and fixed; do not repeat the original answer's deliverables, conclusions or sources. Explicitly label anything still unverified. Do not repeat this internal continuation notice.",
     ],
   },

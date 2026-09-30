@@ -3042,6 +3042,20 @@
       "tests": [
         "server/scripts/license-credits-integration.mjs"
       ]
+    },
+    {
+      "id": "delivery-check-tool",
+      "protects": "The agent runs the delivery gate itself before answering, as Codex and Claude Code run the tests: lily_delivery_check (read-only) gives the same verdict as the turn's final gate (assessDocumentDelivery over the platform ledgers), naming per file what is missing, which pages are unseen and what to do next; the check round is told to confirm with it before replying. Recalculation is read from the workbook: a formula without a cached value or with a cached error is never recalculated whatever ran; all-cached still needs proof — lily_xlsx_recalc.py records the verified bytes by sha256 (recognised after a move, not after any change), the vendored anthropics-xlsx recalc.py is recognised by its command as a third-party interface, our own script only by its receipt. A vision inspection before the current render does not count.",
+      "baseline": "2026-09-30: the agent learned the bar only after answering (4 of 7 pages spot-checked) and a second round had to run; recalc was judged by \"recalc.py\" in the command text, so another recalc route counted as none and a command that wrote nothing back counted as done; after a re-render overwrote the same page files, the earlier inspection still counted.",
+      "failureFallback": "The final gate still runs and the check round remains the safety net; unreadable ledgers or files are skipped with a log line; LILY_VISION_LEDGER=0 turns the three ledgers off. The tool checks only files inside the workspace. Mutation-verified: no file-state check, no receipt proof, the script not recording, and no render-time freshness each fail by name.",
+      "tests": [
+        "scripts/test-delivery-check-tool.mjs",
+        "scripts/test-workbook-recalc-receipt.mjs",
+        "scripts/test-vision-ledger-delivery.mjs",
+        "scripts/test-document-delivery-gate.mjs",
+        "scripts/test-tool-broker-registry.mjs",
+        "scripts/test-tool-broker-mcp.mjs"
+      ]
     }
   ]
 }

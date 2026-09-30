@@ -6,9 +6,9 @@ const fileKinds = require("../shared/file-kinds.mjs");
 
 const fs = require("node:fs");
 const path = require("node:path");
-const zlib = require("node:zlib");
 const { visionInspectionPaths } = require("./vision-inspection-receipt.js");
 const { inspectedByContent, renderReceiptFor, inspectedImages: receiptInspectedImages } = require("./document-render-receipt.js");
+const { workbookRecalculation, xlsxFormulaState } = require("./workbook-recalc-receipt.js");
 
 const DOCUMENT_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.pathOnlyDocument, ...fileKinds.EXTENSIONS.textDocument]);
 const OOXML_EXTENSIONS = new Set([...fileKinds.EXTENSIONS.ooxml]);
@@ -16,7 +16,6 @@ const DOCUMENT_OPERATIONS = new Set(["create", "modify", "convert"]);
 const MAX_DEEP_STRUCTURE_BYTES = 20 * 1024 * 1024;
 const MAX_SCAN_CHARS = 64 * 1024;
 const RENDER_COMMAND_RE = /(?:render_document\.py|convert_pdf_to_images\.py|pdftoppm\b|soffice(?:\.py)?[^\n]{0,160}--convert-to\s+pdf)/i;
-const RECALC_COMMAND_RE = /(?:recalc\.py|formula[^\n]{0,80}(?:recalc|recalculate))/i;
 const IMAGE_INSPECTION_TOOL_RE = /(?:^|_)(?:read|view_image|vision|inspect_image|open_image)(?:$|_)/i;
 
 function compactText(value, limit = MAX_SCAN_CHARS) {
@@ -186,50 +185,9 @@ function withPackageConformance(structure, receipt) {
   };
 }
 
-// Whether an .xlsx actually contains formula cells — the ground truth for the
-// recalculation requirement. A keyword match in the user prompt is NOT enough:
-// internal continuation prompts mention formulas/recalc too, which previously
-// made every recovery turn demand a recalc the original task never needed.
-// Reads the zip CENTRAL directory (offsets/sizes there are reliable even when
-// local headers use data descriptors) and inflates only worksheet parts.
+// Whether an .xlsx contains formula cells: read from the file (workbook-recalc-receipt).
 function xlsxContainsFormulas(file) {
-  let buf;
-  try {
-    const stat = fs.statSync(file);
-    if (!stat.isFile() || stat.size <= 22 || stat.size > MAX_DEEP_STRUCTURE_BYTES) return false;
-    buf = fs.readFileSync(file);
-  } catch {
-    return false;
-  }
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65536); i -= 1) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) return false;
-  const count = buf.readUInt16LE(eocd + 10);
-  let offset = buf.readUInt32LE(eocd + 16);
-  for (let n = 0; n < count && offset + 46 <= buf.length; n += 1) {
-    if (buf.readUInt32LE(offset) !== 0x02014b50) break;
-    const method = buf.readUInt16LE(offset + 10);
-    const compressedSize = buf.readUInt32LE(offset + 20);
-    const nameLen = buf.readUInt16LE(offset + 28);
-    const extraLen = buf.readUInt16LE(offset + 30);
-    const commentLen = buf.readUInt16LE(offset + 32);
-    const localOffset = buf.readUInt32LE(offset + 42);
-    const name = buf.subarray(offset + 46, offset + 46 + nameLen).toString("utf8");
-    offset += 46 + nameLen + extraLen + commentLen;
-    if (!/^xl\/worksheets\/[^/]+\.xml$/i.test(name) || (method !== 0 && method !== 8)) continue;
-    try {
-      const nameLenL = buf.readUInt16LE(localOffset + 26);
-      const extraLenL = buf.readUInt16LE(localOffset + 28);
-      const raw = buf.subarray(localOffset + 30 + nameLenL + extraLenL, localOffset + 30 + nameLenL + extraLenL + compressedSize);
-      const xml = (method === 8 ? zlib.inflateRawSync(raw) : raw).toString("utf8");
-      if (/<f[\s>]/.test(xml)) return true;
-    } catch {
-      /* a single unreadable part must not fabricate a requirement either way */
-    }
-  }
-  return false;
+  return xlsxFormulaState(file).formulas > 0;
 }
 
 function documentArtifacts(artifacts = []) {
@@ -250,9 +208,9 @@ function requiresDocumentDelivery(taskContract = null, artifacts = []) {
   return DOCUMENT_OPERATIONS.has(operation) || outputMode === "artifact";
 }
 
-// `inspections`: the host vision ledger's entries for this turn ([{ path, at }]);
-// `renders`: the render ledger's ([{ source, receipt, at }]).
-function assessArtifact(artifact, tools, inspections = [], renders = []) {
+// The host ledgers' entries for this turn: `inspections` (vision, [{ path, at }]),
+// `renders` ([{ source, receipt, at }]), `recalcs` ([{ sha256, at }]).
+function assessArtifact(artifact, tools, { inspections = [], renders = [], recalcs = [], detail = false } = {}) {
   let structure = structureCheck(artifact);
   if (fileKinds.EXTENSIONS.textDocument.has(String(artifact.ext || path.extname(artifact.path || "")).toLowerCase())) {
     // Text delivery has no page rendering. What the gate can certify about text
@@ -282,7 +240,10 @@ function assessArtifact(artifact, tools, inspections = [], renders = []) {
   const pageCount = receipt ? receipt.pages : renderEntry ? parseRenderedPageCount(renderEntry.tool, renderedImages) : 0;
   const inspectedImages = [];
   if (receipt) {
-    const seen = receiptInspectedImages(successful.map(({ tool }) => tool), ledgerImages);
+    // A re-render overwrites the same page files: an inspection recorded before
+    // this render looked at the previous pages.
+    const freshLedger = inspections.filter((entry) => !receipt.renderedAtMs || entry.at >= receipt.renderedAtMs).map((entry) => entry.path);
+    const seen = receiptInspectedImages(successful.map(({ tool }) => tool), freshLedger);
     for (const image of seen) {
       if (renderedImages.some((rendered) => imagePathMatches(rendered, image))) inspectedImages.push(image);
     }
@@ -315,13 +276,12 @@ function assessArtifact(artifact, tools, inspections = [], renders = []) {
   }
   const visual = visualCoverage(renderedImages, inspectedImages, pageCount);
   const ext = String(artifact.ext || path.extname(artifact.path || "")).toLowerCase();
-  // Recalc is required only when the workbook itself carries formulas — never
-  // from keywords in (possibly internal) prompt text.
-  const recalcNeeded = ext === ".xlsx" && xlsxContainsFormulas(String(artifact.path || ""));
-  const recalculated = !recalcNeeded || successful.some(({ tool }) => {
-    const text = toolText(tool);
-    return RECALC_COMMAND_RE.test(text) && artifactMentioned(text, artifact);
-  });
+  // Recalc is judged from the workbook itself and the recalculating script's
+  // receipt — never from keywords in (possibly internal) prompt or command text.
+  const recalculation = ext === ".xlsx"
+    ? workbookRecalculation(String(artifact.path || ""), { receipts: recalcs, commands: successful.map(({ tool }) => toolText(tool)), mentions: (text) => artifactMentioned(text, artifact) })
+    : { needed: false, ok: true };
+  const recalculated = recalculation.ok;
   const missing = [];
   if (!structure.ok) missing.push("structure");
   const rendered = Boolean(receipt || renderEntry);
@@ -339,11 +299,14 @@ function assessArtifact(artifact, tools, inspections = [], renders = []) {
       pageCount,
       visual,
       recalculated,
+      ...(recalculation.needed ? { recalculation } : {}),
+      // Page by page, for the agent's own check (lily_delivery_check); not stored with the turn.
+      ...(detail ? { uninspectedPages: renderedImages.filter((page) => !inspectedImages.some((seen) => imagePathMatches(page, seen))) } : {}),
     },
   };
 }
 
-function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [], renderReceipts = [] } = {}) {
+function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [], userText = "", visionInspections = [], renderReceipts = [], recalcReceipts = [], detail = false } = {}) {
   const required = requiresDocumentDelivery(taskContract, artifacts);
   if (!required) return { required: false, ok: true, status: "not_required", artifacts: [], missing: [] };
   const documents = documentArtifacts(artifacts).filter((artifact) =>
@@ -360,8 +323,13 @@ function assessDocumentDelivery({ taskContract = null, artifacts = [], tools = [
     };
   }
   const inspections = Array.isArray(visionInspections) ? visionInspections : [];
-  const renders = Array.isArray(renderReceipts) ? renderReceipts : [];
-  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : [], inspections, renders));
+  const evidence = {
+    inspections,
+    renders: Array.isArray(renderReceipts) ? renderReceipts : [],
+    recalcs: Array.isArray(recalcReceipts) ? recalcReceipts : [],
+    detail: detail === true,
+  };
+  const results = documents.map((artifact) => assessArtifact(artifact, Array.isArray(tools) ? tools : [], evidence));
   const missing = [...new Set(results.flatMap((item) => item.missing))];
   return {
     required: true,

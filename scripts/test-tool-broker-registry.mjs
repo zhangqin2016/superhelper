@@ -24,6 +24,8 @@ const PLATFORM_TOOLS = [
   "lily_agent_draft",
   "lily_capability_list",
   "lily_capability_status",
+  // The delivery gate the agent runs on its documents before answering; reads only.
+  "lily_delivery_check",
   "lily_intent_contract_commit",
   "lily_legal_article",
   "lily_legal_search",

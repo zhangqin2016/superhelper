@@ -38,7 +38,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_agent_draft", "lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "lily_legal_article", "lily_legal_search", "lily_schedule_propose", "runtime_pack_install", "runtime_pack_list"],
+    ["lily_agent_draft", "lily_capability_list", "lily_capability_status", "lily_delivery_check", "lily_intent_contract_commit", "lily_legal_article", "lily_legal_search", "lily_schedule_propose", "runtime_pack_install", "runtime_pack_list"],
     "tools/list always exposes platform capabilities",
   );
   assert.ok(!tools.some((tool) => tool.name.startsWith("mail_")), "mail tools hidden when bridge is unavailable");
@@ -656,7 +656,7 @@ async function clientForServer(server) {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
-    ["lily_agent_draft", "lily_capability_list", "lily_capability_status", "lily_intent_contract_commit", "lily_legal_article", "lily_legal_search", "lily_schedule_propose", "runtime_pack_install", "runtime_pack_list"],
+    ["lily_agent_draft", "lily_capability_list", "lily_capability_status", "lily_delivery_check", "lily_intent_contract_commit", "lily_legal_article", "lily_legal_search", "lily_schedule_propose", "runtime_pack_install", "runtime_pack_list"],
     "stdio broker reads explicit context and exposes platform capabilities",
   );
   await client.close();
