@@ -54,7 +54,20 @@ if [ "${litellm_enabled:-false}" = "true" ]; then
   fi
 fi
 
-./compose.sh up -d $compose_build_arg
+if [ "$deploy_mode" = "images" ] && [ "${LILY_API_BLUEGREEN:-1}" != "0" ]; then
+  # Zero downtime: the API switches colours behind port 13000 (deploy-api-bluegreen.sh);
+  # only the website container is recreated here. LILY_API_BLUEGREEN=0 restores the
+  # previous in-place recreate of both containers.
+  image_tag="$(grep '^IMAGE_TAG=' .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
+  API_IMAGE_TAG="$image_tag" sh ./deploy-api-bluegreen.sh
+  ./compose.sh up -d --no-deps web
+else
+  if [ -s "${LILY_API_STATE_FILE:-/www/wwwroot/lily-workbench/.lily-api-active}" ]; then
+    echo "Port 13000 is redirected to an API colour; an in-place recreate would not receive traffic. Use the blue/green deploy, or retire the colours first (see deploy-api-bluegreen.sh)."
+    exit 1
+  fi
+  ./compose.sh up -d $compose_build_arg
+fi
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl is required for post-deploy health check."

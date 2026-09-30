@@ -1,0 +1,30 @@
+# One colour of the API for zero-downtime deploys (deploy-api-bluegreen.sh).
+# Same service as docker-compose.images-app-only.yml's `api` — same .env, same
+# overrides, host network — on its own port (13010 blue / 13011 green). Port
+# 13000 is redirected by the kernel to the active colour (api-port.sh), so the
+# host nginx and the overseas edge keep addressing 13000 unchanged.
+# Run as its own compose project: docker compose -p lily-api-<colour> …
+services:
+  api:
+    image: lily-workbench-api:${API_IMAGE_TAG:?API_IMAGE_TAG is required}
+    container_name: lily-api-${API_COLOR:?API_COLOR is required}
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      IMAGE_TAG: ${API_IMAGE_TAG}
+      PORT: ${API_COLOR_PORT:?API_COLOR_PORT is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://127.0.0.1:4000}
+      LILY_DRAIN_TIMEOUT_MS: "110000"
+      API_COLOR: ${API_COLOR}
+    command: sh -c "npm run migrate && npm run start"
+    # Longer than the drain bound, so a stop lets answers in flight finish.
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${API_COLOR_PORT}/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

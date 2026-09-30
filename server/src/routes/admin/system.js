@@ -194,6 +194,8 @@ async function buildAdminHealth() {
     runtime: {
       nodeEnv: process.env.NODE_ENV || "development",
       imageTag: process.env.IMAGE_TAG || "",
+      // Which blue/green instance answered (deploy-api-bluegreen.sh verifies the switch by it).
+      apiColor: process.env.API_COLOR || "",
       packageVersion: process.env.npm_package_version || "",
       qiniuPublicBaseUrl: qiniu.publicBaseUrl,
       allowUnsignedLicenses: config.allowUnsignedLicenses,
