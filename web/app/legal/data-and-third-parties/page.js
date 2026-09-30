@@ -1,3 +1,4 @@
+import "../legal.css";
 import { LegalDocument } from "../../../components/legal-document";
 import { getI18n } from "../../../lib/i18n.mjs";
 import { legalDocumentFor } from "../../../lib/legal-content.mjs";

@@ -1,67 +1,49 @@
-import Link from "next/link";
-import { Download, ShieldCheck } from "lucide-react";
 import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
-import { loadAdmin } from "../../lib/api";
+import { DownloadChooser } from "../../components/site/download-chooser";
+import { DownloadGuide } from "../../components/site/download-guide";
 import { getI18n } from "../../lib/i18n.mjs";
+import { publicApiGet } from "../../lib/public-api";
+import { DOWNLOAD_PLATFORMS, VERIFY_COMMANDS, downloadCopyFor, releaseView } from "../../lib/site-copy-download.mjs";
+import "./download.css";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Download", description: "Download Lily Workbench for macOS or Windows.", alternates: { canonical: "/download" } };
 
-async function release(platform) {
-  return loadAdmin(`/api/releases/latest?platform=${platform}&version=0.0.0`, { hasUpdate: false });
+export async function generateMetadata() {
+  const { locale } = await getI18n();
+  const { meta } = downloadCopyFor(locale);
+  return { title: meta.title, description: meta.description, alternates: { canonical: "/download" } };
 }
 
-function sizeLabel(bytes) {
-  const n = Number(bytes || 0);
-  if (!n) return "";
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+// The same public endpoint the page always used: what a fresh install would be offered.
+async function latest(platform) {
+  const result = await publicApiGet(`/api/releases/latest?platform=${platform}&version=0.0.0`, { timeoutMs: 3000 });
+  return result.ok ? result.data : null;
 }
 
 export default async function DownloadPage() {
-  const { locale, t } = await getI18n();
-  const releases = await Promise.all([
-    release("darwin-arm64"),
-    release("darwin-x64"),
-    release("win32-x64"),
+  const { locale } = await getI18n();
+  const copy = downloadCopyFor(locale);
+  const [list, ...latests] = await Promise.all([
+    // Only for the publish date of the offered version; optional.
+    publicApiGet("/api/releases", { timeoutMs: 3000 }).then((result) => (result.ok && Array.isArray(result.data?.releases) ? result.data.releases : [])),
+    ...DOWNLOAD_PLATFORMS.map(latest),
   ]);
-  const chipCopy = t.pages.downloadPlatforms;
-  const cards = [
-    ["macOS Apple Silicon", "darwin-arm64", chipCopy.macArm, releases[0]],
-    ["macOS Intel", "darwin-x64", chipCopy.macIntel, releases[1]],
-    ["Windows x64", "win32-x64", "Windows 10/11 · Installer", releases[2]],
-  ];
+  // Every string is formatted here, on the server, so the client never re-formats (no hydration drift).
+  const items = DOWNLOAD_PLATFORMS.map((platform, index) => releaseView(platform, latests[index], list, locale));
 
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="min-h-screen bg-slate-50 pt-28">
-        <div className="shell py-16">
-          <h1 className="text-5xl font-semibold text-slate-950">{t.pages.downloadTitle}</h1>
-          <p className="mt-4 max-w-2xl text-lg text-slate-500">{t.pages.downloadDesc}</p>
-          <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {cards.map(([title, platform, file, item]) => (
-              <div key={platform} className="table-card p-6">
-                <h2 className="text-2xl font-semibold">{title}</h2>
-                <p className="mt-2 font-mono text-sm text-slate-500">{platform} {item.version ? `· ${item.version}` : ""}</p>
-                <Link
-                  href={item.url || "/contact"}
-                  className={`mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 font-semibold text-white ${item.url ? "bg-brand" : "bg-slate-400"}`}
-                >
-                  <Download size={18} />
-                  {item.url ? t.nav.download : t.nav.contact}
-                </Link>
-                <div className="mt-5 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
-                  <div>{file}</div>
-                  {item.sizeBytes ? <div className="mt-2">Size {sizeLabel(item.sizeBytes)}</div> : null}
-                  <div className="mt-2 flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-brand" />
-                    {item.sha256 ? `SHA256 ${item.sha256}` : "SHA256 will be loaded from release metadata."}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      <main className="dl-page">
+        <div className="shell">
+          <header className="site-page-head dl-head">
+            <p className="site-eyebrow">{copy.head.eyebrow}</p>
+            <h1 className="site-h1">{copy.head.title}</h1>
+            <p className="site-lead dl-head-lead">{copy.head.lead}</p>
+          </header>
+          <DownloadChooser items={items} copy={copy} commands={VERIFY_COMMANDS} />
+          <DownloadGuide copy={copy} />
         </div>
       </main>
       <SiteFooter />

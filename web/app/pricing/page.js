@@ -1,34 +1,43 @@
-import Link from "next/link";
 import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
+import { PricingPlans } from "../../components/site/pricing-plans";
+import { PricingPacks } from "../../components/site/pricing-packs";
+import { PricingCompare } from "../../components/site/pricing-compare";
+import { PricingFaq } from "../../components/site/pricing-faq";
 import { getI18n } from "../../lib/i18n.mjs";
+import { publicApiGet } from "../../lib/public-api";
+import { copyFor, pricingState } from "../../lib/site-copy-pricing.mjs";
+import "./pricing.css";
 
-export const metadata = { title: "Pricing", description: "Choose a Lily Workbench plan for personal work or your team.", alternates: { canonical: "/pricing" } };
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata() {
+  const { locale } = await getI18n();
+  const { meta } = copyFor(locale);
+  return { title: meta.title, description: meta.description, alternates: { canonical: "/pricing" } };
+}
 
 export default async function PricingPage() {
-  const { locale, t } = await getI18n();
+  const { locale } = await getI18n();
+  const copy = copyFor(locale);
+  // Real prices only: a short timeout, and a failure or a regional 403 shows
+  // an honest panel instead of numbers the server never gave.
+  const state = pricingState(await publicApiGet("/api/billing/products", { timeoutMs: 2500 }), locale);
+
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="min-h-screen bg-white pt-28">
-        <div className="shell py-16">
-          <h1 className="text-5xl font-semibold">{t.pages.pricingTitle}</h1>
-          <p className="mt-4 max-w-2xl text-lg text-slate-500">{t.pages.pricingDesc}</p>
-          <div className="mt-10 grid gap-5 lg:grid-cols-3">
-            {t.pages.pricingPlans.map(([name, badge, seats, items]) => (
-              <div key={name} className={`rounded-2xl border p-6 ${name === "Team" ? "border-brand bg-slate-950 text-white" : "border-slate-200 bg-slate-50"}`}>
-                <div className="mb-5 inline-flex rounded-full bg-brand/12 px-3 py-1 text-sm text-brand">{badge}</div>
-                <h2 className="text-2xl font-semibold">{name}</h2>
-                <p className={`mt-2 ${name === "Team" ? "text-white/56" : "text-slate-500"}`}>{seats}</p>
-                <Link href="/contact" className={`mt-6 block w-full rounded-lg px-4 py-3 text-center font-semibold ${name === "Team" ? "bg-white text-slate-950" : "bg-slate-950 text-white"}`}>
-                  {t.nav.contact}
-                </Link>
-                <ul className="mt-6 space-y-3 text-sm">
-                  {items.map((item) => <li key={item}>• {item}</li>)}
-                </ul>
-              </div>
-            ))}
-          </div>
+      <main className="pr-page">
+        <div className="shell">
+          <header className="site-page-head pr-head">
+            <p className="site-eyebrow">{copy.head.eyebrow}</p>
+            <h1 className="site-h1">{copy.head.title}</h1>
+            <p className="site-lead pr-head-lead">{copy.head.lead}</p>
+          </header>
+          <PricingPlans copy={copy} />
+          <PricingPacks copy={copy} state={state} />
+          <PricingCompare copy={copy} />
+          <PricingFaq copy={copy} />
         </div>
       </main>
       <SiteFooter />

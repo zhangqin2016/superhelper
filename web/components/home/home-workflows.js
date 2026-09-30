@@ -1,30 +1,20 @@
-import { Files, ListChecks, ScanSearch } from "lucide-react";
+import { SectionHead } from "../site/section-head";
 
-const icons = [Files, ScanSearch, ListChecks];
-
-export function HomeWorkflows({ problem, copy }) {
+// "How it works": hand over the project → it assembles context → keep the files.
+export function HomeWorkflows({ copy }) {
   return (
-    <section className="home-section home-workflows">
+    <section id="product-demo" className="site-section hm-how">
       <div className="shell">
-        <div className="home-section-heading home-section-heading--center">
-          <p className="home-eyebrow">{problem.eyebrow}</p>
-          <h2>{problem.title}</h2>
-          <p>{problem.description}</p>
-        </div>
-        <h3 className="home-workflow-title">{copy.title}</h3>
-        <div className="home-workflow-grid">
-          {copy.items.map(([title, description], index) => {
-            const Icon = icons[index];
-            return (
-              <article key={title} className="home-workflow-card">
-                <div className="home-card-icon"><Icon size={22} /></div>
-                <span className="home-step">0{index + 1}</span>
-                <h4>{title}</h4>
-                <p>{description}</p>
-              </article>
-            );
-          })}
-        </div>
+        <SectionHead eyebrow={copy.eyebrow} title={copy.title} description={copy.description} split />
+        <ol className="hm-steps">
+          {copy.steps.map(([title, description], index) => (
+            <li key={title} className="hm-step">
+              <span className="hm-step-num site-num">{String(index + 1).padStart(2, "0")}</span>
+              <h3 className="site-h3">{title}</h3>
+              <p className="site-body">{description}</p>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );

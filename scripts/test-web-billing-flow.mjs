@@ -34,7 +34,8 @@ assert.match(orders, /order\.status === "pending" && fakePaymentsEnabled/, "fake
 assert.match(orders, /\?pay=1/, "a pending order can be paid again from the list");
 
 // --- the buyer's bills ------------------------------------------------------------
-assert.match(read("web/app/account/layout.js"), /\["账单", "\/account\/bills"\]/);
+// The account nav is trilingual now; the statement entry must still be there.
+assert.match(read("web/app/account/layout.js"), /\["\/account\/bills", \{ zh: "账单"/);
 const bills = read("web/app/account/bills/page.js");
 for (const api of ["/api/billing/statement", "/api/billing/balance", "/api/billing/usage-summary"]) assert.ok(bills.includes(api), `bills read ${api}`);
 assert.match(bills, /before=\$\{encodeURIComponent\(nextBefore\)\}/, "older lines page by the server's cursor");

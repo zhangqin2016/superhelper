@@ -1,0 +1,263 @@
+/* Legal and privacy center (/legal, /privacy, /terms, /legal/*,
+   /account-deletion). Scoped under .lg-legal so it restyles the legal
+   classes still defined in globals.css on the site tokens; the extra class
+   wins on specificity regardless of stylesheet order. */
+
+.lg-legal.legal-page,
+.lg-legal.legal-index {
+  background: var(--site-bg);
+  color: var(--site-ink);
+  padding-top: 72px;
+}
+
+/* ------------------------------------------------------------ documents */
+
+.lg-legal .legal-shell {
+  grid-template-columns: 216px minmax(0, 720px);
+  gap: clamp(40px, 6vw, 88px);
+  padding-top: clamp(56px, 7vw, 96px);
+  padding-bottom: clamp(72px, 9vw, 128px);
+}
+
+.lg-legal .legal-nav {
+  top: 104px;
+  color: var(--site-muted);
+  font-size: 13px;
+}
+
+.lg-legal .legal-nav > span {
+  margin: 28px 0 12px;
+  color: var(--site-faint);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.lg-legal .legal-nav nav a {
+  border-inline-start-color: var(--site-line);
+  padding: 7px 14px;
+  color: var(--site-muted);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.lg-legal .legal-nav nav a:hover {
+  border-inline-start-color: var(--site-brand);
+  color: var(--site-ink);
+}
+
+.lg-legal .legal-back {
+  color: var(--site-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lg-legal .legal-back:hover {
+  color: var(--site-ink);
+}
+
+.lg-legal .legal-header {
+  border-bottom-color: var(--site-line);
+  padding-bottom: 32px;
+}
+
+.lg-legal .legal-eyebrow {
+  margin: 0 0 16px;
+  color: var(--site-brand);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.lg-legal .legal-header h1,
+.lg-legal .legal-index-header h1 {
+  color: var(--site-ink);
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.lg-legal .legal-summary,
+.lg-legal .legal-index-header > p:last-child {
+  color: var(--site-text);
+  font-size: clamp(16px, 1.4vw, 18px);
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.lg-legal .legal-updated {
+  color: var(--site-faint);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lg-legal .legal-notice {
+  border: 1px solid var(--site-line);
+  border-inline-start: 3px solid var(--site-brand);
+  border-radius: var(--site-radius-sm);
+  background: var(--site-surface);
+  color: var(--site-text);
+  font-size: 14px;
+}
+
+.lg-legal .legal-section {
+  scroll-margin-top: 104px;
+  border-bottom-color: var(--site-line);
+  padding: 36px 0;
+}
+
+.lg-legal .legal-section h2 {
+  color: var(--site-ink);
+  font-size: clamp(20px, 2vw, 24px);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.lg-legal .legal-section p,
+.lg-legal .legal-section li {
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.85;
+}
+
+.lg-legal .legal-section li::marker {
+  color: var(--site-faint);
+}
+
+.lg-legal .legal-table-wrap {
+  border-color: var(--site-line);
+  border-radius: var(--site-radius-sm);
+  background: var(--site-surface);
+}
+
+.lg-legal .legal-table-wrap th,
+.lg-legal .legal-table-wrap td {
+  border-bottom-color: var(--site-line);
+}
+
+.lg-legal .legal-table-wrap tr:last-child th,
+.lg-legal .legal-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+
+.lg-legal .legal-table-wrap th {
+  background: var(--site-sunken);
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+.lg-legal .legal-table-wrap td {
+  color: var(--site-text);
+}
+
+.lg-legal .legal-contact {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow-sm);
+  color: var(--site-ink);
+}
+
+.lg-legal .legal-contact span {
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.lg-legal .legal-contact a {
+  border-radius: 12px;
+  background: var(--site-brand);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lg-legal .legal-contact a:hover {
+  background: var(--site-brand-hover);
+}
+
+/* ---------------------------------------------------------------- index */
+
+.lg-legal .legal-index-header {
+  padding-top: clamp(72px, 9vw, 112px);
+  padding-bottom: clamp(40px, 5vw, 64px);
+}
+
+.lg-legal .legal-principles {
+  border-block-color: var(--site-line);
+  background: var(--site-sunken);
+}
+
+.lg-legal .legal-principles-grid > div + div {
+  border-inline-start-color: var(--site-line);
+}
+
+.lg-legal .legal-principles-grid strong {
+  color: var(--site-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lg-legal .legal-principles-grid p {
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.lg-legal .legal-index-links {
+  gap: 16px;
+  border: 0;
+  background: transparent;
+}
+
+.lg-legal .legal-index-links > a {
+  min-height: 0;
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow-sm);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.lg-legal .legal-index-links > a:hover {
+  border-color: var(--site-line-strong);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow);
+  transform: translateY(-1px);
+}
+
+.lg-legal .legal-index-links > a > svg:first-child {
+  color: var(--site-brand);
+}
+
+.lg-legal .legal-index-links h2 {
+  color: var(--site-ink);
+  font-size: 18px;
+  font-weight: 620;
+}
+
+.lg-legal .legal-index-links p {
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.lg-legal .legal-index-arrow {
+  color: var(--site-faint);
+}
+
+.lg-legal .legal-index-links > a:hover .legal-index-arrow {
+  color: var(--site-brand);
+}
+
+@media (max-width: 860px) {
+  .lg-legal .legal-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  .lg-legal .legal-principles-grid > div + div {
+    border-block-start-color: var(--site-line);
+  }
+}

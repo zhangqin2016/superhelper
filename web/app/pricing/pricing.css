@@ -1,0 +1,337 @@
+/*
+ * Pricing page. Built on site-system.css tokens only; one accent
+ * (--site-brand). Logical properties throughout so Arabic mirrors cleanly.
+ */
+
+.pr-page {
+  min-height: 100vh;
+  background: var(--site-bg);
+  padding-block-end: clamp(72px, 9vw, 120px);
+}
+
+.pr-head {
+  max-width: 760px;
+  padding-block-end: clamp(32px, 4vw, 48px);
+}
+
+.pr-head-lead { margin-block-start: 20px; }
+
+.pr-arrow { flex: none; }
+[dir="rtl"] .pr-arrow { transform: scaleX(-1); }
+
+.pr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- plans */
+
+.pr-plans {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pr-plan {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(24px, 3vw, 36px);
+}
+
+.pr-plan--personal {
+  border-color: var(--site-brand-line);
+  box-shadow: var(--site-shadow);
+}
+
+.pr-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pr-plan-price {
+  margin: 28px 0 0;
+  color: var(--site-ink);
+  font-size: clamp(30px, 3.2vw, 40px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.pr-plan-note {
+  margin: 8px 0 0;
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.pr-plan-desc {
+  margin: 20px 0 0;
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.pr-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block-start: 28px;
+}
+
+.pr-plan-rule { margin: 28px 0 24px; }
+
+.pr-plan-points {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-plan-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.pr-plan-points svg {
+  flex: none;
+  margin-block-start: 3px;
+  color: var(--site-brand);
+}
+
+.pr-plan--enterprise .pr-plan-points svg { color: var(--site-ink); }
+
+/* ------------------------------------------------------ shared sections */
+
+.pr-packs,
+.pr-compare,
+.pr-faq {
+  margin-block-start: clamp(72px, 9vw, 120px);
+}
+
+.pr-section-head { margin-block-end: 28px; }
+.pr-section-lead { margin-block-start: 14px; font-size: 16px; }
+
+/* ---------------------------------------------------------------- packs */
+
+.pr-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(22px, 3vw, 32px);
+  background: var(--site-sunken);
+  box-shadow: none;
+}
+
+.pr-status-desc {
+  margin: 8px 0 0;
+  max-width: 620px;
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.pr-notice {
+  margin: 0 0 24px;
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius);
+  background: var(--site-sunken);
+  padding: 12px 16px;
+  color: var(--site-text);
+  font-size: 14px;
+}
+
+.pr-group + .pr-group { margin-block-start: 36px; }
+
+.pr-group-title {
+  margin: 0 0 14px;
+  color: var(--site-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.pr-product-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+}
+
+.pr-product {
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+}
+
+.pr-product--featured {
+  border-color: var(--site-brand-line);
+  box-shadow: var(--site-shadow);
+}
+
+.pr-product-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pr-product-name {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.pr-product-price {
+  margin: 18px 0 0;
+  color: var(--site-ink);
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.pr-product-unit {
+  margin: 8px 0 0;
+  color: var(--site-text);
+  font-size: 14px;
+}
+
+.pr-product-meta {
+  margin: 4px 0 0;
+  color: var(--site-muted);
+  font-size: 13px;
+}
+
+.pr-product-desc {
+  margin: 14px 0 0;
+  color: var(--site-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.pr-product-cta {
+  margin-block-start: auto;
+  align-self: flex-start;
+}
+
+.pr-product-desc + .pr-product-cta,
+.pr-product-meta + .pr-product-cta,
+.pr-product-unit + .pr-product-cta,
+.pr-product-price + .pr-product-cta { margin-block-start: 20px; }
+
+/* -------------------------------------------------------------- compare */
+
+.pr-table-wrap {
+  overflow-x: auto;
+  box-shadow: none;
+}
+
+.pr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.pr-table th,
+.pr-table td {
+  padding: 16px 22px;
+  border-block-end: 1px solid var(--site-line);
+  text-align: start;
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.pr-table tbody tr:last-child th,
+.pr-table tbody tr:last-child td { border-block-end: 0; }
+
+.pr-table thead th {
+  background: var(--site-sunken);
+  color: var(--site-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pr-table tbody th {
+  width: 34%;
+  color: var(--site-ink);
+  font-weight: 500;
+}
+
+.pr-table td {
+  width: 33%;
+  color: var(--site-text);
+}
+
+.pr-mark { display: inline-flex; align-items: center; }
+.pr-mark--yes { color: var(--site-brand); }
+.pr-mark--no { color: var(--site-faint); }
+
+/* ------------------------------------------------------------------ faq */
+
+.pr-faq-list {
+  max-width: 820px;
+  border-block-start: 1px solid var(--site-line);
+}
+
+.pr-faq-item { border-block-end: 1px solid var(--site-line); }
+
+.pr-faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 2px;
+  color: var(--site-ink);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pr-faq-item summary::-webkit-details-marker { display: none; }
+
+.pr-faq-icon {
+  flex: none;
+  color: var(--site-muted);
+  transition: transform 180ms ease;
+}
+
+.pr-faq-item[open] .pr-faq-icon { transform: rotate(45deg); }
+
+.pr-faq-body {
+  padding: 0 2px 22px;
+  max-width: 700px;
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.pr-faq-body p { margin: 0; }
+.pr-faq-body p + p { margin-block-start: 10px; }
+
+/* --------------------------------------------------------------- mobile */
+
+@media (max-width: 820px) {
+  .pr-plans { grid-template-columns: minmax(0, 1fr); }
+  .pr-status { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 640px) {
+  .pr-plan-actions .site-btn { flex: 1 1 auto; }
+  .pr-table th,
+  .pr-table td { padding: 14px 16px; }
+}

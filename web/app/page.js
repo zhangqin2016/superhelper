@@ -1,4 +1,9 @@
+import "../components/site/site-shared.css";
+import "../components/site/product-mock.css";
+import "./home.css";
 import { FeaturedCatalog } from "../components/home/featured-catalog";
+import { HomeCapabilities } from "../components/home/home-capabilities";
+import { HomeEnterprise } from "../components/home/home-enterprise";
 import { HomeFinalCta } from "../components/home/home-final-cta";
 import { HomeHero } from "../components/home/home-hero";
 import { HomeTrust } from "../components/home/home-trust";
@@ -9,12 +14,14 @@ import { SiteNav } from "../components/site-nav";
 import { buildHomeOptionalSections, homeContentFor } from "../lib/homepage-content.mjs";
 import { getI18n } from "../lib/i18n.mjs";
 import { publicApiGet } from "../lib/public-api";
+import { enterpriseContentFor } from "../lib/site-copy-enterprise.mjs";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const { locale, t } = await getI18n();
-  const copy = homeContentFor(t);
+  const { locale } = await getI18n();
+  const copy = homeContentFor(locale);
+  const enterprise = enterpriseContentFor(locale);
   const optionalFetch = { timeoutMs: 1200 };
   const [appsResult, skillsResult, wishesResult] = await Promise.all([
     publicApiGet("/api/apps/catalog", optionalFetch),
@@ -26,9 +33,11 @@ export default async function HomePage() {
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="premium-home">
-        <HomeHero copy={copy.hero} />
-        <HomeWorkflows problem={copy.problem} copy={copy.workflows} />
+      <main className="hm">
+        <HomeHero copy={copy.hero} mock={copy.mock} />
+        <HomeWorkflows copy={copy.how} />
+        <HomeCapabilities copy={copy.capabilities} mini={copy.mini} />
+        <HomeEnterprise copy={copy.enterprise} orgMock={enterprise.mocks.org} mockLabel={enterprise.hero.mockLabel} />
         <FeaturedCatalog apps={apps} skills={skills} copy={copy.catalog} />
         <HomeTrust copy={copy.trust} />
         <WishPoolPreview wishes={wishes} copy={copy.wishes} />

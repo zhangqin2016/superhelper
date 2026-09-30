@@ -40,6 +40,7 @@ export const dictionaries = {
       experts: "专家工作区",
       product: "工作方式",
       pricing: "价格",
+      enterprise: "企业版",
       docs: "帮助",
       contact: "联系",
       billing: "授权",
@@ -570,7 +571,7 @@ export const dictionaries = {
     },
   },
   en: {
-    nav: { apps: "Apps", skills: "Skills", wishes: "Wish pool", account: "Account", scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
+    nav: { apps: "Apps", skills: "Skills", wishes: "Wish pool", account: "Account", scenarios: "Scenarios", experts: "Experts", product: "How it works", pricing: "Pricing", enterprise: "Enterprise", docs: "Docs", contact: "Contact", billing: "License", download: "Download", open: "Open navigation" },
     premiumHome: {
       hero: { eyebrow: "An AI desktop workbench for real work", title: "Your project finally has a memory.", description: "Keep files, screenshots, spreadsheets, and conversations in one workspace. Lily understands the context, uses the right skills, and turns scattered material into finished work.", primaryCta: "Download free", secondaryCta: "See how it works", note: "For individuals · macOS supported" },
       problem: { eyebrow: "More than another chat box", title: "Work rarely stalls because you lack an answer.", description: "It stalls when context is scattered, explanations repeat, and tools do not connect. Lily brings them back into one project." },
@@ -973,7 +974,7 @@ export const dictionaries = {
     pages: { docsTitle: "Documentation", docsDesc: "First-run setup for teams deploying Lily Workbench.", pricingTitle: "Pricing", pricingDesc: "Start lightweight, then add team license control and deployment management.", pricingPlans: [["Personal", "Personal trial", "1 seat", ["Desktop client", "Manual updates", "Basic skill packages"]], ["Team", "Recommended", "5+ seats", ["License console", "Device analytics", "Skill package catalog", "Release control"]], ["Enterprise", "Contact sales", "Custom", ["Private deployment", "Custom skill packages", "Priority support"]]], contactTitle: "Bring Lily Workbench into your team with controlled licenses, skill packages, and updates.", contactDesc: "For teams that need private deployment, device licensing, skill delivery, and release control. The admin console handles licenses, devices, and aggregate usage; AI request content follows the model route selected by the user.", contactPrepareTitle: "We will confirm first", contactPrepareItems: [["Deployment scope", "Mac only first, or Mac and Windows."], ["License policy", "Seats, expiry, offline activation, and update policy."], ["Skill package catalog", "MCP, skill, and internal tool entries to publish."]], downloadTitle: "Download Lily Workbench", downloadDesc: "Install the desktop client and connect it to your licensed team deployment.", changelogTitle: "Changelog", downloadPlatforms: { macArm: "Apple Silicon Mac · DMG", macIntel: "Intel Mac · DMG" } },
   },
   ar: {
-    nav: { apps: "التطبيقات", skills: "المهارات", wishes: "الأمنيات", account: "الحساب", scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
+    nav: { apps: "التطبيقات", skills: "المهارات", wishes: "الأمنيات", account: "الحساب", scenarios: "السيناريوهات", experts: "مساحات الخبراء", product: "طريقة العمل", pricing: "الأسعار", enterprise: "للمؤسسات", docs: "المساعدة", contact: "تواصل", billing: "الترخيص", download: "تنزيل", open: "فتح القائمة" },
     premiumHome: {
       hero: { eyebrow: "منضدة عمل مكتبية بالذكاء الاصطناعي للعمل الحقيقي", title: "أصبح لمشروعك ذاكرة أخيراً.", description: "احتفظ بالملفات ولقطات الشاشة والجداول والمحادثات في مساحة واحدة. يفهم Lily السياق ويستخدم المهارات المناسبة ليحوّل المواد المتفرقة إلى عمل منجز.", primaryCta: "تنزيل مجاني", secondaryCta: "شاهد طريقة العمل", note: "للأفراد · يدعم macOS" },
       problem: { eyebrow: "أكثر من نافذة محادثة", title: "نادراً ما يتوقف العمل بسبب غياب إجابة.", description: "بل يتوقف حين يتشتت السياق وتتكرر الشروحات ولا تتصل الأدوات. يجمعها Lily في مشروع واحد." },

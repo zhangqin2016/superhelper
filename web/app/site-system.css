@@ -1,0 +1,361 @@
+/*
+ * Lily public site — design system (2026-09-30).
+ *
+ * One accent: the product's brand blue (#2f7de1, decided 2026-09-03 for the
+ * desktop app). The site had three competing accents — indigo on the nav and
+ * home, teal on buttons (tailwind `brand`), black on pricing — so nothing read
+ * as the brand. Restraint: neutral paper surfaces with a trace of warmth,
+ * hairline borders, soft shadows used once per view, generous whitespace.
+ *
+ * Chinese headlines break at phrases, never mid-word: `word-break: keep-all`
+ * keeps a CJK run together (breaks fall on punctuation and spaces), balance
+ * evens the lines, `overflow-wrap: anywhere` is the safety valve on narrow
+ * screens. Author long headlines with a comma or a space where a break reads
+ * well ("工作卡住，往往不是因为缺答案。").
+ */
+
+:root {
+  --site-brand: #2f7de1;
+  --site-brand-hover: #2568c0;
+  --site-brand-ink: #1d4f96;
+  --site-brand-soft: rgba(47, 125, 225, 0.08);
+  --site-brand-line: rgba(47, 125, 225, 0.22);
+
+  --site-ink: #111418;
+  --site-text: #3b414c;
+  --site-muted: #6b7280;
+  --site-faint: #9aa0aa;
+
+  --site-bg: #fbfaf8;
+  --site-surface: #ffffff;
+  --site-sunken: #f5f4f1;
+  --site-line: #e8e6e2;
+  --site-line-strong: #d9d6d0;
+
+  --site-radius-sm: 10px;
+  --site-radius: 14px;
+  --site-radius-lg: 22px;
+  --site-shadow-sm: 0 1px 2px rgba(17, 20, 24, 0.04), 0 1px 1px rgba(17, 20, 24, 0.03);
+  --site-shadow: 0 1px 2px rgba(17, 20, 24, 0.04), 0 8px 24px rgba(17, 20, 24, 0.06);
+  --site-shadow-lg: 0 2px 4px rgba(17, 20, 24, 0.04), 0 24px 64px rgba(17, 20, 24, 0.1);
+
+  /* Legacy names the existing site CSS reads — now the one brand. */
+  --lily-blue: var(--site-brand);
+  --lily-ink: var(--site-ink);
+  --lily-muted: var(--site-muted);
+  --lily-line: var(--site-line);
+}
+
+body {
+  background: var(--site-bg);
+  color: var(--site-ink);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(47, 125, 225, 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid var(--site-brand);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ------------------------------------------------------------------ type */
+
+.site-display,
+.site-h1,
+.site-h2,
+.site-h3,
+main h1,
+main h2 {
+  word-break: keep-all;
+  line-break: strict;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.site-display {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: clamp(40px, 6vw, 76px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+}
+
+.site-h1 {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: clamp(34px, 4.4vw, 56px);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.site-h2 {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: clamp(28px, 3.2vw, 42px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.site-h3 {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: 18px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.site-lead {
+  margin: 0;
+  max-width: 640px;
+  color: var(--site-text);
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.site-body {
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.site-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  color: var(--site-brand);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+[lang="en"] .site-eyebrow {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.site-muted { color: var(--site-muted); }
+.site-num { font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------- layout */
+
+.site-section {
+  padding: clamp(72px, 9vw, 128px) 0;
+}
+
+.site-section--tight {
+  padding: clamp(48px, 6vw, 80px) 0;
+}
+
+.site-section--sunken {
+  background: var(--site-sunken);
+}
+
+.site-page-head {
+  padding: clamp(120px, 14vw, 168px) 0 clamp(40px, 5vw, 64px);
+}
+
+.site-card {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow-sm);
+}
+
+.site-card--interactive {
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.site-card--interactive:hover {
+  border-color: var(--site-line-strong);
+  box-shadow: var(--site-shadow);
+  transform: translateY(-1px);
+}
+
+.site-divider {
+  height: 1px;
+  border: 0;
+  background: var(--site-line);
+}
+
+/* -------------------------------------------------------------- buttons */
+
+.site-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.site-btn--lg { min-height: 50px; padding: 0 22px; font-size: 16px; border-radius: 14px; }
+.site-btn--sm { min-height: 36px; padding: 0 14px; font-size: 14px; border-radius: 10px; }
+
+.site-btn--primary {
+  background: var(--site-brand);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(29, 79, 150, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.site-btn--primary:hover { background: var(--site-brand-hover); }
+
+.site-btn--secondary {
+  border-color: var(--site-line-strong);
+  background: var(--site-surface);
+  color: var(--site-ink);
+}
+
+.site-btn--secondary:hover { border-color: #c5c1ba; background: #fdfcfb; }
+
+.site-btn--ghost { color: var(--site-text); }
+.site-btn--ghost:hover { color: var(--site-ink); background: var(--site-sunken); }
+
+.site-btn--dark {
+  background: var(--site-ink);
+  color: #fff;
+}
+
+.site-btn--dark:hover { background: #262a31; }
+
+.site-link {
+  color: var(--site-brand);
+  font-weight: 600;
+}
+
+.site-link:hover { color: var(--site-brand-hover); }
+
+/* ---------------------------------------------------------------- chips */
+
+.site-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--site-line);
+  border-radius: 999px;
+  background: var(--site-surface);
+  padding: 4px 11px;
+  color: var(--site-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.site-chip--brand {
+  border-color: var(--site-brand-line);
+  background: var(--site-brand-soft);
+  color: var(--site-brand-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --------------------------------------------------------------- footer */
+
+.site-footer {
+  border-top: 1px solid var(--site-line);
+  background: var(--site-surface);
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.site-footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));
+  gap: 40px;
+  padding: 56px 0 40px;
+}
+
+.site-footer-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--site-ink);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.site-footer-logo img { border-radius: 7px; }
+
+.site-footer-brand p {
+  max-width: 280px;
+  margin: 14px 0 0;
+  line-height: 1.7;
+}
+
+.site-footer-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.site-footer-heading {
+  margin: 0 0 4px;
+  color: var(--site-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.site-footer .site-footer-col a {
+  color: var(--site-muted);
+  font-weight: 450;
+}
+
+.site-footer .site-footer-col a:hover { color: var(--site-ink); }
+
+.site-footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  border-top: 1px solid var(--site-line);
+  padding: 20px 0 28px;
+  color: var(--site-faint);
+  font-size: 13px;
+}
+
+.site-footer-bottom a { color: var(--site-faint); font-weight: 450; }
+.site-footer-bottom a:hover { color: var(--site-text); }
+
+@media (max-width: 860px) {
+  .site-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; padding-top: 44px; }
+  .site-footer-brand { grid-column: 1 / -1; }
+}
+
+/* ------------------------------------------------------------ site nav */
+
+/* .site-btn sets display, which outranked tailwind's `hidden` on the account
+   link and pushed the phone header past the viewport (409px on a 390px phone). */
+.site-nav .site-account { display: none; }
+@media (min-width: 768px) { .site-nav .site-account { display: inline-flex; } }
+.site-brand-text { white-space: nowrap; }
+@media (max-width: 420px) {
+  .site-nav .site-brand-text { display: none; }
+  .site-nav .nav-download { padding: 0 12px; }
+}

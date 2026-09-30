@@ -1,0 +1,218 @@
+/* Changelog (/changelog): one entry per version on a quiet timeline. */
+
+.cl-page {
+  min-height: 100vh;
+  background: var(--site-bg);
+  color: var(--site-ink);
+}
+
+.cl-shell {
+  max-width: 920px;
+}
+
+.cl-head {
+  padding-bottom: clamp(32px, 4vw, 48px);
+}
+
+.cl-lead {
+  margin-top: 20px;
+}
+
+.cl-language {
+  margin: 14px 0 0;
+  color: var(--site-faint);
+  font-size: 13px;
+}
+
+.cl-section {
+  padding-bottom: clamp(72px, 9vw, 128px);
+}
+
+.cl-state {
+  padding: 40px 32px;
+  text-align: center;
+}
+
+.cl-state p {
+  margin: 10px 0 0;
+  color: var(--site-muted);
+}
+
+.cl-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-entry {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 32px;
+}
+
+.cl-when {
+  padding-top: 5px;
+  color: var(--site-muted);
+  font-size: 14px;
+  text-align: end;
+}
+
+.cl-body {
+  position: relative;
+  border-inline-start: 1px solid var(--site-line);
+  padding-inline-start: 32px;
+  padding-bottom: 44px;
+}
+
+.cl-body::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -5px;
+  top: 9px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--site-bg);
+  border-radius: 999px;
+  background: var(--site-line-strong);
+  box-shadow: 0 0 0 1px var(--site-line-strong);
+}
+
+.cl-timeline > .cl-entry:first-child .cl-body::before {
+  background: var(--site-brand);
+  box-shadow: 0 0 0 1px var(--site-brand), 0 0 0 5px var(--site-brand-soft);
+}
+
+.cl-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.cl-version {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.cl-heading .site-chip {
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+.cl-required {
+  border-color: var(--site-ink);
+  background: var(--site-ink);
+  color: #fff;
+}
+
+.cl-highlights {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 0;
+  padding-inline-start: 18px;
+}
+
+.cl-highlights li {
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.cl-highlights li::marker {
+  color: var(--site-faint);
+}
+
+.cl-plain {
+  margin: 12px 0 0;
+  color: var(--site-muted);
+  font-size: 15px;
+}
+
+.cl-more {
+  margin-top: 6px;
+}
+
+.cl-more summary,
+.cl-older > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--site-brand);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.cl-more summary::-webkit-details-marker,
+.cl-older > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cl-more summary::after,
+.cl-older > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-inline-end: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.cl-more[open] > summary {
+  display: none;
+}
+
+.cl-more[open] .cl-highlights {
+  margin-top: 6px;
+}
+
+.cl-platforms {
+  margin: 14px 0 0;
+  color: var(--site-faint);
+  font-size: 13px;
+}
+
+.cl-older > summary {
+  margin: 4px 0 0 calc(168px + 32px + 32px);
+  min-height: 40px;
+}
+
+[dir="rtl"] .cl-older > summary {
+  margin: 4px calc(168px + 32px + 32px) 0 0;
+}
+
+.cl-older[open] > summary {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .cl-entry {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .cl-when {
+    border-inline-start: 1px solid var(--site-line);
+    padding: 0 0 6px 32px;
+    padding-inline-start: 32px;
+    padding-inline-end: 0;
+    font-size: 13px;
+    text-align: start;
+  }
+
+  .cl-body::before {
+    top: -18px;
+  }
+
+  .cl-older > summary,
+  [dir="rtl"] .cl-older > summary {
+    margin: 4px 0 0;
+    margin-inline-start: 32px;
+  }
+}

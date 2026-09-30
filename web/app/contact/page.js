@@ -1,50 +1,52 @@
+import "./contact.css";
 import Link from "next/link";
-import { Mail, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUpRight, Mail } from "lucide-react";
 import { SiteNav } from "../../components/site-nav";
 import { SiteFooter } from "../../components/site-footer";
 import { ContactForm } from "../../components/contact-form";
 import { getI18n } from "../../lib/i18n.mjs";
+import { catalogCopyFor } from "../../lib/site-copy-catalog.mjs";
 
-export default async function ContactPage() {
+const EMAIL = "felix@lilywb.cn";
+
+export const metadata = { title: "Contact", description: "Questions about Lily Workbench, organization setup, or partnerships.", alternates: { canonical: "/contact" } };
+
+export default async function ContactPage({ searchParams }) {
   const { locale, t } = await getI18n();
+  const params = await searchParams;
+  const copy = catalogCopyFor(locale).contact;
+  const topic = typeof params?.topic === "string" && copy.topics[params.topic] ? params.topic : "general";
+  const labels = { ...t.contactForm, ...copy.form };
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="min-h-screen bg-white pt-28">
-        <section className="shell grid gap-12 py-16 lg:grid-cols-[0.9fr_1.1fr]">
-          <div>
-            <p className="mb-3 font-mono text-sm uppercase text-brand">Team deployment</p>
-            <h1 className="max-w-3xl text-5xl font-semibold leading-tight text-slate-950">
-              {t.pages.contactTitle}
-            </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-500">
-              {t.pages.contactDesc}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/admin/login" className="rounded-lg border border-slate-200 px-5 py-3 font-semibold text-slate-800">
-                {t.admin.brand}
-              </Link>
-            </div>
+      <main className="ct-page">
+        <header className="site-page-head ct-head">
+          <div className="shell">
+            <p className="site-eyebrow">{copy.eyebrow}</p>
+            <h1 className="site-h1 ct-title">{copy.title}</h1>
+            <p className="site-lead ct-lead">{copy.description}</p>
           </div>
-          <ContactForm labels={t.contactForm} source="contact" />
-        </section>
-        <section className="shell pb-20">
-          <aside className="table-card p-6">
-            <h2 className="text-xl font-semibold">{t.pages.contactPrepareTitle}</h2>
-            <div className="mt-6 space-y-5">
-              {t.pages.contactPrepareItems.map(([title, body], index) => {
-                const Icon = [Sparkles, ShieldCheck, Mail][index];
-                return (
-                <div key={title} className="flex gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-brand">
-                    <Icon size={18} />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-950">{title}</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-500">{body}</div>
-                  </div>
-                </div>
-              );})}
+        </header>
+        <section className="shell ct-layout">
+          <ContactForm labels={labels} source="contact" topics={copy.topics} topicLabel={copy.topicLabel} initialTopic={topic} />
+          <aside className="ct-aside">
+            <div>
+              <h2 className="site-h3">{copy.asideTitle}</h2>
+              <ol className="ct-tips">
+                {copy.asideItems.map(([title, body]) => (
+                  <li key={title}><strong>{title}</strong><span>{body}</span></li>
+                ))}
+              </ol>
+            </div>
+            <div className="ct-aside-card site-card">
+              <p className="ct-aside-label">{copy.emailTitle}</p>
+              <a href={`mailto:${EMAIL}`} className="ct-email"><Mail size={16} aria-hidden="true" />{EMAIL}</a>
+            </div>
+            <div className="ct-aside-card site-card">
+              <p className="ct-aside-label">{copy.helpTitle}</p>
+              <p className="ct-aside-body">{copy.helpBody}</p>
+              <Link href="/docs" className="site-link ct-help">{copy.helpCta}<ArrowUpRight size={15} aria-hidden="true" /></Link>
             </div>
           </aside>
         </section>

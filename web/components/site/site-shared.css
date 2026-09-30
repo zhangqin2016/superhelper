@@ -1,0 +1,41 @@
+/*
+ * Section scaffolding shared by the home and enterprise pages (2026-09-30).
+ * Builds on app/site-system.css tokens; no new colors.
+ */
+
+.site-head {
+  display: grid;
+  gap: 18px;
+  margin-bottom: clamp(40px, 5vw, 64px);
+}
+
+.site-head--center {
+  justify-items: center;
+  text-align: center;
+}
+
+.site-head--center .site-head-lead {
+  margin-inline: auto;
+}
+
+.site-head-main .site-h2 {
+  max-width: 760px;
+}
+
+@media (min-width: 961px) {
+  .site-head--split {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 64px;
+  }
+
+  .site-head--split .site-head-lead {
+    justify-self: end;
+    max-width: 480px;
+  }
+}
+
+/* Directional glyphs point the reading direction. */
+[dir="rtl"] .site-flip {
+  transform: scaleX(-1);
+}

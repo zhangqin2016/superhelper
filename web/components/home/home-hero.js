@@ -1,25 +1,23 @@
 import Link from "next/link";
-import { ArrowRight, Download } from "lucide-react";
+import { ArrowDown, Download } from "lucide-react";
+import { ProductMock } from "../site/product-mock";
 
-export function HomeHero({ copy }) {
+export function HomeHero({ copy, mock }) {
   return (
-    <section className="home-hero">
-      <div className="shell home-hero-inner">
-        <div className="home-hero-copy">
-          <p className="home-eyebrow">{copy.eyebrow}</p>
-          <h1>{copy.title}</h1>
-          <p className="home-hero-description">{copy.description}</p>
-          <div className="home-hero-actions">
-            <Link href="/download" className="home-button home-button--primary"><Download size={18} />{copy.primaryCta}</Link>
-            <Link href="#product-demo" className="home-button home-button--secondary">{copy.secondaryCta}<ArrowRight size={18} /></Link>
+    <section className="hm-hero">
+      <div className="shell">
+        <div className="hm-hero-copy">
+          <p className="site-eyebrow">{copy.eyebrow}</p>
+          <h1 className="site-display">{copy.title}</h1>
+          <p className="site-lead hm-hero-lead">{copy.description}</p>
+          <div className="hm-actions">
+            <Link href="/download" className="site-btn site-btn--primary site-btn--lg"><Download size={18} />{copy.primaryCta}</Link>
+            <Link href="#product-demo" className="site-btn site-btn--secondary site-btn--lg">{copy.secondaryCta}<ArrowDown size={17} /></Link>
           </div>
-          <p className="home-hero-note">{copy.note}</p>
+          <p className="hm-note">{copy.note}</p>
         </div>
-        <div id="product-demo" className="home-product-visual">
-          <picture>
-            <source srcSet="/product/lily-workbench-home.webp" type="image/webp" />
-            <img src="/product/lily-workbench-home-fallback.svg" alt="Lily Workbench" width="1600" height="1040" fetchPriority="high" />
-          </picture>
+        <div className="hm-hero-visual">
+          <ProductMock copy={mock} label={copy.mockLabel} className="pm-frame--lifted" />
         </div>
       </div>
     </section>

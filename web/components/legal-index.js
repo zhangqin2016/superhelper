@@ -1,3 +1,4 @@
+import "../app/legal/legal.css";
 import Link from "next/link";
 import { ArrowRight, Database, FileCheck2, ShieldCheck, UserRoundX } from "lucide-react";
 import { SiteFooter } from "./site-footer";
@@ -9,7 +10,7 @@ export function LegalIndex({ locale, content }) {
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="legal-index" dir={locale === "ar" ? "rtl" : "ltr"}>
+      <main className="legal-index lg-legal" dir={locale === "ar" ? "rtl" : "ltr"}>
         <header className="shell legal-index-header">
           <p className="legal-eyebrow">{content.eyebrow}</p>
           <h1>{content.title}</h1>

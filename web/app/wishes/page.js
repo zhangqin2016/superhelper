@@ -1,3 +1,4 @@
+import "./wishes.css";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { PublicCatalogShell } from "../../components/public-catalog-shell";
@@ -20,7 +21,7 @@ export default async function WishesPage({ searchParams }) {
   const copy = t.wishPool;
   return (
     <PublicCatalogShell locale={locale} eyebrow={copy.eyebrow} title={copy.title} description={copy.description}>
-      <section className="catalog-section"><div className="shell">
+      <section className="pc-section wp-wishes"><div className="shell">
         <div className="wish-toolbar">
           <nav aria-label={copy.filterLabel}>
             <Link className={!params?.status ? "active" : ""} href={`/wishes?sort=${params?.sort === "recent" ? "recent" : "popular"}`}>{copy.tabs.all}</Link>
@@ -29,8 +30,8 @@ export default async function WishesPage({ searchParams }) {
           <Link className="wish-create-link" href="#make-a-wish"><Plus size={16} />{copy.create}</Link>
         </div>
         {state.state === "ready" ? <WishBoard wishes={wishes} copy={copy} /> : null}
-        {state.state === "empty" ? <div className="catalog-state"><h2>{copy.emptyTitle}</h2><p>{copy.emptyDescription}</p></div> : null}
-        {state.state === "error" ? <div className="catalog-state catalog-state--error"><h2>{copy.errorTitle}</h2><p>{copy.errorDescription}</p></div> : null}
+        {state.state === "empty" ? <div className="pc-state site-card"><h2 className="site-h3">{copy.emptyTitle}</h2><p>{copy.emptyDescription}</p></div> : null}
+        {state.state === "error" ? <div className="pc-state pc-state--error site-card"><h2 className="site-h3">{copy.errorTitle}</h2><p>{copy.errorDescription}</p></div> : null}
         <div id="make-a-wish" className="wish-submit-section"><WishSubmitForm locale={locale} copy={{ ...copy.form, categories: copy.categories, alsoNeed: copy.alsoNeed }} /></div>
       </div></section>
     </PublicCatalogShell>

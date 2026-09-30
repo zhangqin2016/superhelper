@@ -1,0 +1,333 @@
+/* Wish pool (/wishes). Scoped under .wp-wishes so it restyles the shared wish
+   classes (still defined in globals.css) on the site tokens without editing
+   them there: the extra class wins on specificity regardless of load order. */
+
+.wp-wishes .wish-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.wp-wishes .wish-toolbar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wp-wishes .wish-toolbar nav a {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 1px solid var(--site-line);
+  border-radius: 999px;
+  background: var(--site-surface);
+  padding: 0 13px;
+  color: var(--site-text);
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.wp-wishes .wish-toolbar nav a:hover {
+  border-color: var(--site-line-strong);
+  color: var(--site-ink);
+}
+
+.wp-wishes .wish-toolbar nav a.active {
+  border-color: var(--site-brand-line);
+  background: var(--site-brand-soft);
+  color: var(--site-brand-ink);
+  font-weight: 600;
+}
+
+.wp-wishes .wish-create-link {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 12px;
+  background: var(--site-brand);
+  padding: 0 16px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wp-wishes .wish-create-link:hover {
+  background: var(--site-brand-hover);
+}
+
+.wp-wishes .wish-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.wp-wishes .wish-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: var(--site-surface);
+  padding: 22px 24px;
+  box-shadow: var(--site-shadow-sm);
+}
+
+.wp-wishes .wish-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wp-wishes .wish-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--site-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wp-wishes .wish-category svg {
+  color: var(--site-brand);
+}
+
+.wp-wishes .wish-status {
+  border: 1px solid var(--site-line);
+  border-radius: 999px;
+  background: var(--site-sunken);
+  padding: 3px 10px;
+  color: var(--site-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wp-wishes .wish-status--planned {
+  background: var(--site-surface);
+  border-color: var(--site-line-strong);
+  color: var(--site-text);
+}
+
+.wp-wishes .wish-status--building {
+  border-color: var(--site-brand-line);
+  background: var(--site-brand-soft);
+  color: var(--site-brand-ink);
+}
+
+.wp-wishes .wish-status--shipped {
+  border-color: var(--site-brand);
+  background: var(--site-brand);
+  color: #fff;
+}
+
+.wp-wishes .wish-card h2 {
+  margin: 16px 0 8px;
+  color: var(--site-ink);
+  font-size: 19px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+
+.wp-wishes .wish-card > p {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  color: var(--site-text);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.wp-wishes .wish-update {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  border-radius: var(--site-radius-sm);
+  background: var(--site-sunken);
+  padding: 12px 14px;
+  color: var(--site-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wp-wishes .wish-update svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--site-brand);
+}
+
+.wp-wishes .wish-links,
+.wp-wishes .wish-support-wrap {
+  margin-top: 18px;
+}
+
+.wp-wishes .wish-links a,
+.wp-wishes .wish-support-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 999px;
+  background: var(--site-surface);
+  padding: 0 13px;
+  color: var(--site-ink);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.wp-wishes .wish-links a {
+  color: var(--site-brand);
+}
+
+.wp-wishes .wish-support-button:hover,
+.wp-wishes .wish-links a:hover {
+  border-color: var(--site-brand-line);
+}
+
+.wp-wishes .wish-support-button.is-supported {
+  border-color: var(--site-brand-line);
+  background: var(--site-brand-soft);
+  color: var(--site-brand-ink);
+}
+
+.wp-wishes .wish-support-button svg {
+  color: var(--site-brand);
+}
+
+.wp-wishes .wish-submit-section {
+  scroll-margin-top: 96px;
+  margin-top: 64px;
+}
+
+.wp-wishes .wish-submit-form {
+  display: grid;
+  gap: 18px;
+  max-width: 880px;
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: var(--site-surface);
+  padding: clamp(22px, 4vw, 36px);
+  box-shadow: var(--site-shadow);
+}
+
+.wp-wishes .wish-submit-heading h2 {
+  margin: 0;
+  color: var(--site-ink);
+  font-size: clamp(22px, 2.4vw, 28px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.wp-wishes .wish-submit-heading p {
+  margin: 8px 0 0;
+  color: var(--site-muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.wp-wishes .wish-submit-heading > svg {
+  flex: none;
+  color: var(--site-brand);
+}
+
+.wp-wishes .wish-submit-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--site-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wp-wishes .wish-submit-form input,
+.wp-wishes .wish-submit-form textarea,
+.wp-wishes .wish-submit-form select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 10px;
+  background: var(--site-surface);
+  padding: 10px 12px;
+  color: var(--site-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  outline: none;
+}
+
+.wp-wishes .wish-submit-form textarea {
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.wp-wishes .wish-submit-form input:focus,
+.wp-wishes .wish-submit-form textarea:focus,
+.wp-wishes .wish-submit-form select:focus {
+  border-color: var(--site-brand);
+  box-shadow: 0 0 0 3px var(--site-brand-soft);
+}
+
+.wp-wishes .wish-submit-button,
+.wp-wishes .wish-create-anyway {
+  display: inline-flex;
+  width: max-content;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  border-radius: 12px;
+  background: var(--site-brand);
+  padding: 0 18px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wp-wishes .wish-submit-button:hover,
+.wp-wishes .wish-create-anyway:hover {
+  background: var(--site-brand-hover);
+}
+
+.wp-wishes .wish-form-privacy {
+  color: var(--site-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wp-wishes .wish-form-success {
+  border: 1px solid var(--site-brand-line);
+  background: var(--site-brand-soft);
+  color: var(--site-brand-ink);
+}
+
+.wp-wishes .wish-similar {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius);
+  background: var(--site-sunken);
+  padding: 18px;
+}
+
+.wp-wishes .wish-similar > p,
+.wp-wishes .wish-similar-row span {
+  color: var(--site-muted);
+}
+
+.wp-wishes .wish-similar-row {
+  border-top-color: var(--site-line);
+}
+
+@media (max-width: 860px) {
+  .wp-wishes .wish-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wp-wishes .wish-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

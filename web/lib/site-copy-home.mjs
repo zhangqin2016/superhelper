@@ -1,0 +1,385 @@
+/**
+ * Home page copy (zh / en / ar). Every locale carries exactly the same keys —
+ * scripts/test-premium-homepage.mjs proves it.
+ *
+ * Honesty rule: each claim here is something the desktop app does today
+ * (docs/lily-capabilities-2026-09-29.md). Never promise offline operation or
+ * that content is never sent: conversations go to the model service the user
+ * picked; document parsing, OCR and conversion run on the user's computer.
+ *
+ * Chinese headlines are written to break at punctuation.
+ */
+
+const zh = {
+  hero: {
+    eyebrow: "为真实工作而生的 AI 桌面工作台",
+    title: "你的项目，终于有人记得。",
+    description: "把文件、表格和历史对话放进同一个工作空间。说清楚要什么，Lily 会读材料、做分析，把能继续修改的 Word、Excel、PPT 交到你手里。",
+    primaryCta: "免费下载",
+    secondaryCta: "看看它怎么工作",
+    note: "支持 macOS（Apple 芯片与 Intel）和 Windows · 注册即送体验额度",
+    mockLabel: "Lily Workbench 桌面端界面示意：用户交代任务，Lily 读取文件、分析数据并交付 Word 与 Excel 文件",
+  },
+  how: {
+    eyebrow: "工作方式",
+    title: "工作卡住，往往不是因为缺答案。",
+    description: "而是资料散落各处、背景要反复解释、结果还得自己动手整理。Lily 把这三件事接过去。",
+    steps: [
+      ["把项目交给它", "选一个本地文件夹作为工作空间，或直接拖入文件、截图和表格。"],
+      ["它自己补齐上下文", "读材料、查线索、调用合适的技能；复杂任务自动拆成清单，逐项推进。"],
+      ["拿走能继续用的文件", "得到可以打开、修改、转发的文档和表格，而不只是一段回答。"],
+    ],
+  },
+  capabilities: {
+    eyebrow: "它能做的事",
+    title: "不只会聊，还会动手。",
+    description: "下面每一项，都是 Lily 现在就能在你电脑上完成的工作。",
+    items: {
+      documents: ["办公文档，读写都在行", "Word、Excel、PPT、PDF 都能读取、生成、编辑和转换，扫描件也能识别文字。交付前逐页渲染，检查分页、表格和字体。"],
+      research: ["研究与分析，附上出处", "联网查资料时多个来源交叉核对，并标明出处；表格数据会识别字段、找出异常、画图，输出可以复查的结果。"],
+      extend: ["技能与应用，按需扩展", "内置 40 多个专业技能，覆盖办公、研究、开发和媒体。重型引擎不打进安装包，需要时一键下载。"],
+      memory: ["记得你的项目", "说一句“记住……”，以后的对话都会遵守；项目约定和历史进展自动带上。每一轮改动都存成版本，随时恢复。"],
+    },
+  },
+  enterprise: {
+    eyebrow: "Lily 企业版",
+    title: "整个团队一起用，每一笔都算得清。",
+    description: "企业由平台为你开通。成员在企业额度内工作，管理员随时看得见用量和每一次变更。",
+    points: [
+      ["企业额度池，每人每周限额", "平台为企业充值额度池；每位成员有自己的每周额度，7 天后重置。"],
+      ["选哪个身份，就由谁付费", "企业身份只扣企业额度池，个人身份只扣自己的余额，从不混扣。"],
+      ["管理员掌控，每一步有记录", "添加成员、调整额度、暂停企业，谁在什么时候做了什么都有记录。"],
+    ],
+    cta: "了解企业版",
+  },
+  catalog: {
+    eyebrow: "应用与技能",
+    title: "需要什么，就给工作台加什么。",
+    appsTitle: "精选应用",
+    skillsTitle: "热门技能",
+    allApps: "查看全部应用",
+    allSkills: "浏览技能库",
+  },
+  trust: {
+    eyebrow: "清晰、可控",
+    title: "你看得见它做了什么。",
+    items: [
+      ["有据可查", "事实、数字和引用都要有来源；只读了部分资料时，它会明确告诉你。"],
+      ["交付前自己验收", "说做好的文件必须真实存在；文档逐页渲染检查，代码实际运行一遍。"],
+      ["你决定它能做多少", "计划、询问、全自主三档模式；发邮件、提交表单、删除数据一律先问你。"],
+      ["改动随时可撤回", "每一轮改了哪些文件一目了然，可以单独撤回，也能恢复到之前的版本。"],
+    ],
+    note: "文档解析、文字识别和格式转换在你的电脑上完成；对话内容会发送给你选择的模型服务来生成回答。",
+  },
+  wishes: {
+    eyebrow: "共创愿望",
+    title: "你许愿，我们认真实现。",
+    description: "浏览大家正在期待的能力，为同感的愿望助力，或提交一个新的工作痛点。",
+    all: "进入共创愿望",
+    statuses: { published: "已公开", planned: "已规划", building: "实现中", shipped: "已上线" },
+  },
+  finalCta: {
+    title: "下一个项目，不必再从零解释。",
+    description: "下载 Lily Workbench，让材料、上下文和成果留在同一个工作现场。",
+    primary: "免费下载",
+    secondary: "查看价格",
+  },
+  mock: {
+    windowTitle: "Lily Workbench",
+    newChat: "新对话",
+    projectsLabel: "项目",
+    projects: ["季度经营复盘", "客户合同审阅", "新品上线资料"],
+    filesLabel: "文件",
+    files: [["Q2 财务报表.xlsx", "xlsx"], ["Q3 财务报表.xlsx", "xlsx"], ["部门费用明细.xlsx", "xlsx"], ["上季度复盘.docx", "docx"], ["经营复盘.docx", "docx", true]],
+    newBadge: "新",
+    identity: "个人身份",
+    initial: "我",
+    threadTitle: "Q3 经营复盘",
+    model: "自动模式",
+    userMessage: "把 Q2、Q3 两份报表和费用明细整理成一份经营复盘 Word，附一张费用对比表。",
+    attachments: ["Q2 财务报表.xlsx", "Q3 财务报表.xlsx", "部门费用明细.xlsx"],
+    tools: [
+      ["读取文件", "3 个文件 · 5 张工作表"],
+      ["分析数据", "费用环比 +12.4%，定位 4 处异常"],
+      ["生成文档", "经营复盘.docx · 12 页"],
+      ["渲染核对", "逐页检查分页、表格与字体"],
+    ],
+    answer: "复盘已经写好。费用上升主要来自差旅和外包两项，我在第 3 节列出了 4 处异常和对应的明细行，费用对比表单独放在 Excel 里。",
+    delivered: [["经营复盘.docx", "Word · 12 页 · 已逐页核对", "docx"], ["费用对比.xlsx", "Excel · 2 张工作表", "xlsx"]],
+    open: "打开",
+    composer: "继续交代下一步…",
+    mode: "询问",
+  },
+  mini: {
+    document: { file: "经营复盘.docx", pages: "共 12 页", checks: ["目录", "分页", "表格", "字体"], status: "逐页核对通过" },
+    research: {
+      question: "差旅费为什么涨了？",
+      claim: "差旅费环比上升 31%，主要来自 8 月的两次展会出差。",
+      sources: ["Q3 财务报表 · 第 14 行", "部门费用明细 · 8 月", "展会日程.pdf"],
+      chartTitle: "费用环比",
+      bars: [["差旅", 31], ["外包", 18], ["办公", 6], ["培训", 3]],
+    },
+    extend: {
+      title: "技能与引擎",
+      items: [["Excel 数据分析", "已启用"], ["PPT 设计验收", "已启用"], ["专业 PDF 解析", "按需下载"], ["浏览器自动化", "按需下载"]],
+      footer: "内置 40+ 技能",
+    },
+    memory: {
+      title: "记忆",
+      notes: ["复盘报告统一用公司模板，金额保留两位小数。", "费用口径按部门汇总。"],
+      versionsTitle: "版本",
+      versions: [["第 3 轮", "经营复盘.docx"], ["第 2 轮", "费用对比.xlsx"], ["第 1 轮", "整理原始数据"]],
+      restore: "恢复",
+    },
+  },
+};
+
+const en = {
+  hero: {
+    eyebrow: "An AI desktop workbench for real work",
+    title: "Finally, something that remembers your project.",
+    description: "Keep files, spreadsheets and past conversations in one workspace. Say what you need — Lily reads the material, does the analysis, and hands you Word, Excel and PowerPoint files you can keep editing.",
+    primaryCta: "Download free",
+    secondaryCta: "See how it works",
+    note: "For macOS (Apple silicon and Intel) and Windows · Trial credit on sign-up",
+    mockLabel: "Illustration of the Lily Workbench desktop app: the user asks for a deliverable, Lily reads files, analyses the data and delivers Word and Excel files",
+  },
+  how: {
+    eyebrow: "How it works",
+    title: "Work rarely stalls for lack of an answer.",
+    description: "It stalls because material is scattered, context has to be explained again and again, and the result still has to be assembled by hand. Lily takes all three off your plate.",
+    steps: [
+      ["Hand over the project", "Pick a local folder as the workspace, or drop in files, screenshots and spreadsheets."],
+      ["It assembles the context", "It reads, looks things up and calls the right skills; big tasks become a checklist it works through."],
+      ["Keep what it delivers", "You get documents and spreadsheets to open, edit and send on — not just a reply."],
+    ],
+  },
+  capabilities: {
+    eyebrow: "What it does",
+    title: "It doesn't just talk. It does the work.",
+    description: "Everything below is work Lily can already do on your computer today.",
+    items: {
+      documents: ["Office documents, both ways", "Reads, writes, edits and converts Word, Excel, PowerPoint and PDF — scans included. Before handing over, it renders every page to check breaks, tables and fonts."],
+      research: ["Research and analysis, with sources", "Web research is cross-checked across sources and cited; spreadsheet data gets fields detected, anomalies found and charts drawn, with results you can audit."],
+      extend: ["Skills and apps, when you need them", "40+ built-in skills across office work, research, development and media. Heavy engines stay out of the installer and download in one click when needed."],
+      memory: ["It remembers your project", "Say “remember…” and every later conversation follows it; project conventions and progress come along. Every turn is saved as a version you can restore."],
+    },
+  },
+  enterprise: {
+    eyebrow: "Lily for teams",
+    title: "Your whole team on Lily, with every charge accounted for.",
+    description: "Organizations are opened by the platform. Members work within the organization's quota, and admins can always see usage and every change.",
+    points: [
+      ["One pool, a weekly budget per member", "The platform funds the organization's pool; each member has a weekly budget that resets after 7 days."],
+      ["The identity you choose decides who pays", "The organization identity draws only on the pool; the personal identity only on your own balance. Never mixed."],
+      ["Admins in control, with a full history", "Adding members, changing budgets, pausing the organization — who did what, and when, is on record."],
+    ],
+    cta: "Explore Lily for teams",
+  },
+  catalog: {
+    eyebrow: "Apps and skills",
+    title: "Add exactly what your workbench needs.",
+    appsTitle: "Featured apps",
+    skillsTitle: "Popular skills",
+    allApps: "All apps",
+    allSkills: "Browse skills",
+  },
+  trust: {
+    eyebrow: "Clear and in your control",
+    title: "You can see what it did.",
+    items: [
+      ["Grounded", "Facts, figures and quotes need a source; when it has read only part of the material, it says so."],
+      ["Checked before delivery", "A file it says it made must exist; documents are rendered page by page, code is actually run."],
+      ["You set how far it goes", "Plan, ask or full-auto modes; sending email, submitting forms and deleting data always ask you first."],
+      ["Every change can be undone", "See which files each turn changed, revert them one by one, or restore an earlier version."],
+    ],
+    note: "Document parsing, OCR and format conversion run on your computer; conversation content is sent to the model service you choose so it can answer.",
+  },
+  wishes: {
+    eyebrow: "Wish pool",
+    title: "You wish it. We build it with care.",
+    description: "See the capabilities people are waiting for, back the ones you share, or submit a new pain point.",
+    all: "Open the wish pool",
+    statuses: { published: "Public", planned: "Planned", building: "Building", shipped: "Shipped" },
+  },
+  finalCta: {
+    title: "Your next project won't start from zero.",
+    description: "Download Lily Workbench and keep material, context and results in one place.",
+    primary: "Download free",
+    secondary: "See pricing",
+  },
+  mock: {
+    windowTitle: "Lily Workbench",
+    newChat: "New chat",
+    projectsLabel: "Projects",
+    projects: ["Quarterly review", "Client contract review", "Product launch kit"],
+    filesLabel: "Files",
+    files: [["Q2 financials.xlsx", "xlsx"], ["Q3 financials.xlsx", "xlsx"], ["Department costs.xlsx", "xlsx"], ["Last quarter review.docx", "docx"], ["Q3 review.docx", "docx", true]],
+    newBadge: "New",
+    identity: "Personal identity",
+    initial: "M",
+    threadTitle: "Q3 business review",
+    model: "Auto",
+    userMessage: "Turn the Q2 and Q3 financials and the cost breakdown into a business review in Word, with a cost comparison table.",
+    attachments: ["Q2 financials.xlsx", "Q3 financials.xlsx", "Department costs.xlsx"],
+    tools: [
+      ["Read files", "3 files · 5 sheets"],
+      ["Analyse data", "Costs +12.4% QoQ, 4 anomalies found"],
+      ["Write document", "Q3 review.docx · 12 pages"],
+      ["Render and check", "Page breaks, tables and fonts checked"],
+    ],
+    answer: "The review is ready. The cost increase comes mostly from travel and contractors; section 3 lists the 4 anomalies with their source rows, and the comparison table is in a separate Excel file.",
+    delivered: [["Q3 review.docx", "Word · 12 pages · checked page by page", "docx"], ["Cost comparison.xlsx", "Excel · 2 sheets", "xlsx"]],
+    open: "Open",
+    composer: "Tell it what's next…",
+    mode: "Ask",
+  },
+  mini: {
+    document: { file: "Q3 review.docx", pages: "12 pages", checks: ["Contents", "Page breaks", "Tables", "Fonts"], status: "Every page checked" },
+    research: {
+      question: "Why did travel costs go up?",
+      claim: "Travel rose 31% quarter on quarter, mostly from two trade-show trips in August.",
+      sources: ["Q3 financials · row 14", "Department costs · August", "Trade show schedule.pdf"],
+      chartTitle: "Change vs last quarter",
+      bars: [["Travel", 31], ["Contractors", 18], ["Office", 6], ["Training", 3]],
+    },
+    extend: {
+      title: "Skills and engines",
+      items: [["Excel analysis", "Enabled"], ["Slide design check", "Enabled"], ["Pro PDF parsing", "On demand"], ["Browser automation", "On demand"]],
+      footer: "40+ built-in skills",
+    },
+    memory: {
+      title: "Memory",
+      notes: ["Reviews use the company template; amounts to two decimals.", "Costs are grouped by department."],
+      versionsTitle: "Versions",
+      versions: [["Turn 3", "Q3 review.docx"], ["Turn 2", "Cost comparison.xlsx"], ["Turn 1", "Cleaned raw data"]],
+      restore: "Restore",
+    },
+  },
+};
+
+const ar = {
+  hero: {
+    eyebrow: "منصة عمل مكتبية بالذكاء الاصطناعي للعمل الحقيقي",
+    title: "أخيرًا، هناك من يتذكّر مشروعك.",
+    description: "ضع الملفات والجداول والمحادثات السابقة في مساحة عمل واحدة. قل ما تحتاجه، فتقرأ Lily المواد وتحلّلها وتسلّمك ملفات Word وExcel وPowerPoint يمكنك مواصلة تعديلها.",
+    primaryCta: "تنزيل مجاني",
+    secondaryCta: "شاهد كيف تعمل",
+    note: "لنظامي macOS (شرائح Apple وIntel) وWindows · رصيد تجريبي عند التسجيل",
+    mockLabel: "رسم توضيحي لتطبيق Lily Workbench: يطلب المستخدم مُخرَجًا، فتقرأ Lily الملفات وتحلّل البيانات وتسلّم ملفي Word وExcel",
+  },
+  how: {
+    eyebrow: "طريقة العمل",
+    title: "نادرًا ما يتعطّل العمل بسبب غياب الإجابة.",
+    description: "بل لأن المواد مبعثرة، والسياق يُشرح مرة بعد مرة، والنتيجة ما زالت تحتاج إلى تجميع يدوي. تتولّى Lily هذه الأمور الثلاثة.",
+    steps: [
+      ["سلّمها المشروع", "اختر مجلدًا محليًا مساحةً للعمل، أو اسحب الملفات ولقطات الشاشة والجداول."],
+      ["تستكمل السياق بنفسها", "تقرأ وتبحث وتستدعي المهارات المناسبة، وتحوّل المهام الكبيرة إلى قائمة تنجزها بندًا بندًا."],
+      ["احتفظ بما تسلّمه", "تحصل على مستندات وجداول تفتحها وتعدّلها وترسلها، لا مجرد رد."],
+    ],
+  },
+  capabilities: {
+    eyebrow: "ما الذي تفعله",
+    title: "لا تكتفي بالكلام، بل تُنجز العمل.",
+    description: "كل ما يلي عمل تستطيع Lily إنجازه على جهازك اليوم.",
+    items: {
+      documents: ["مستندات المكتب قراءةً وكتابة", "تقرأ ملفات Word وExcel وPowerPoint وPDF وتنشئها وتعدّلها وتحوّلها، بما فيها المستندات الممسوحة. وقبل التسليم تعرض كل صفحة لتتحقق من الفواصل والجداول والخطوط."],
+      research: ["بحث وتحليل مع ذكر المصادر", "تتحقق من نتائج البحث على الويب عبر عدة مصادر وتذكرها، وتكتشف في بيانات الجداول الحقول والقيم الشاذة وترسم المخططات بنتائج قابلة للمراجعة."],
+      extend: ["مهارات وتطبيقات عند الحاجة", "أكثر من 40 مهارة مدمجة للعمل المكتبي والبحث والتطوير والوسائط. المحرّكات الثقيلة لا تُضمَّن في المثبّت، وتُنزَّل بنقرة عند الحاجة."],
+      memory: ["تتذكّر مشروعك", "قل «تذكّري…» فتلتزم بها كل المحادثات اللاحقة، وتنتقل أعراف المشروع وتقدّمه معك. وكل جولة تُحفظ نسخةً يمكنك استعادتها."],
+    },
+  },
+  enterprise: {
+    eyebrow: "Lily للمؤسسات",
+    title: "فريقك كله على Lily، وكل خصم محسوب.",
+    description: "تفتح المنصة المؤسسات. يعمل الأعضاء ضمن حصة المؤسسة، ويرى المشرفون الاستخدام وكل تغيير في أي وقت.",
+    points: [
+      ["رصيد واحد وميزانية أسبوعية لكل عضو", "تشحن المنصة رصيد المؤسسة، ولكل عضو ميزانية أسبوعية تتجدد بعد 7 أيام."],
+      ["الهوية التي تختارها تحدد من يدفع", "هوية المؤسسة تخصم من رصيد المؤسسة فقط، والهوية الشخصية من رصيدك فقط. لا يختلطان أبدًا."],
+      ["تحكّم للمشرفين وسجل كامل", "إضافة الأعضاء وتعديل الميزانيات وإيقاف المؤسسة: من فعل ماذا ومتى، كله مسجّل."],
+    ],
+    cta: "تعرّف على Lily للمؤسسات",
+  },
+  catalog: {
+    eyebrow: "التطبيقات والمهارات",
+    title: "أضف إلى منصتك ما تحتاجه بالضبط.",
+    appsTitle: "تطبيقات مختارة",
+    skillsTitle: "مهارات رائجة",
+    allApps: "كل التطبيقات",
+    allSkills: "تصفّح المهارات",
+  },
+  trust: {
+    eyebrow: "واضحة وتحت سيطرتك",
+    title: "ترى ما الذي فعلته.",
+    items: [
+      ["مستندة إلى مصادر", "الحقائق والأرقام والاقتباسات تحتاج إلى مصدر، وإذا لم تقرأ إلا جزءًا من المواد فإنها تقول ذلك."],
+      ["تتحقق قبل التسليم", "الملف الذي تقول إنها أنشأته يجب أن يكون موجودًا؛ تُعرض المستندات صفحة صفحة ويُشغَّل الكود فعلًا."],
+      ["أنت تحدد مدى صلاحياتها", "أوضاع التخطيط والسؤال والتنفيذ الكامل؛ وإرسال البريد وتقديم النماذج وحذف البيانات يتطلب موافقتك دائمًا."],
+      ["كل تغيير قابل للتراجع", "ترى الملفات التي غيّرتها كل جولة، وتتراجع عنها واحدًا واحدًا، أو تستعيد نسخة سابقة."],
+    ],
+    note: "تحليل المستندات والتعرّف الضوئي على النصوص وتحويل الصيغ تجري على جهازك؛ ويُرسَل محتوى المحادثة إلى خدمة النموذج التي تختارها لتوليد الرد.",
+  },
+  wishes: {
+    eyebrow: "مجمع الأمنيات",
+    title: "تمنَّ، ونحن نبنيها بعناية.",
+    description: "تصفّح القدرات التي ينتظرها الآخرون، وادعم ما تشاركهم فيه، أو أرسل مشكلة عمل جديدة.",
+    all: "افتح مجمع الأمنيات",
+    statuses: { published: "منشورة", planned: "مخطط لها", building: "قيد التنفيذ", shipped: "متاحة" },
+  },
+  finalCta: {
+    title: "مشروعك القادم لن يبدأ من الصفر.",
+    description: "نزّل Lily Workbench واحتفظ بالمواد والسياق والنتائج في مكان واحد.",
+    primary: "تنزيل مجاني",
+    secondary: "الأسعار",
+  },
+  mock: {
+    windowTitle: "Lily Workbench",
+    newChat: "محادثة جديدة",
+    projectsLabel: "المشاريع",
+    projects: ["المراجعة الفصلية", "مراجعة عقد العميل", "ملف إطلاق المنتج"],
+    filesLabel: "الملفات",
+    files: [["ماليات الربع الثاني.xlsx", "xlsx"], ["ماليات الربع الثالث.xlsx", "xlsx"], ["تكاليف الأقسام.xlsx", "xlsx"], ["مراجعة الربع السابق.docx", "docx"], ["مراجعة الربع الثالث.docx", "docx", true]],
+    newBadge: "جديد",
+    identity: "الهوية الشخصية",
+    initial: "م",
+    threadTitle: "مراجعة أعمال الربع الثالث",
+    model: "تلقائي",
+    userMessage: "حوّلي ماليات الربعين الثاني والثالث وتفصيل التكاليف إلى مراجعة أعمال في Word، مع جدول لمقارنة التكاليف.",
+    attachments: ["ماليات الربع الثاني.xlsx", "ماليات الربع الثالث.xlsx", "تكاليف الأقسام.xlsx"],
+    tools: [
+      ["قراءة الملفات", "3 ملفات · 5 أوراق"],
+      ["تحليل البيانات", "التكاليف ‎+12.4%‎ ربعيًا، 4 قيم شاذة"],
+      ["كتابة المستند", "مراجعة الربع الثالث.docx · 12 صفحة"],
+      ["العرض والتحقق", "فُحصت الفواصل والجداول والخطوط"],
+    ],
+    answer: "المراجعة جاهزة. زيادة التكاليف تعود أساسًا إلى السفر والمتعاقدين؛ يسرد القسم 3 القيم الشاذة الأربع مع صفوفها، وجدول المقارنة في ملف Excel منفصل.",
+    delivered: [["مراجعة الربع الثالث.docx", "Word · 12 صفحة · فُحصت صفحةً صفحة", "docx"], ["مقارنة التكاليف.xlsx", "Excel · ورقتان", "xlsx"]],
+    open: "فتح",
+    composer: "أخبرها بالخطوة التالية…",
+    mode: "سؤال",
+  },
+  mini: {
+    document: { file: "مراجعة الربع الثالث.docx", pages: "12 صفحة", checks: ["الفهرس", "الفواصل", "الجداول", "الخطوط"], status: "فُحصت كل الصفحات" },
+    research: {
+      question: "لماذا ارتفعت تكاليف السفر؟",
+      claim: "ارتفع السفر 31% عن الربع السابق، ومعظمه من رحلتَي معرض في أغسطس.",
+      sources: ["ماليات الربع الثالث · الصف 14", "تكاليف الأقسام · أغسطس", "جدول المعرض.pdf"],
+      chartTitle: "التغيّر عن الربع السابق",
+      bars: [["السفر", 31], ["المتعاقدون", 18], ["المكتب", 6], ["التدريب", 3]],
+    },
+    extend: {
+      title: "المهارات والمحرّكات",
+      items: [["تحليل Excel", "مفعّلة"], ["فحص تصميم الشرائح", "مفعّلة"], ["تحليل PDF احترافي", "عند الطلب"], ["أتمتة المتصفح", "عند الطلب"]],
+      footer: "أكثر من 40 مهارة مدمجة",
+    },
+    memory: {
+      title: "الذاكرة",
+      notes: ["المراجعات بقالب الشركة، والمبالغ بمنزلتين عشريتين.", "تُجمَّع التكاليف حسب القسم."],
+      versionsTitle: "النسخ",
+      versions: [["الجولة 3", "مراجعة الربع الثالث.docx"], ["الجولة 2", "مقارنة التكاليف.xlsx"], ["الجولة 1", "تنظيف البيانات الخام"]],
+      restore: "استعادة",
+    },
+  },
+};
+
+export const homeCopy = { zh, en, ar };

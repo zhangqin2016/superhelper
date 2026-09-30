@@ -8,7 +8,7 @@ module.exports = {
         raised: "#171D25",
         line: "#26313D",
         muted: "#9AA4B2",
-        brand: "#1F7A8C",
+        brand: "#2f7de1",
         cyan: "#4CC9F0",
         mint: "#5FF1C4",
         coral: "#FF6B4A",

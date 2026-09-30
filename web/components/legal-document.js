@@ -1,3 +1,4 @@
+import "../app/legal/legal.css";
 import Link from "next/link";
 import { ArrowLeft, Mail } from "lucide-react";
 import { SiteFooter } from "./site-footer";
@@ -35,7 +36,7 @@ export function LegalDocument({ locale, document }) {
   return (
     <>
       <SiteNav initialLocale={locale} />
-      <main className="legal-page" dir={rtl ? "rtl" : "ltr"}>
+      <main className="legal-page lg-legal" dir={rtl ? "rtl" : "ltr"}>
         <div className="shell legal-shell">
           <aside className="legal-nav" aria-label={document.labels.contents}>
             <Link href="/legal" className="legal-back"><ArrowLeft size={15} />{document.labels.home}</Link>

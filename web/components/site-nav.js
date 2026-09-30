@@ -12,8 +12,10 @@ export function SiteNav({ initialLocale }) {
   const links = [
     ["/apps", t.nav.apps],
     ["/skills", t.nav.skills],
-    ["/wishes", t.nav.wishes],
+    ["/enterprise", t.nav.enterprise],
     ["/pricing", t.nav.pricing],
+    ["/wishes", t.nav.wishes],
+    ["/docs", t.nav.docs],
   ];
   return (
     <header className="site-nav fixed left-0 right-0 top-0 border-b backdrop-blur-xl">
@@ -27,10 +29,10 @@ export function SiteNav({ initialLocale }) {
         </nav>
         <div className="flex items-center gap-2">
           <LanguageSwitcher compact initialLocale={initialLocale} />
-          <Link href="/account" className="site-account hidden rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:text-[#586ce8] md:inline-flex">
+          <Link href="/account" className="site-account site-btn site-btn--ghost site-btn--sm hidden md:inline-flex">
             {t.nav.account}
           </Link>
-          <Link href="/download" className="nav-download rounded-xl bg-[#586ce8] px-4 py-2 text-sm font-semibold text-white shadow-sm">
+          <Link href="/download" className="nav-download site-btn site-btn--primary site-btn--sm">
             {t.nav.download}
           </Link>
           <button

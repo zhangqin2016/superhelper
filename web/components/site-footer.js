@@ -55,33 +55,58 @@ function shouldShowChinaFiling(headerStore) {
   return language.startsWith("zh");
 }
 
+// Footer headings and the few labels the nav dictionary has no key for.
+const FOOTER = {
+  zh: { tagline: "为真实工作而生的 AI 桌面工作台。", product: "产品", support: "支持", legal: "法律", changelog: "更新日志", contact: "联系我们", rights: "保留所有权利。" },
+  en: { tagline: "The AI desktop workbench built for real work.", product: "Product", support: "Support", legal: "Legal", changelog: "Changelog", contact: "Contact", rights: "All rights reserved." },
+  ar: { tagline: "منضدة عمل ذكية على سطح المكتب مصممة للعمل الحقيقي.", product: "المنتج", support: "الدعم", legal: "قانوني", changelog: "سجل التغييرات", contact: "تواصل معنا", rights: "جميع الحقوق محفوظة." },
+};
+
 export async function SiteFooter() {
   const headerStore = await headers();
   const showChinaFiling = shouldShowChinaFiling(headerStore);
   const { locale, t } = await getI18n();
   const legal = legalFooterFor(locale);
+  const f = FOOTER[locale] || FOOTER.zh;
 
   return (
     <footer className="site-footer">
-      <div className="shell site-footer-inner">
-        <nav className="site-footer-links" aria-label={t.nav.open}>
+      <div className="shell site-footer-grid">
+        <div className="site-footer-brand">
+          <Link href="/" className="site-footer-logo">
+            <img src="/brand/icon.png" alt="" width="28" height="28" />
+            <span>Lily Workbench</span>
+          </Link>
+          <p>{f.tagline}</p>
+        </div>
+        <nav className="site-footer-col" aria-label={f.product}>
+          <p className="site-footer-heading">{f.product}</p>
+          <Link href="/download">{t.nav.download}</Link>
           <Link href="/apps">{t.nav.apps}</Link>
           <Link href="/skills">{t.nav.skills}</Link>
-          <Link href="/wishes">{t.nav.wishes}</Link>
+          <Link href="/enterprise">{t.nav.enterprise}</Link>
           <Link href="/pricing">{t.nav.pricing}</Link>
-          <Link href="/download">{t.nav.download}</Link>
+          <Link href="/changelog">{f.changelog}</Link>
+        </nav>
+        <nav className="site-footer-col" aria-label={f.support}>
+          <p className="site-footer-heading">{f.support}</p>
+          <Link href="/docs">{t.nav.docs}</Link>
+          <Link href="/contact">{f.contact}</Link>
+          <Link href="/wishes">{t.nav.wishes}</Link>
+          <Link href="/account">{t.nav.account}</Link>
+        </nav>
+        <nav className="site-footer-col" aria-label={f.legal}>
+          <p className="site-footer-heading">{f.legal}</p>
           <Link href="/privacy">{legal.privacy}</Link>
           <Link href="/terms">{legal.terms}</Link>
           <Link href="/legal/data-and-third-parties">{legal.data}</Link>
           <Link href="/account-deletion">{legal.deletion}</Link>
         </nav>
+      </div>
+      <div className="shell site-footer-bottom">
+        <span>© {new Date().getFullYear()} {COMPANY_NAME} · {f.rights}</span>
         {showChinaFiling ? (
-          <div className="site-footer-filing">
-            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
-              {ICP_NUMBER}
-            </a>
-            <span>{COMPANY_NAME}</span>
-          </div>
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">{ICP_NUMBER}</a>
         ) : null}
       </div>
     </footer>

@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./site-system.css";
 import { getI18n } from "../lib/i18n.mjs";
 import { LocaleProvider } from "../lib/use-i18n";
 

@@ -1,0 +1,319 @@
+/*
+ * /enterprise (2026-09-30). Tokens from site-system.css; single accent.
+ * Class prefix `ent-`.
+ */
+
+.ent {
+  background: var(--site-bg);
+}
+
+.ent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 36px;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.ent-hero {
+  padding: clamp(128px, 13vw, 176px) 0 clamp(64px, 8vw, 112px);
+}
+
+.ent-hero-copy {
+  display: flex;
+  max-width: 940px;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.ent-hero-lead {
+  margin-top: 24px;
+  margin-inline: auto;
+}
+
+.ent-note {
+  word-break: keep-all;
+  margin: 18px 0 0;
+  color: var(--site-muted);
+  font-size: 13px;
+}
+
+.ent-hero-visual {
+  max-width: 1040px;
+  margin: clamp(52px, 6vw, 84px) auto 0;
+}
+
+/* ------------------------------------------------------------ features */
+
+.ent-features {
+  border-top: 1px solid var(--site-line);
+}
+
+.ent-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 44px 32px;
+}
+
+.ent-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--site-brand-soft);
+  color: var(--site-brand);
+}
+
+.ent-feature .site-h3 {
+  margin-top: 20px;
+}
+
+.ent-feature .site-body {
+  margin: 8px 0 0;
+}
+
+/* ------------------------------------------------------------- billing */
+
+.ent-billing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(32px, 5vw, 72px);
+}
+
+.ent-steps {
+  display: grid;
+  gap: 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ent-steps li {
+  display: flex;
+  gap: 18px;
+}
+
+.ent-step-num {
+  display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--site-brand-line);
+  border-radius: 50%;
+  background: var(--site-surface);
+  color: var(--site-brand);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.ent-steps .site-h3 {
+  margin-top: 4px;
+}
+
+.ent-steps .site-body {
+  margin: 6px 0 0;
+}
+
+.ent-stage {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-radius-lg);
+  background: #f8f7f4;
+  padding: clamp(20px, 4vw, 48px);
+}
+
+.ent-billing .ent-stage {
+  background: var(--site-bg);
+}
+
+.ent-stage > * {
+  max-width: 440px;
+}
+
+.ent-week {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 5vw, 64px);
+  margin-top: clamp(40px, 5vw, 64px);
+  padding: clamp(24px, 3.5vw, 40px);
+}
+
+.ent-week-copy .site-body {
+  margin: 10px 0 0;
+}
+
+.ent-week-track {
+  display: flex;
+  align-items: center;
+}
+
+.ent-week-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--site-brand);
+  border-radius: 50%;
+  background: var(--site-surface);
+}
+
+.ent-week-dot--end {
+  border-color: var(--site-line-strong);
+}
+
+.ent-week-span {
+  height: 8px;
+  flex: 1;
+  margin-inline: 4px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--site-brand) 0 58%, var(--site-brand-soft) 58% 100%);
+}
+
+[dir="rtl"] .ent-week-span {
+  background: linear-gradient(to left, var(--site-brand) 0 58%, var(--site-brand-soft) 58% 100%);
+}
+
+.ent-week-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--site-muted);
+  font-size: 13px;
+}
+
+.ent-week-marks span:nth-child(2) {
+  color: var(--site-brand-ink);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- console */
+
+.ent-console-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.ent-console .ent-stage > * {
+  width: 100%;
+}
+
+/* ----------------------------------------------------------------- FAQ */
+
+.ent-faq-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  gap: clamp(32px, 6vw, 88px);
+}
+
+.ent-faq-list {
+  border-top: 1px solid var(--site-line-strong);
+}
+
+.ent-faq-item {
+  border-bottom: 1px solid var(--site-line);
+}
+
+.ent-faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 0;
+  color: var(--site-ink);
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.45;
+  list-style: none;
+}
+
+.ent-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.ent-faq-icon {
+  flex: none;
+  color: var(--site-muted);
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+.ent-faq-item[open] .ent-faq-icon {
+  color: var(--site-brand);
+  transform: rotate(45deg);
+}
+
+.ent-faq-item .site-body {
+  max-width: 640px;
+  margin: -6px 0 0;
+  padding-bottom: 24px;
+}
+
+/* ----------------------------------------------------------- final CTA */
+
+.ent-final-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.ent-final-inner .site-h1 {
+  max-width: 820px;
+}
+
+.ent-final-inner .site-lead {
+  margin: 20px auto 0;
+}
+
+/* ---------------------------------------------------------- responsive */
+
+@media (max-width: 1020px) {
+  .ent-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ent-faq-inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .ent-billing-grid,
+  .ent-console-grid,
+  .ent-week {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .ent-feature-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+
+  .ent-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .ent-actions .site-btn {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  .ent-faq-item summary {
+    font-size: 16px;
+  }
+}
